@@ -1,0 +1,163 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
+/* ── Theme tokens: light is the base, dark overrides. Dark is the default (see layout script). ── */
+:root {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --muted: #64748b;
+  --surface: rgb(255 255 255 / 0.62);
+  --line: rgb(15 23 42 / 0.1);
+  /* neutral slate accents: colour is reserved for urgency (red / yellow / green) */
+  --glow-a: 71 85 105;
+  --glow-c: 148 163 184;
+}
+:root[data-theme="dark"] {
+  --background: #0a0a0c;
+  --foreground: #ececf1;
+  --muted: #8b8b9a;
+  --surface: rgb(255 255 255 / 0.04);
+  --line: rgb(255 255 255 / 0.1);
+  --glow-a: 148 163 184;
+  --glow-c: 100 116 139;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-surface: var(--surface);
+  --color-line: var(--line);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html { color-scheme: light; }
+html[data-theme="dark"] { color-scheme: dark; }
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Component styles live in the `components` layer so Tailwind utilities (absolute, bg-*, etc.)
+   always win over them. Unlayered rules beat every utility, which is what broke the logo. */
+@layer components {
+  /* ── Orbs: traffic-light spheres (red = urgent, yellow = warning, green = calm). ──
+     Per hue: --h1 inner glow, --h2 secondary glow, --rim edge colour (rgb triplets). */
+  .orb {
+    position: relative;
+    border-radius: 9999px;
+    --h1: 16 185 129;
+    --h2: 5 150 105;
+    --rim: 74 222 128;
+  }
+  .orb-text { text-shadow: 0 1px 8px rgb(0 0 0 / 0.55); }
+
+  /* Dark: neon glow on a near-black core */
+  :root[data-theme="dark"] .orb-red { --h1: 255 36 70; --h2: 185 16 56; --rim: 255 77 90; }      /* crimson, bright red rim */
+  :root[data-theme="dark"] .orb-yellow { --h1: 251 191 36; --h2: 217 119 6; --rim: 253 224 71; } /* amber-gold, luminous rim */
+  :root[data-theme="dark"] .orb-green { --h1: 16 185 129; --h2: 5 150 105; --rim: 74 255 140; }  /* emerald, neon green rim */
+  :root[data-theme="dark"] .orb {
+    background:
+      radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.22), transparent 34%),
+      radial-gradient(circle at 50% 58%, rgb(8 8 10 / 0.72) 40%, rgb(var(--h1) / 0.3) 100%);
+    border: 1px solid rgb(var(--rim) / 0.8);
+    box-shadow:
+      inset 0 0 22px rgb(var(--h1) / 0.5),
+      inset 0 -16px 30px rgb(var(--h2) / 0.38),
+      0 0 14px rgb(var(--rim) / 0.3),
+      0 0 34px -4px rgb(var(--h1) / 0.45);
+  }
+
+  /* Light: frosted glass tinted rose / amber / mint with a fine coloured edge */
+  :root:not([data-theme="dark"]) .orb-red { --h1: 244 63 94; --h2: 251 113 133; --rim: 225 29 72; }
+  :root:not([data-theme="dark"]) .orb-yellow { --h1: 250 190 40; --h2: 251 146 60; --rim: 217 119 6; }
+  :root:not([data-theme="dark"]) .orb-green { --h1: 52 211 153; --h2: 74 222 128; --rim: 22 163 74; }
+  :root:not([data-theme="dark"]) .orb {
+    background:
+      radial-gradient(circle at 30% 20%, rgb(255 255 255 / 0.8), transparent 34%),
+      radial-gradient(circle at 50% 58%, rgb(255 255 255 / 0.42) 30%, rgb(var(--h1) / 0.68) 100%);
+    border: 1.5px solid rgb(var(--rim) / 0.85);
+    backdrop-filter: blur(10px);
+    box-shadow:
+      inset 0 0 20px rgb(var(--h1) / 0.55),
+      inset 0 -12px 24px rgb(var(--h2) / 0.45),
+      0 6px 14px -2px rgb(var(--rim) / 0.45),
+      0 10px 24px -6px rgb(15 23 42 / 0.28),
+      0 2px 4px rgb(15 23 42 / 0.12);
+  }
+
+  /* Traffic-light accent colour for badges, dots and progress (text-safe on each theme) */
+  .hue-red { --c: 220 38 38; }
+  .hue-yellow { --c: 161 98 7; }
+  .hue-green { --c: 21 128 61; }
+  :root[data-theme="dark"] .hue-red { --c: 255 99 110; }
+  :root[data-theme="dark"] .hue-yellow { --c: 251 191 36; }
+  :root[data-theme="dark"] .hue-green { --c: 74 222 128; }
+  :root:not([data-theme="dark"]) .orb-text { text-shadow: 0 1px 0 rgb(255 255 255 / 0.5); }
+  .hue-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    border-radius: 9999px;
+    padding: 0.1rem 0.55rem;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: rgb(var(--c));
+    background: rgb(var(--c) / 0.12);
+    border: 1px solid rgb(var(--c) / 0.35);
+  }
+  .hue-dot { background: rgb(var(--c)); box-shadow: 0 0 8px rgb(var(--c) / 0.6); }
+
+  /* Logo: orbs blend only with each other (isolated group) where they overlap */
+  .logo { isolation: isolate; }
+  :root[data-theme="dark"] .logo-orb { mix-blend-mode: screen; }
+  :root:not([data-theme="dark"]) .logo-orb { mix-blend-mode: multiply; }
+
+  /* Logo label: pure white with a dark halo so it stays crisp on every orb colour and theme */
+  .logo-text {
+    font-family: var(--font-rounded), var(--font-geist-sans), system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #fff;
+    text-shadow: 0 0 1px rgb(0 0 0 / 0.65), 0 1px 3px rgb(0 0 0 / 0.55);
+  }
+
+  /* Light theme: logo labels are black, with a white halo so they stay legible on every orb */
+  :root:not([data-theme="dark"]) .logo-text {
+    color: #000;
+    text-shadow: 0 0 2px rgb(255 255 255 / 0.9), 0 1px 3px rgb(255 255 255 / 0.6);
+  }
+
+  /* Glass surface for panels and inputs */
+  .glass {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    backdrop-filter: blur(14px);
+  }
+
+  /* Soft ambient glows behind everything */
+  .ambient::before,
+  .ambient::after {
+    content: "";
+    position: fixed;
+    z-index: -1;
+    width: 46vmax;
+    height: 46vmax;
+    border-radius: 9999px;
+    filter: blur(90px);
+    opacity: 0.16;
+    pointer-events: none;
+  }
+  .ambient::before { background: rgb(var(--glow-a)); top: -22vmax; left: -14vmax; }
+  .ambient::after { background: rgb(var(--glow-c)); bottom: -24vmax; right: -16vmax; }
+  :root:not([data-theme="dark"]) .ambient::before,
+  :root:not([data-theme="dark"]) .ambient::after { opacity: 0.22; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

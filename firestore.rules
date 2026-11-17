@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+
+      // Tasks: owner only, with data checks:
+      //  - title is a non-empty string of at most 100 chars (checked on create, and on update only
+      //    when the title changes, so older/longer titles can still be completed or logged against)
+      //  - loggedMinutes, if present, is a non-negative number (time logging uses an increment)
+      function validLogged(d) {
+        return !('loggedMinutes' in d)
+          || (d.loggedMinutes is number && d.loggedMinutes >= 0 && d.loggedMinutes <= 100000);
+      }
+      function validTitle(t) {
+        return t is string && t.size() > 0 && t.size() <= 100;
+      }
+      match /tasks/{taskId} {
+        allow read, delete: if isOwner(uid);
+        allow create: if isOwner(uid)
+          && validTitle(request.resource.data.title)
+          && validLogged(request.resource.data);
+        allow update: if isOwner(uid)
+          && (request.resource.data.title == resource.data.title || validTitle(request.resource.data.title))
+          && validLogged(request.resource.data);
+      }
+
+      // schedules, messages, devices
+      match /{subcollection}/{docId=**} {
+        allow read, write: if isOwner(uid) && subcollection != 'tasks';
+      }
+    }
+
+    // Reminders are written and read only by the server (Admin SDK bypasses rules).
+    match /reminders/{reminderId} {
+      allow read, write: if false;
+    }
+  }
+}

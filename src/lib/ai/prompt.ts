@@ -1,0 +1,89 @@
+import type { ChatMessage, ScheduleBlock, Task, UserSettings } from "@/types";
+import { minutesOfDay, toLocalNaive } from "@/lib/time";
+import { latestEndMs, planningDays } from "./horizon";
+
+export type ScheduleMode = "locked" | "incremental" | "adjust" | "rebuild";
+
+export const SYSTEM_PROMPT = `You are the scheduling assistant inside BubbleSchedule, an app that shows tasks as bubbles.
+You build a time-blocked plan over the next several days and explain it to the user.
+
+Rules:
+- All times you read and write are the user's local wall-clock time, formatted "YYYY-MM-DDTHH:mm" (no timezone suffix).
+- WORKING HOURS (strict): every block must start and end inside "workingHours" (start–end) on one of the dates listed in "availableDays". Never schedule before workingHours.start, after workingHours.end, on a day that is not in availableDays, or before NOW. A block must start and end on the same day.
+- You are given "tasksToPlace" only. Place each one at most once (one block per task). "lockedBlocks" are other tasks already fixed on the calendar: they are IMMOVABLE, so never overlap them and never output them. Locked blocks with "pinned": true were set by hand by the user: they are hard constraints in every mode (even "rebuild"), so plan all other tasks around them. If the user asks you to move a pinned block, do not; tell them in "reply" to edit or unpin it themselves.
+- Blocks must not overlap. Leave short 5–10 minute gaps between long blocks when there is room.
+- Each task has a "weight" (0–1) combining priority and deadline urgency. Higher-weight tasks get the earliest suitable slots; lower-weight tasks fill the remaining time.
+- Add a taskEstimates entry for every task whose durationMin OR priority is null (your estimate for the missing value; the user's own values are never overridden). If durationMin is set, the block must be exactly that long (minus loggedMinutes when it is above 0, but at least 15 minutes).
+
+SCHEDULING STRATEGY:
+1. Front-load with a safety buffer. Do tasks as EARLY as possible, but every block must END by the task's "mustEndBy" time (the deadline minus a safety margin). Never schedule right up to the deadline: the margin is there in case things go wrong. A task due in 5 days belongs in the first days, not on its last day.
+2. Distribute evenly. Each availableDay has "freeMinutes". Each day has a "targetMinutes" load (70% of freeMinutes): once a day's blocks add up to targetMinutes, move the remaining tasks to the next available day instead of filling it to the brim. Only exceed targetMinutes when a task would otherwise miss its mustEndBy. Do not put many hours on today while the following days are empty, but never delay a task past the earliest sensible day just to balance: urgent and high-weight tasks go first, and a day that still has room should be used before a later one. When two days are equally good, take the earlier one.
+3. If a task cannot fit before its mustEndBy, put it in "unscheduled" with a short reason. Tasks whose deadline is beyond the last availableDay may be left unscheduled ("will be planned later") unless they are high priority or the user asks for them.
+
+MODE says how much freedom you have:
+  • locked / incremental: the user only pressed Auto-schedule or just added tasks. Keep every task in "currentSchedule" at its current time unless a higher-weight new task needs that slot (isNew=true tasks are the new ones). Disturb as little as possible.
+  • adjust: follow the user's message. Keep other blocks unchanged when the message does not require moving them.
+  • rebuild: the user asked to start over; plan everything from scratch.
+- Only use taskId values from tasksToPlace.
+- "summary": one short sentence describing the overall change. "reply": a friendly 2–5 sentence message to the user saying what you changed and why. Mention anything left unscheduled.`;
+
+export interface PromptContext {
+  tz: string;
+  targetDate: string;
+  nowISO: string;
+  settings: UserSettings;
+  mode: ScheduleMode;
+  tasks: Task[]; // tasksToPlace
+  newTaskIds: Set<string>;
+  weights: Map<string, number>;
+  locked: ScheduleBlock[];
+  blocks: ScheduleBlock[]; // current blocks of tasksToPlace
+  history: ChatMessage[];
+  message?: string;
+  trigger: "auto-schedule" | "user-message";
+}
+
+export function buildUserPrompt(c: PromptContext): string {
+  const local = (iso: string) => toLocalNaive(iso, c.tz);
+  const nowMs = Date.parse(c.nowISO);
+  const { start: ws, end: we } = c.settings.workingHours;
+  const nowNaive = local(c.nowISO);
+  const availableDays = planningDays(c.targetDate, c.settings.workingDays).map((date) => {
+    let from = minutesOfDay(ws);
+    if (nowNaive.slice(0, 10) === date) from = Math.max(from, Math.ceil(minutesOfDay(nowNaive) / 5) * 5);
+    const to = minutesOfDay(we);
+    const lockedMin = c.locked.reduce((sum, b) => {
+      const bs = local(b.start), be = local(b.end);
+      if (bs.slice(0, 10) !== date) return sum;
+      return sum + Math.max(0, Math.min(to, minutesOfDay(be)) - Math.max(from, minutesOfDay(bs)));
+    }, 0);
+    return { date, earliestStart: `${String(Math.floor(from / 60)).padStart(2, "0")}:${String(from % 60).padStart(2, "0")}`, freeMinutes: Math.max(0, to - from - lockedMin), targetMinutes: Math.round(Math.max(0, to - from - lockedMin) * 0.7) };
+  });
+  const payload = {
+    MODE: c.mode,
+    TODAY: c.targetDate,
+    NOW: nowNaive,
+    workingHours: c.settings.workingHours,
+    availableDays,
+    tasksToPlace: c.tasks.map((t) => ({
+      taskId: t.id,
+      title: t.title,
+      description: t.description ?? null,
+      deadline: local(t.deadline),
+      mustEndBy: local(new Date(latestEndMs(Date.parse(t.deadline), nowMs, t.durationMin ?? t.aiEstimate?.durationMin ?? c.settings.defaultTaskMinutes)).toISOString()),
+      durationMin: t.durationMin ?? null,
+      loggedMinutes: t.loggedMinutes ?? 0,
+      priority: t.priority ?? null,
+      weight: Number((c.weights.get(t.id) ?? 0).toFixed(2)),
+      isNew: c.newTaskIds.has(t.id),
+    })),
+    lockedBlocks: c.locked.map((b) => ({ title: b.title, start: local(b.start), end: local(b.end), pinned: !!b.isPinned })),
+    currentSchedule: c.blocks
+      .filter((b) => b.status !== "done")
+      .map((b) => ({ taskId: b.taskId, start: local(b.start), end: local(b.end) })),
+    recentChat: c.history.slice(-6).map((m) => ({ role: m.role, content: m.content })),
+    trigger: c.trigger,
+    userMessage: c.message ?? (c.trigger === "auto-schedule" ? "Auto-schedule my day." : ""),
+  };
+  return JSON.stringify(payload);
+}
