@@ -28,5 +28,13 @@
     "eslint-config-next": "16.4.6",
     "tailwindcss": "4.3.3",
     "typescript": "^5"
+  },
+  "overrides": {
+    "jwks-rsa": {
+      "jose": "^5.9.6"
+    }
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
