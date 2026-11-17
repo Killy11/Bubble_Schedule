@@ -62,7 +62,7 @@ export async function POST(request: Request) {
   const allTasks = taskSnap.docs.map((d) => {
     const t = fromFirestoreData<Task>(d.data());
     return { ...t, id: d.id, loggedMinutes: t.loggedMinutes ?? 0 }; // older docs predate the field
-  });
+  }).filter((t) => Date.parse(t.deadline) > now.getTime()); // overdue tasks can't be placed before their deadline: they stay out of the plan
   const prev = schedSnap.exists ? fromFirestoreData<Schedule>(schedSnap.data()) : null;
   const history = msgSnap.docs
     .map((d) => ({ ...fromFirestoreData<ChatMessage>(d.data()), id: d.id }))

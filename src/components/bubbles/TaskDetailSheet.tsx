@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Clock, Flag, Loader2, Pencil, Play, Repeat, Sparkles, Square, Trash2 } from "lucide-react";
+import { CalendarClock, Check, Clock, Flag, Loader2, Pencil, Play, Repeat, Sparkles, Square, Trash2 } from "lucide-react";
 import { Sheet } from "@/components/Sheet";
 import { RecurrencePicker } from "./RecurrencePicker";
 import { SubtaskList } from "./SubtaskList";
 import { PacingSelector } from "@/components/PacingSelector";
 import { PACING_META, pacingOf } from "@/lib/pacing";
-import { formatDeadline } from "@/lib/time";
+import { formatDeadline, formatOverdue } from "@/lib/time";
 import { effectiveDuration, effectivePriority } from "@/lib/bubbles/effective";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
 import type { Pacing, Priority, Recurrence, Subtask, Task } from "@/types";
@@ -49,6 +49,7 @@ export function TaskDetailSheet({
   onToggleSubtask,
   onSaveSubtasks,
   onSplit,
+  onReschedule,
 }: {
   task: Task | null;
   now: number;
@@ -65,6 +66,8 @@ export function TaskDetailSheet({
   onToggleSubtask: (t: Task, sub: Subtask, checked: boolean) => Promise<void>;
   onSaveSubtasks: (t: Task, subs: Subtask[]) => Promise<void>;
   onSplit: (t: Task, parts?: number) => void;
+  /** Overdue task: pick a new deadline. */
+  onReschedule: (t: Task) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [actual, setActual] = useState("");
@@ -97,7 +100,7 @@ export function TaskDetailSheet({
           <>
           <div className="flex items-center gap-2">
             <span className="hue-badge">
-              <span className="hue-dot h-2 w-2 rounded-full" /> {HUE_META[hue].label}
+              <span className="hue-dot h-2 w-2 rounded-full" /> {hue === "overdue" ? formatOverdue(task.deadline, now) : HUE_META[hue].label}
             </span>
             <span className="text-xs text-muted">{HUE_META[hue].hint}</span>
             {pacingOf(task) !== "balanced" && (
@@ -106,7 +109,9 @@ export function TaskDetailSheet({
           </div>
           <dl className="space-y-2 text-sm">
             <div className="flex items-center gap-2 text-muted"><Clock className="h-4 w-4" />
-              <span className="text-foreground">Due {formatDeadline(task.deadline, now)}</span></div>
+              <span className="text-foreground">
+                {hue === "overdue" ? `Was due ${new Date(task.deadline).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : `Due ${formatDeadline(task.deadline, now)}`}
+              </span></div>
             <div className="flex items-center gap-2 text-muted"><Flag className="h-4 w-4" />
               <span className="text-foreground">
                 {pr ? pr[0].toUpperCase() + pr.slice(1) : "No"} priority
@@ -118,6 +123,18 @@ export function TaskDetailSheet({
                 <span>{task.aiEstimate.reasoning}</span></div>
             )}
           </dl>
+          {hue === "overdue" && (
+            <div className="flex gap-3">
+              <button type="button" onClick={() => { close(); onReschedule(task); }}
+                className="flex flex-1 items-center justify-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition hover:opacity-90">
+                <CalendarClock className="h-4 w-4" /> Reschedule
+              </button>
+              <button type="button" disabled={busy} onClick={() => run(onDelete)}
+                className="glass flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm text-muted transition hover:text-red-500 disabled:opacity-60">
+                <Trash2 className="h-4 w-4" /> Delete
+              </button>
+            </div>
+          )}
           <button type="button" onClick={() => setEditing(true)}
             className="glass flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs text-muted transition hover:text-foreground">
             <Pencil className="h-3.5 w-3.5" /> Edit title, due date &amp; priority

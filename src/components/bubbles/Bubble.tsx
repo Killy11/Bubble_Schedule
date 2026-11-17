@@ -7,7 +7,7 @@ import { BubbleText } from "./BubbleText";
 import { bubbleHue } from "@/lib/bubbles/urgency";
 import { recurrenceLabel } from "@/lib/recurrence";
 import { progressLabel, subtaskProgress } from "@/lib/subtasks";
-import { formatDeadline } from "@/lib/time";
+import { formatDeadline, formatOverdue } from "@/lib/time";
 import type { Task } from "@/types";
 import type { BubblePlacement } from "@/lib/bubbles/layout";
 
@@ -112,7 +112,7 @@ export function Bubble({
         type="button"
         onClick={() => onOpen(task.id)}
         disabled={popping}
-        aria-label={`${task.title}, due ${formatDeadline(task.deadline, now)}${repeats ? `, repeats ${repeats}` : ""}${parts ? `, ${progressLabel(task, now)}` : ""}`}
+        aria-label={`${task.title}, ${hue === "overdue" ? formatOverdue(task.deadline, now) : `due ${formatDeadline(task.deadline, now)}`}${repeats ? `, repeats ${repeats}` : ""}${parts ? `, ${progressLabel(task, now)}` : ""}`}
         animate={{ y: [0, -amp, 0], x: [0, amp / 2, 0] }}
         transition={{ duration: dur, repeat: Infinity, ease: "easeInOut", delay: index * 0.35 }}
         whileHover={{ scale: 1.07 }}

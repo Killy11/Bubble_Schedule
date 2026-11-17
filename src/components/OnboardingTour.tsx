@@ -16,13 +16,15 @@ const STEPS: Step[] = [
     title: "Colours tell you what needs you",
     body: (
       <>
-        <b className="text-red-500">Red</b> is urgent: high priority or due within 12 hours.{" "}
-        <b className="text-amber-500">Yellow</b> means soon. <b className="text-green-500">Green</b> is calm.
+        <b className="text-red-500">Red</b> is urgent: due within 2 days.{" "}
+        <b className="text-amber-500">Yellow</b> means 2–5 days. <b className="text-green-500">Green</b> is safe, 5+ days away.
+        A deep <b className="text-pink-600">plum</b> bubble is overdue. It is never deleted: reschedule it or finish it.
         The more pressing a task, the bigger its bubble.
       </>
     ),
     visual: (
       <div className="flex items-end gap-4">
+        <Orb hue="overdue" size={72} />
         <Orb hue="red" size={84} />
         <Orb hue="yellow" size={64} />
         <Orb hue="green" size={46} />
@@ -59,7 +61,7 @@ const STEPS: Step[] = [
   },
   {
     title: "Let AI plan your day",
-    body: "Press Auto-schedule and the AI lays your bubbles out in your working hours, earliest and most urgent first. Ask it in chat to shift things (“I overslept”). Bubbles whose deadline passes are moved to Expired, where you can reschedule them.",
+    body: "Press Auto-schedule and the AI lays your bubbles out in your working hours, earliest and most urgent first. Ask it in chat to shift things (“I overslept”). Bubbles whose deadline passes turn plum and move to the Overdue section at the top, where you can reschedule or delete them.",
     visual: (
       <div className="flex items-center gap-4">
         <span className="glass flex h-14 w-14 items-center justify-center rounded-full"><Sparkles className="h-6 w-6" /></span>

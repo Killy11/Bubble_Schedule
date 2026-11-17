@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Archive, Check, Pencil, Pin, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { Archive, CalendarClock, Check, Pencil, Pin, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { PacingSelector } from "@/components/PacingSelector";
-import { formatDeadline, formatTime } from "@/lib/time";
-import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
+import { formatDeadline, formatOverdue, formatTime } from "@/lib/time";
+import { bubbleHue, HUE_META, isOverdue } from "@/lib/bubbles/urgency";
 import { formatDuration } from "@/lib/subtasks";
 import type { Hue } from "@/components/Orb";
 import type { Pacing, Schedule, ScheduleBlock, Subtask, Task } from "@/types";
@@ -25,7 +25,9 @@ const TYPE_LABEL = { added: "Added", moved: "Moved", removed: "Removed", resized
 /** One card on the timeline: a standalone task's block, or one step of a bigger task. */
 type Entry =
   | { kind: "block"; key: string; start: number; end: number; block: ScheduleBlock; task?: Task }
-  | { kind: "part"; key: string; start: number; end: number; task: Task; sub: Subtask; step: number; steps: number };
+  | { kind: "part"; key: string; start: number; end: number; task: Task; sub: Subtask; step: number; steps: number }
+  /** A task whose deadline has passed. These live in the OVERDUE section, never in a day's slots. */
+  | { kind: "overdue"; key: string; start: number; end: number; task: Task };
 
 export function SchedulePanel({
   schedule,
@@ -38,6 +40,8 @@ export function SchedulePanel({
   onOpenTask,
   onOpenPart,
   onEditBlockTime,
+  onReschedule,
+  onRemoveTask,
   onToggleSubtask,
   onRestoreTask,
   onDeleteTask,
@@ -58,6 +62,10 @@ export function SchedulePanel({
   /** A step's card was clicked: open the step with its parent's context. */
   onOpenPart: (taskId: string, subId: string) => void;
   onEditBlockTime: (blockId: string) => void;
+  /** Overdue card: pick a new deadline. */
+  onReschedule: (taskId: string) => void;
+  /** Overdue card: delete the task (the app shows an Undo toast). */
+  onRemoveTask: (taskId: string) => void;
   onToggleSubtask: (task: Task, sub: Subtask) => void;
   onRestoreTask: (taskId: string) => void;
   onDeleteTask: (taskId: string) => void;
@@ -67,12 +75,19 @@ export function SchedulePanel({
   const change = schedule?.lastChange;
   const everyTask = new Map(allTasks.map((t) => [t.id, t]));
 
+  // Overdue tasks get their own section at the top, so they don't sit in (or clog) any day's slots.
+  const overdue = tasks
+    .filter((t) => isOverdue(t, now))
+    .sort((a, c) => a.deadline.localeCompare(c.deadline))
+    .map((task): Extract<Entry, { kind: "overdue" }> => ({ kind: "overdue", key: `overdue_${task.id}`, task, start: Date.parse(task.deadline), end: Date.parse(task.deadline) }));
+  const late = new Set(overdue.map((e) => e.task.id));
   // A task split into steps shows ONLY through its steps; its single big block (from an older plan) is never drawn.
-  const blocks = (schedule?.blocks ?? []).filter((b) => !everyTask.get(b.taskId)?.subtasks?.length);
+  const blocks = (schedule?.blocks ?? []).filter((b) => !everyTask.get(b.taskId)?.subtasks?.length && !late.has(b.taskId));
   const entries: Entry[] = blocks.map((b) => ({
     kind: "block", key: b.id, start: Date.parse(b.start), end: Date.parse(b.end), block: b, task: everyTask.get(b.taskId),
   }));
   for (const task of tasks) {
+    if (late.has(task.id)) continue;
     const subs = [...(task.subtasks ?? [])].sort((a, c) => (a.scheduledStart ?? "9").localeCompare(c.scheduledStart ?? "9"));
     subs.forEach((sub, i) => {
       if (!sub.scheduledStart || !sub.scheduledEnd) return;
@@ -82,7 +97,7 @@ export function SchedulePanel({
       });
     });
   }
-  const isDone = (e: Entry) => (e.kind === "block" ? e.block.status === "done" : e.sub.completed);
+  const isDone = (e: Entry) => (e.kind === "block" ? e.block.status === "done" : e.kind === "part" ? e.sub.completed : false);
   const doneCount = entries.filter(isDone).length;
   const visible = (showCompleted ? entries : entries.filter((e) => !isDone(e)))
     .filter((e) => e.kind === "block" || dayStart(e.start) >= dayStart(now))
@@ -124,6 +139,30 @@ export function SchedulePanel({
         </div>
       </div>
 
+      {overdue.length > 0 && (
+        <section aria-label="Overdue" className="hue-overdue">
+          <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-[rgb(var(--c))]">
+            <span className="hue-dot h-2 w-2 rounded-full" /> Overdue ({overdue.length})
+          </h3>
+          <ol className="relative space-y-3 border-l border-[rgb(var(--c)/0.5)] pl-5">
+            {overdue.map((e) => (
+              <Card
+                key={e.key}
+                entry={e}
+                now={now}
+                hasTask
+                onOpen={() => onOpenTask(e.task.id)}
+                onComplete={() => onComplete(e.task.id)}
+                onReschedule={() => onReschedule(e.task.id)}
+                onRemove={() => onRemoveTask(e.task.id)}
+                onRestore={() => {}}
+                onDelete={() => {}}
+              />
+            ))}
+          </ol>
+        </section>
+      )}
+
       {change && (
         <section className="glass rounded-2xl p-4">
           <div className="mb-1 flex items-center gap-2 text-xs font-medium text-[rgb(var(--glow-a))]">
@@ -144,7 +183,7 @@ export function SchedulePanel({
         </section>
       )}
 
-      {days.length === 0 ? (
+      {days.length === 0 && overdue.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted">
           <p>{doneCount > 0 ? "Everything scheduled is done." : "Nothing scheduled yet."}</p>
           <p>
@@ -162,9 +201,9 @@ export function SchedulePanel({
                   entry={e}
                   now={now}
                   hasTask={e.kind === "block" ? everyTask.has(e.block.taskId) : true}
-                  onOpen={() => (e.kind === "part" ? onOpenPart(e.task.id, e.sub.id) : onOpenTask(e.block.taskId))}
+                  onOpen={() => (e.kind === "part" ? onOpenPart(e.task.id, e.sub.id) : e.kind === "block" ? onOpenTask(e.block.taskId) : onOpenTask(e.task.id))}
                   onEditTime={e.kind === "block" ? () => onEditBlockTime(e.block.id) : undefined}
-                  onComplete={() => (e.kind === "part" ? onToggleSubtask(e.task, e.sub) : onComplete(e.block.taskId))}
+                  onComplete={() => (e.kind === "part" ? onToggleSubtask(e.task, e.sub) : e.kind === "block" ? onComplete(e.block.taskId) : onComplete(e.task.id))}
                   onRestore={() => e.kind === "block" && onRestoreTask(e.block.taskId)}
                   onDelete={() => e.kind === "block" && onDeleteTask(e.block.taskId)}
                 />
@@ -184,6 +223,8 @@ function Card({
   hasTask,
   onOpen,
   onEditTime,
+  onReschedule,
+  onRemove,
   onComplete,
   onRestore,
   onDelete,
@@ -193,21 +234,27 @@ function Card({
   hasTask: boolean;
   onOpen: () => void;
   onEditTime?: () => void;
+  onReschedule?: () => void;
+  onRemove?: () => void;
   onComplete: () => void;
   onRestore: () => void;
   onDelete: () => void;
 }) {
-  const done = e.kind === "block" ? e.block.status === "done" : e.sub.completed;
+  const done = e.kind === "block" ? e.block.status === "done" : e.kind === "part" ? e.sub.completed : false;
   const current = !done && e.start <= now && now < e.end;
   const task = e.task;
   const hue: Hue | null = task && !done ? bubbleHue(task, now) : null;
-  const title = e.kind === "part" ? e.sub.title : e.block.title;
+  const title = e.kind === "part" ? e.sub.title : e.kind === "block" ? e.block.title : e.task.title;
+  const isLate = e.kind === "overdue";
+  const left = e.kind === "overdue" ? (e.task.subtasks ?? []).filter((s) => !s.completed).length : 0;
   const minutes = Math.round((e.end - e.start) / 60_000);
   const pinned = e.kind === "block" && e.block.isPinned && !done;
   const subtitle =
     e.kind === "part"
       ? `Step ${e.step}/${e.steps} · ${e.task.title}`
-      : task && !done
+      : e.kind === "overdue"
+        ? left > 0 ? `${left} step${left > 1 ? "s" : ""} left` : null
+        : task && !done
         ? `Due ${formatDeadline(task.deadline, now)}`
         : null;
 
@@ -229,11 +276,15 @@ function Card({
           className={`min-w-0 flex-1 text-left ${done ? "opacity-50" : ""}`}
         >
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-            <span>
-              {formatTime(new Date(e.start).toISOString())} – {formatTime(new Date(e.end).toISOString())} · {formatDuration(minutes)}
-            </span>
+            {e.kind === "overdue" ? (
+              <span>Was due {new Date(e.start).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+            ) : (
+              <span>
+                {formatTime(new Date(e.start).toISOString())} – {formatTime(new Date(e.end).toISOString())} · {formatDuration(minutes)}
+              </span>
+            )}
             {pinned && <Pin aria-label="Pinned" className="h-3 w-3 text-foreground" />}
-            {hue && <span className="hue-badge">{HUE_META[hue].label}</span>}
+            {hue && <span className="hue-badge">{e.kind === "overdue" ? formatOverdue(e.task.deadline, now) : HUE_META[hue].label}</span>}
           </p>
           <p title={title} className={`line-clamp-2 break-words text-sm font-medium ${done ? "line-through" : ""}`}>
             {title}
@@ -243,6 +294,26 @@ function Card({
         </button>
 
         <span className="flex shrink-0 items-center gap-1">
+          {isLate && (
+            <>
+              <button
+                type="button"
+                onClick={onReschedule}
+                className="flex items-center gap-1 rounded-full bg-foreground px-2.5 py-1.5 text-xs font-medium text-background transition hover:opacity-90"
+              >
+                <CalendarClock className="h-3.5 w-3.5" /> Reschedule
+              </button>
+              <button
+                type="button"
+                onClick={onRemove}
+                aria-label={`Delete ${title}`}
+                title="Delete"
+                className="rounded-full border border-line p-1.5 text-muted transition hover:border-red-500 hover:text-red-500"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </>
+          )}
           {onEditTime && !done && (
             <button
               type="button"

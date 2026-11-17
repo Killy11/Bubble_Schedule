@@ -8,7 +8,7 @@ import { adminDb, adminMessaging } from "@/lib/firebase/admin";
  *
  *  - due soon: active task whose deadline is within the next SOON_MIN minutes   -> sets `notified: true`
  *  - overdue : active task whose deadline passed within the last OVERDUE_MIN    -> sets `notifiedOverdue: true`
- *              and marks the task `expired` (it leaves the bubble canvas; the user can reschedule it)
+ *              (the task stays on the canvas as Overdue until the user reschedules, finishes or deletes it)
  *
  * Each flag is claimed in a transaction BEFORE sending, so overlapping runs can't double-send; if every
  * send fails the claim is released so the next run retries.
@@ -78,19 +78,19 @@ export async function GET(request: Request) {
         tx.update(
           job.ref,
           job.kind === "overdue"
-            ? { notified: true, notifiedOverdue: true, status: "expired", expiredAt: FieldValue.serverTimestamp() }
+            ? { notified: true, notifiedOverdue: true }
             : { notified: true },
         );
         return true;
       });
       if (!claimed) continue;
 
-      const body = job.kind === "overdue" ? "Its deadline passed. Open the app to reschedule it." : `Due in ${job.minutes} min.`;
+      const body = job.kind === "overdue" ? "This task is now overdue. Open the app to reschedule it." : `Due in ${job.minutes} min.`;
       try {
         // Data-only: public/firebase-messaging-sw.js builds the notification.
         const res = await adminMessaging().sendEachForMulticast({
           tokens,
-          data: { title: job.kind === "overdue" ? `Expired: ${job.title}` : job.title, body, url: "/dashboard", blockId: `${job.ref.id}_${job.kind}` },
+          data: { title: job.kind === "overdue" ? `Overdue: ${job.title}` : job.title, body, url: "/dashboard", blockId: `${job.ref.id}_${job.kind}` },
           webpush: { headers: { Urgency: "high", TTL: "1800" } },
         });
         const dead = tokens.filter((_, i) => {

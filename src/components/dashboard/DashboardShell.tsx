@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, Calendar, Clock, MessageCircle, Plus, Sparkles } from "lucide-react";
+import { Archive, Calendar, MessageCircle, Plus, Sparkles } from "lucide-react";
 import { useReducedMotion } from "framer-motion";
 import { Orb } from "@/components/Orb";
 import { useAuth } from "@/context/AuthProvider";
@@ -19,7 +19,7 @@ import { markOnboardingComplete } from "@/lib/firebase/users";
 import { BubbleCanvas } from "@/components/bubbles/BubbleCanvas";
 import { POP_MS } from "@/components/bubbles/Bubble";
 import { CompletedSheet } from "@/components/bubbles/CompletedSheet";
-import { ExpiredSheet } from "@/components/bubbles/ExpiredSheet";
+import { RescheduleSheet } from "@/components/bubbles/RescheduleSheet";
 import { OnboardingTour } from "@/components/OnboardingTour";
 import { TaskDetailSheet } from "@/components/bubbles/TaskDetailSheet";
 import { TaskFormSheet } from "@/components/bubbles/TaskFormSheet";
@@ -37,7 +37,6 @@ import type { NewTaskInput } from "@/hooks/useTasks";
 
 const ONBOARDED_KEY = "bs:onboarded";
 const PACING_KEY = "bs:pacing";
-const EXPIRED_SEEN_KEY = "bs:expiredSeenAt";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function readLocal(key: string): string | null {
@@ -67,7 +66,7 @@ export function DashboardShell() {
   const reducedMotion = useReducedMotion();
   const history = useHistory(uid);
 
-  const [expiredOpen, setExpiredOpen] = useState(false);
+  const [rescheduleId, setRescheduleId] = useState<string | null>(null);
   const [completedOpen, setCompletedOpen] = useState(false);
   const [popping, setPopping] = useState<ReadonlySet<string>>(new Set());
   const [tourOpen, setTourOpen] = useState(false);
@@ -82,16 +81,15 @@ export function DashboardShell() {
   };
   const [tourDismissed, setTourDismissed] = useState(() => readLocal(ONBOARDED_KEY) === "1");
 
-  // Bubbles that expired just now: say which, and offer a one-tap way to bring them back.
-  const handleExpired = useCallback(
-    (expired: Task[]) => {
-      const first = expired[0];
+  // A bubble just passed its deadline: it stays on the canvas as Overdue; offer a way to move it.
+  const handleOverdue = useCallback(
+    (late: Task[]) => {
+      const first = late[0];
       toast({
-        title: expired.length === 1 ? `“${first.title}” expired` : `${expired.length} bubbles expired`,
-        body: expired.length === 1 ? "Its deadline passed. Reschedule it?" : `“${first.title}” and ${expired.length - 1} more passed their deadline.`,
-        action: { label: "Reschedule", onClick: () => setExpiredOpen(true) },
+        title: late.length === 1 ? `“${first.title}” is overdue` : `${late.length} bubbles are overdue`,
+        body: late.length === 1 ? "Its deadline passed. Reschedule it or finish it." : `“${first.title}” and ${late.length - 1} more passed their deadline.`,
+        action: late.length === 1 ? { label: "Reschedule", onClick: () => setRescheduleId(first.id) } : undefined,
       });
-      writeLocal(EXPIRED_SEEN_KEY, String(Date.now()));
     },
     [toast],
   );
@@ -99,7 +97,7 @@ export function DashboardShell() {
   const {
     tasks, loading: tasksLoading, error, addTask, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, logMinutes,
     startTimer, stopTimer, setRecurrence, updateTask, saveSubtasks, toggleSubtask, reschedule,
-  } = useTasks(uid, timezone, now, handleExpired);
+  } = useTasks(uid, timezone, now, handleOverdue);
 
   // Big tasks are split into scheduled parts automatically (and on demand from the task modal).
   const { working: splitting, split } = useDecompose(
@@ -165,26 +163,11 @@ export function DashboardShell() {
   }, [loading, user, router]);
 
   const active = useMemo(() => tasks.filter((t) => t.status === "active"), [tasks]);
-  const expired = useMemo(
-    () => tasks.filter((t) => t.status === "expired").sort((a, b) => b.deadline.localeCompare(a.deadline)).slice(0, 30),
-    [tasks],
-  );
-
   const completed = useMemo(
     () => tasks.filter((t) => t.status === "completed").sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? "")),
     [tasks],
   );
-
-  // Expired while the app was closed (e.g. by the server): mention it once on the next visit.
-  const welcomed = useRef(false);
-  useEffect(() => {
-    if (tasksLoading || welcomed.current) return;
-    welcomed.current = true;
-    const seen = Number(readLocal(EXPIRED_SEEN_KEY) ?? 0);
-    const missed = expired.filter((t) => Date.parse(t.expiredAt ?? t.deadline) > seen);
-    if (seen > 0 && missed.length) handleExpired(missed);
-    else writeLocal(EXPIRED_SEEN_KEY, String(Date.now()));
-  }, [tasksLoading, expired, handleExpired]);
+  const rescheduleTask = tasks.find((t) => t.id === rescheduleId && t.status === "active") ?? null;
 
   // First-run tutorial: a brand-new account (no tasks yet) that hasn't seen it.
   const autoTour =
@@ -345,14 +328,6 @@ export function DashboardShell() {
                   <Archive className="h-3.5 w-3.5" /> Completed ({completed.length})
                 </button>
               )}
-              {expired.length > 0 && (
-                <button
-                  onClick={() => setExpiredOpen(true)}
-                  className="flex items-center gap-1.5 rounded-full glass px-4 py-2 text-xs font-medium text-muted transition hover:text-foreground"
-                >
-                  <Clock className="h-3.5 w-3.5" /> Expired ({expired.length})
-                </button>
-              )}
               <button
                 onClick={() => send("auto-schedule")}
                 disabled={pending || active.length === 0}
@@ -418,6 +393,11 @@ export function DashboardShell() {
                 tasks={active}
                 now={now}
                 onEditBlockTime={setEditBlockId}
+                onReschedule={setRescheduleId}
+                onRemoveTask={(id) => {
+                  const t = tasks.find((x) => x.id === id);
+                  if (t) void removeTask(t);
+                }}
                 onOpenTask={setOpenId}
                 onOpenPart={(taskId, subId) => setOpenPart({ taskId, subId })}
                 pacing={defaultPacing}
@@ -462,13 +442,14 @@ export function DashboardShell() {
 
       <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
       <TaskFormSheet open={formOpen} onClose={() => setFormOpen(false)} onSubmit={addTask} history={history} defaultPacing={defaultPacing} />
-      <ExpiredSheet
-        open={expiredOpen}
-        tasks={expired}
+      <RescheduleSheet
+        task={rescheduleTask}
         now={now}
-        onClose={() => setExpiredOpen(false)}
-        onReschedule={reschedule}
-        onDelete={removeTask}
+        onClose={() => setRescheduleId(null)}
+        onReschedule={async (t, iso) => {
+          await reschedule(t, iso);
+          toast({ title: "Rescheduled", body: `“${t.title}” is now due ${new Date(iso).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}. Re-planning your schedule…` });
+        }}
       />
       <CompletedSheet
         open={completedOpen}
@@ -515,6 +496,7 @@ export function DashboardShell() {
         onToggleSubtask={(t, s, checked) => (checked === !s.completed ? toggleSubtaskFlow(t, s) : Promise.resolve())}
         onSaveSubtasks={saveSubtasks}
         onSplit={(t, n) => void split(t, n)}
+        onReschedule={(t) => setRescheduleId(t.id)}
         onEdit={async (t, patch) => {
           await updateTask(t, patch);
           if (patch.title.trim() !== t.title) await renameTaskBlocks(t.id, patch.title.trim()).catch(() => {});

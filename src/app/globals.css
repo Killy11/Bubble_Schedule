@@ -57,6 +57,7 @@ body {
   .orb-text { text-shadow: 0 1px 8px rgb(0 0 0 / 0.55); }
 
   /* Dark: neon glow on a near-black core */
+  :root[data-theme="dark"] .orb-overdue { --h1: 157 23 77; --h2: 112 26 117; --rim: 236 72 153; }  /* deep plum-crimson, pink rim: past its deadline */
   :root[data-theme="dark"] .orb-red { --h1: 255 36 70; --h2: 185 16 56; --rim: 255 77 90; }      /* crimson, bright red rim */
   :root[data-theme="dark"] .orb-yellow { --h1: 251 191 36; --h2: 217 119 6; --rim: 253 224 71; } /* amber-gold, luminous rim */
   :root[data-theme="dark"] .orb-green { --h1: 16 185 129; --h2: 5 150 105; --rim: 74 255 140; }  /* emerald, neon green rim */
@@ -73,6 +74,7 @@ body {
   }
 
   /* Light: frosted glass tinted rose / amber / mint with a fine coloured edge */
+  :root:not([data-theme="dark"]) .orb-overdue { --h1: 157 23 77; --h2: 134 25 143; --rim: 131 24 67; }
   :root:not([data-theme="dark"]) .orb-red { --h1: 244 63 94; --h2: 251 113 133; --rim: 225 29 72; }
   :root:not([data-theme="dark"]) .orb-yellow { --h1: 250 190 40; --h2: 251 146 60; --rim: 217 119 6; }
   :root:not([data-theme="dark"]) .orb-green { --h1: 52 211 153; --h2: 74 222 128; --rim: 22 163 74; }
@@ -91,9 +93,11 @@ body {
   }
 
   /* Traffic-light accent colour for badges, dots and progress (text-safe on each theme) */
+  .hue-overdue { --c: 157 23 77; }
   .hue-red { --c: 220 38 38; }
   .hue-yellow { --c: 161 98 7; }
   .hue-green { --c: 21 128 61; }
+  :root[data-theme="dark"] .hue-overdue { --c: 244 114 182; }
   :root[data-theme="dark"] .hue-red { --c: 255 99 110; }
   :root[data-theme="dark"] .hue-yellow { --c: 251 191 36; }
   :root[data-theme="dark"] .hue-green { --c: 74 222 128; }

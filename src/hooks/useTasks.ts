@@ -48,7 +48,8 @@ export function useTasks(
   uid: string | undefined,
   timezone: string,
   now: number,
-  onExpired?: (tasks: Task[]) => void,
+  /** Called with tasks that pass their deadline while the app is open. */
+  onOverdue?: (tasks: Task[]) => void,
 ) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -380,59 +381,77 @@ export function useTasks(
     [uid],
   );
 
-  /** Bring an expired (or active) task back with a new deadline. */
+  /**
+   * Move an overdue (or any) task to a new deadline. Its old part slots are in the past, so they are
+   * cleared: the re-plan that follows the deadline change gives the parts fresh slots.
+   */
   const reschedule = useCallback(
     async (task: Task, deadlineIso: string) => {
       if (!uid) return;
+      const nowMs = Date.now();
+      const stale = (s: Subtask) => !s.completed && !!s.scheduledEnd && Date.parse(s.scheduledEnd) < nowMs;
+      const subtasks = task.subtasks?.some(stale)
+        ? task.subtasks.map((s) => {
+            if (!stale(s)) return s;
+            const { scheduledStart: _a, scheduledEnd: _b, pinned: _c, ...rest } = s;
+            void _a; void _b; void _c;
+            return rest;
+          })
+        : null;
       await updateDoc(doc(db, "users", uid, "tasks", task.id), {
         status: "active",
         deadline: new Date(deadlineIso),
         expiredAt: deleteField(),
         notified: false,
         notifiedOverdue: false,
+        ...(subtasks ? { subtasks: toFirestoreData(subtasks) } : {}),
         updatedAt: new Date(),
       });
     },
     [uid],
   );
 
-  // ── Auto-expire: an active task whose deadline has passed leaves the canvas ──────────
-  const expiring = useRef(new Set<string>());
-  const onExpiredRef = useRef(onExpired);
-  useEffect(() => {
-    onExpiredRef.current = onExpired;
-  });
+  const sweptSeries = useRef(new Set<string>());
 
+  // ── Overdue tasks are never removed: they stay on the canvas in their own "Overdue" state. ──
+  // Here we only (a) tell the user when something becomes overdue while the app is open, and
+  // (b) make sure a recurring task's next occurrence exists even if the old one is never finished.
+  const seenOverdue = useRef<Set<string> | null>(null);
+  const onOverdueRef = useRef(onOverdue);
+  useEffect(() => {
+    onOverdueRef.current = onOverdue;
+  });
   useEffect(() => {
     if (!uid || loading) return;
-    const overdue = tasks.filter(
-      (t) => t.status === "active" && Date.parse(t.deadline) <= now && !expiring.current.has(t.id),
-    );
-    if (overdue.length === 0) return;
-    overdue.forEach((t) => expiring.current.add(t.id));
-    void (async () => {
-      const done: Task[] = [];
-      for (const t of overdue) {
-        try {
-          const at = new Date();
-          await updateDoc(doc(db, "users", uid, "tasks", t.id), {
-            status: "expired",
-            expiredAt: at,
-            updatedAt: at,
-          });
-          done.push(t);
-          if (t.recurrence) await ensureNext({ ...t, status: "expired" });
-        } catch (e) {
-          console.warn("expire failed:", t.id, e);
-          expiring.current.delete(t.id); // retry on the next tick
-        }
-      }
-      if (done.length) onExpiredRef.current?.(done);
-    })();
+    const overdue = tasks.filter((t) => t.status === "active" && Date.parse(t.deadline) < now);
+    if (seenOverdue.current === null) {
+      seenOverdue.current = new Set(overdue.map((t) => t.id)); // already overdue when the app opened: no toast
+    } else {
+      const fresh = overdue.filter((t) => !seenOverdue.current!.has(t.id));
+      fresh.forEach((t) => seenOverdue.current!.add(t.id));
+      if (fresh.length) onOverdueRef.current?.(fresh);
+    }
+    for (const t of overdue) {
+      if (!t.recurrence || t.nextSpawned || sweptSeries.current.has(`o:${t.id}`)) continue;
+      sweptSeries.current.add(`o:${t.id}`);
+      ensureNext(t).catch((e) => console.warn("recurrence (overdue) failed:", e));
+    }
   }, [uid, loading, tasks, now, ensureNext]);
 
+  // Tasks that older versions marked "expired" are brought back: they show as Overdue now.
+  const revived = useRef(new Set<string>());
+  useEffect(() => {
+    if (!uid || loading) return;
+    for (const t of tasks) {
+      if (t.status !== "expired" || revived.current.has(t.id)) continue;
+      revived.current.add(t.id);
+      updateDoc(doc(db, "users", uid, "tasks", t.id), { status: "active", expiredAt: deleteField(), updatedAt: new Date() }).catch(
+        (e) => console.warn("revive failed:", e),
+      );
+    }
+  }, [uid, loading, tasks]);
+
   // ── New-day / app-load sweep: a series whose latest occurrence ended without a successor ──
-  const sweptSeries = useRef(new Set<string>());
   useEffect(() => {
     if (!uid || loading) return;
     const latest = new Map<string, Task>();

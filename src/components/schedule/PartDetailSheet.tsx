@@ -7,7 +7,7 @@ import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
 import { effectivePriority } from "@/lib/bubbles/effective";
 import { PACING_META, pacingOf } from "@/lib/pacing";
 import { formatDuration, formatWindow, subtaskProgress } from "@/lib/subtasks";
-import { formatDeadline } from "@/lib/time";
+import { formatDeadline, formatOverdue } from "@/lib/time";
 import type { Subtask, Task } from "@/types";
 
 /** One scheduled step, with the context of the bigger task it belongs to. */
@@ -73,7 +73,7 @@ export function PartDetailSheet({
                 <span className="hue-badge"><span className="hue-dot h-2 w-2 rounded-full" /> {HUE_META[hue].label}</span>
                 {priority && <span>{priority[0].toUpperCase() + priority.slice(1)} priority</span>}
                 <span>· {PACING_META[pacingOf(task)].label}</span>
-                <span>· due {formatDeadline(task.deadline, now)}</span>
+                <span>· {hue === "overdue" ? formatOverdue(task.deadline, now) : `due ${formatDeadline(task.deadline, now)}`}</span>
               </p>
             </div>
 

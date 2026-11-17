@@ -62,10 +62,17 @@ export function formatTime(iso: ISODateTime): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** "Today 14:30", "Tomorrow 09:00", "Nov 18, 09:00", or "Overdue". */
+/** "Overdue · 5h ago" / "Overdue · 1d ago" / "Overdue · 12m ago" for a deadline that has passed. */
+export function formatOverdue(iso: ISODateTime, now: number): string {
+  const min = Math.max(1, Math.round((now - new Date(iso).getTime()) / 60_000));
+  const ago = min < 60 ? `${min}m` : min < 24 * 60 ? `${Math.round(min / 60)}h` : `${Math.round(min / (24 * 60))}d`;
+  return `Overdue · ${ago} ago`;
+}
+
+/** "Today 14:30", "Tomorrow 09:00", "Nov 18, 09:00", or "Overdue · 5h ago". */
 export function formatDeadline(iso: ISODateTime, now: number): string {
   const d = new Date(iso);
-  if (d.getTime() < now) return "Overdue";
+  if (d.getTime() < now) return formatOverdue(iso, now);
   const startOfDay = (t: number) => new Date(t).setHours(0, 0, 0, 0);
   const days = Math.round((startOfDay(d.getTime()) - startOfDay(now)) / 86_400_000);
   const time = formatTime(iso);
