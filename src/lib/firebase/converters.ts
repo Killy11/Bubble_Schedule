@@ -6,6 +6,7 @@ import type {
 import type {
   ChatMessage,
   Device,
+  HistoryRecord,
   Reminder,
   Schedule,
   Task,
@@ -25,6 +26,8 @@ const DATE_KEYS = new Set([
   "lastSeenAt",
   "deadline",
   "completedAt",
+  "startedAt",
+  "expiredAt",
   "estimatedAt",
   "start",
   "end",
@@ -99,3 +102,4 @@ export const scheduleConverter = makeConverter<Schedule>("dateKey");
 export const messageConverter = makeConverter<ChatMessage>("id");
 export const deviceConverter = makeConverter<Device>();
 export const reminderConverter = makeConverter<Reminder>("id");
+export const historyConverter = makeConverter<HistoryRecord>("id");

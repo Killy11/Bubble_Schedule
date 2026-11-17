@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, LogOut } from "lucide-react";
+import { HelpCircle, Loader2, LogOut } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -10,12 +10,14 @@ export function Header({
   name,
   photoURL,
   onOpenProfile,
+  onOpenHelp,
   onSignOut,
 }: {
   summary: string;
   name: string;
   photoURL?: string | null;
   onOpenProfile: () => void;
+  onOpenHelp: () => void;
   onSignOut: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
@@ -31,6 +33,15 @@ export function Header({
         </p>
 
         <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenHelp}
+            aria-label="Show the tutorial"
+            title="How BubbleSchedule works"
+            className="glass flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:text-foreground"
+          >
+            <HelpCircle className="h-4 w-4" />
+          </button>
           <ThemeToggle />
           <button
             type="button"

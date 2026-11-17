@@ -10,7 +10,8 @@ import { taskWeight } from "@/lib/bubbles/weight";
 import { DEFAULT_SETTINGS } from "@/lib/firebase/users";
 import { sanitizeSettings } from "@/lib/ai/horizon";
 import { minutesOfDay, toLocalNaive, weekdayOf } from "@/lib/time";
-import type { ChangeSummary, ChatMessage, Schedule, ScheduleBlock, Task, User } from "@/types";
+import { suggestDuration } from "@/lib/history";
+import type { ChangeSummary, ChatMessage, HistoryRecord, Schedule, ScheduleBlock, Task, User } from "@/types";
 import type { ScheduleRequest, ScheduleResponse } from "@/types/api";
 
 export const maxDuration = 60;
@@ -42,12 +43,14 @@ export async function POST(request: Request) {
   if (Math.abs(now.getTime() - Date.now()) > 10 * 60_000) return err("Your device clock looks wrong", 400);
 
   const db = adminDb();
-  const [userSnap, taskSnap, schedSnap, msgSnap] = await Promise.all([
+  const [userSnap, taskSnap, schedSnap, msgSnap, histSnap] = await Promise.all([
     db.doc(`users/${uid}`).get(),
     db.collection(`users/${uid}/tasks`).where("status", "==", "active").orderBy("deadline", "asc").limit(MAX_TASKS).get(),
     db.doc(`users/${uid}/schedules/${body.targetDate}`).get(),
     db.collection(`users/${uid}/messages`).orderBy("createdAt", "desc").limit(8).get(),
+    db.collection(`users/${uid}/history`).orderBy("completedAt", "desc").limit(200).get(),
   ]);
+  const pastWork = histSnap.docs.map((d) => ({ ...fromFirestoreData<HistoryRecord>(d.data()), id: d.id }));
 
   const user = userSnap.exists ? fromFirestoreData<User>(userSnap.data()) : null;
   const tz = user?.timezone ?? "UTC";
@@ -162,6 +165,12 @@ export async function POST(request: Request) {
         tasks: toPlace, newTaskIds: new Set(newTasks.map((t) => t.id)), weights, locked,
         blocks: livePlanned.filter((b) => placeIds.has(b.taskId)),
         history, message, trigger: body.trigger,
+        durationHints: new Map(
+          toPlace.flatMap((t) => {
+            const h = suggestDuration(t.title, pastWork);
+            return h ? [[t.id, h] as const] : [];
+          }),
+        ),
       }),
     },
   ];

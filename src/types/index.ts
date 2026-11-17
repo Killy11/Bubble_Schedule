@@ -12,6 +12,8 @@ export interface User {
   settings: UserSettings;
   /** FCM registration tokens, one per browser/device that enabled notifications. */
   fcmTokens?: string[];
+  /** Set once the user has finished (or skipped) the first-run walkthrough. */
+  hasCompletedOnboarding?: boolean;
   createdAt: ISODateTime;
   lastLoginAt: ISODateTime;
 }
@@ -32,6 +34,23 @@ export interface Device {
   lastSeenAt: ISODateTime;
 }
 
+/** How a task repeats. "weekly" repeats on the weekday of its deadline; "custom" uses `days` (0–6, Sun=0). */
+export interface Recurrence {
+  type: "daily" | "weekdays" | "weekly" | "custom";
+  days?: number[];
+}
+
+/** users/{uid}/history/{taskId}: one record per completed task with a known actual duration. */
+export interface HistoryRecord {
+  id: string;
+  title: string;
+  normalizedTitle: string;
+  keywords: string[];
+  estimatedMin?: number;
+  actualMin: number;
+  completedAt: ISODateTime;
+}
+
 /** users/{uid}/tasks/{taskId} */
 export interface Task {
   id: string;
@@ -47,7 +66,16 @@ export interface Task {
     reasoning?: string;
     estimatedAt: ISODateTime;
   };
-  status: "active" | "completed";
+  status: "active" | "completed" | "expired";
+  /** Repeat rule. Occurrences of one series share `seriesId`; the next one is created when this one ends. */
+  recurrence?: Recurrence;
+  seriesId?: string;
+  /** The next occurrence has been created (so it is never created twice). */
+  nextSpawned?: boolean;
+  /** Set while the task's timer is running. */
+  startedAt?: ISODateTime;
+  /** Set when the deadline passed without the task being completed. */
+  expiredAt?: ISODateTime;
   /** Set by /api/cron/notifications once the "due soon" / "overdue" push has been sent. */
   notified?: boolean;
   notifiedOverdue?: boolean;

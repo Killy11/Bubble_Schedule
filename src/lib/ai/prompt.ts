@@ -1,6 +1,7 @@
 import type { ChatMessage, ScheduleBlock, Task, UserSettings } from "@/types";
 import { minutesOfDay, toLocalNaive } from "@/lib/time";
 import { latestEndMs, planningDays } from "./horizon";
+import type { DurationSuggestion } from "@/lib/history";
 
 export type ScheduleMode = "locked" | "incremental" | "adjust" | "rebuild";
 
@@ -13,6 +14,7 @@ Rules:
 - You are given "tasksToPlace" only. Place each one at most once (one block per task). "lockedBlocks" are other tasks already fixed on the calendar: they are IMMOVABLE, so never overlap them and never output them. Locked blocks with "pinned": true were set by hand by the user: they are hard constraints in every mode (even "rebuild"), so plan all other tasks around them. If the user asks you to move a pinned block, do not; tell them in "reply" to edit or unpin it themselves.
 - Blocks must not overlap. Leave short 5–10 minute gaps between long blocks when there is room.
 - Each task has a "weight" (0–1) combining priority and deadline urgency. Higher-weight tasks get the earliest suitable slots; lower-weight tasks fill the remaining time.
+- HISTORY: a task may carry "historicalAvgMin" and "historySamples": how long this user actually took on similar tasks they finished before. When durationMin is null, base your duration estimate on historicalAvgMin (adjust only if the title clearly describes something much bigger or smaller), and say so in that estimate's reasoning, e.g. "You usually take ~45 min on similar tasks".
 - Add a taskEstimates entry for every task whose durationMin OR priority is null (your estimate for the missing value; the user's own values are never overridden). If durationMin is set, the block must be exactly that long (minus loggedMinutes when it is above 0, but at least 15 minutes).
 
 SCHEDULING STRATEGY:
@@ -39,6 +41,8 @@ export interface PromptContext {
   locked: ScheduleBlock[];
   blocks: ScheduleBlock[]; // current blocks of tasksToPlace
   history: ChatMessage[];
+  /** taskId → duration suggested by the user's completed-task history */
+  durationHints?: Map<string, DurationSuggestion>;
   message?: string;
   trigger: "auto-schedule" | "user-message";
 }
@@ -72,6 +76,8 @@ export function buildUserPrompt(c: PromptContext): string {
       deadline: local(t.deadline),
       mustEndBy: local(new Date(latestEndMs(Date.parse(t.deadline), nowMs, t.durationMin ?? t.aiEstimate?.durationMin ?? c.settings.defaultTaskMinutes)).toISOString()),
       durationMin: t.durationMin ?? null,
+      historicalAvgMin: c.durationHints?.get(t.id)?.minutes ?? null,
+      historySamples: c.durationHints?.get(t.id)?.samples ?? 0,
       loggedMinutes: t.loggedMinutes ?? 0,
       priority: t.priority ?? null,
       weight: Number((c.weights.get(t.id) ?? 0).toFixed(2)),

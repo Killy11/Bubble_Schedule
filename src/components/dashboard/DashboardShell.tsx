@@ -1,17 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, MessageCircle, Plus, Sparkles } from "lucide-react";
+import { Calendar, Clock, MessageCircle, Plus, Sparkles } from "lucide-react";
+import { useReducedMotion } from "framer-motion";
 import { Orb } from "@/components/Orb";
 import { useAuth } from "@/context/AuthProvider";
+import { useToast } from "@/context/ToastProvider";
+import { useHistory } from "@/hooks/useHistory";
 import { useChat } from "@/hooks/useChat";
 import { useNow } from "@/hooks/useNow";
 import { useSchedule } from "@/hooks/useSchedule";
 import { useTasks } from "@/hooks/useTasks";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { dateKeyInTz, formatTime } from "@/lib/time";
+import { describeSuggestion, suggestDuration } from "@/lib/history";
+import { markOnboardingComplete } from "@/lib/firebase/users";
 import { BubbleCanvas } from "@/components/bubbles/BubbleCanvas";
+import { POP_MS } from "@/components/bubbles/Bubble";
+import { ExpiredSheet } from "@/components/bubbles/ExpiredSheet";
+import { OnboardingTour } from "@/components/OnboardingTour";
 import { TaskDetailSheet } from "@/components/bubbles/TaskDetailSheet";
 import { TaskFormSheet } from "@/components/bubbles/TaskFormSheet";
 import { ChatPanel } from "@/components/chat/ChatPanel";
@@ -20,6 +28,24 @@ import { BlockEditSheet } from "@/components/schedule/BlockEditSheet";
 import { ProfileSheet } from "@/components/profile/ProfileSheet";
 import { Header } from "./Header";
 import type { Task } from "@/types";
+import type { NewTaskInput } from "@/hooks/useTasks";
+
+const ONBOARDED_KEY = "bs:onboarded";
+const EXPIRED_SEEN_KEY = "bs:expiredSeenAt";
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+function readLocal(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function writeLocal(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
 
 type Tab = "bubbles" | "schedule" | "chat";
 
@@ -28,12 +54,46 @@ export function DashboardShell() {
   const { user, loading, signOut } = useAuth();
   const uid = user?.uid;
   const now = useNow();
-  const { timezone } = useUserProfile(uid);
+  const { profile, timezone } = useUserProfile(uid);
   const today = dateKeyInTz(now, timezone);
+  const { toast } = useToast();
+  const reducedMotion = useReducedMotion();
+  const history = useHistory(uid);
 
-  const { tasks, loading: tasksLoading, error, addTask, deleteTask, setCompleted, logMinutes } = useTasks(uid);
+  const [expiredOpen, setExpiredOpen] = useState(false);
+  const [popping, setPopping] = useState<ReadonlySet<string>>(new Set());
+  const [tourOpen, setTourOpen] = useState(false);
+  const [tourDismissed, setTourDismissed] = useState(() => readLocal(ONBOARDED_KEY) === "1");
+
+  // Bubbles that expired just now: say which, and offer a one-tap way to bring them back.
+  const handleExpired = useCallback(
+    (expired: Task[]) => {
+      const first = expired[0];
+      toast({
+        title: expired.length === 1 ? `“${first.title}” expired` : `${expired.length} bubbles expired`,
+        body: expired.length === 1 ? "Its deadline passed. Reschedule it?" : `“${first.title}” and ${expired.length - 1} more passed their deadline.`,
+        action: { label: "Reschedule", onClick: () => setExpiredOpen(true) },
+      });
+      writeLocal(EXPIRED_SEEN_KEY, String(Date.now()));
+    },
+    [toast],
+  );
+
+  const {
+    tasks, loading: tasksLoading, error, addTask, deleteTask, complete, logMinutes,
+    startTimer, stopTimer, setRecurrence, reschedule,
+  } = useTasks(uid, timezone, now, handleExpired);
   const { schedule, markTaskBlocksDone, editBlock } = useSchedule(uid, today);
-  const { messages, pending, send, ask } = useChat(uid, today, addTask);
+
+  // Tasks made without a duration (e.g. from chat) get one from similar tasks the user finished before.
+  const addTaskSmart = useCallback(
+    (input: NewTaskInput) => {
+      const s = input.durationMin ? null : suggestDuration(input.title, history);
+      return addTask(s ? { ...input, historyEstimate: { durationMin: s.minutes, reasoning: describeSuggestion(s) } } : input);
+    },
+    [addTask, history],
+  );
+  const { messages, pending, send, ask } = useChat(uid, today, addTaskSmart);
 
   const [tab, setTab] = useState<Tab>("bubbles");
   const [formOpen, setFormOpen] = useState(false);
@@ -49,6 +109,31 @@ export function DashboardShell() {
   }, [loading, user, router]);
 
   const active = useMemo(() => tasks.filter((t) => t.status === "active"), [tasks]);
+  const expired = useMemo(
+    () => tasks.filter((t) => t.status === "expired").sort((a, b) => b.deadline.localeCompare(a.deadline)).slice(0, 30),
+    [tasks],
+  );
+
+  // Expired while the app was closed (e.g. by the server): mention it once on the next visit.
+  const welcomed = useRef(false);
+  useEffect(() => {
+    if (tasksLoading || welcomed.current) return;
+    welcomed.current = true;
+    const seen = Number(readLocal(EXPIRED_SEEN_KEY) ?? 0);
+    const missed = expired.filter((t) => Date.parse(t.expiredAt ?? t.deadline) > seen);
+    if (seen > 0 && missed.length) handleExpired(missed);
+    else writeLocal(EXPIRED_SEEN_KEY, String(Date.now()));
+  }, [tasksLoading, expired, handleExpired]);
+
+  // First-run tutorial: a brand-new account (no tasks yet) that hasn't seen it.
+  const autoTour =
+    !!profile && !profile.hasCompletedOnboarding && !tasksLoading && tasks.length === 0 && !tourDismissed;
+  const closeTour = () => {
+    setTourOpen(false);
+    setTourDismissed(true);
+    writeLocal(ONBOARDED_KEY, "1");
+    if (uid) markOnboardingComplete(uid).catch((e) => console.warn("onboarding flag:", e));
+  };
   const openTask = active.find((t) => t.id === openId) ?? null;
   const doneToday = tasks.filter(
     (t) => t.status === "completed" && t.completedAt && dateKeyInTz(t.completedAt, timezone) === today,
@@ -65,8 +150,22 @@ export function DashboardShell() {
     return parts.join(" · ");
   }, [tasksLoading, active.length, schedule, doneToday, now]);
 
-  async function completeTask(t: Task) {
-    await Promise.all([setCompleted(t.id), markTaskBlocksDone(t.id)]);
+  /** Pop the bubble first, then write the completion (so the canvas and Firestore change together). */
+  async function completeTask(t: Task, actualMin?: number) {
+    setPopping((p) => new Set(p).add(t.id));
+    try {
+      await sleep(reducedMotion ? 120 : POP_MS);
+      await Promise.all([complete(t, { actualMin }), markTaskBlocksDone(t.id)]);
+    } catch (e) {
+      console.warn("complete failed:", e);
+      toast({ title: "Couldn't complete that bubble", body: "Please try again." });
+    } finally {
+      setPopping((p) => {
+        const n = new Set(p);
+        n.delete(t.id);
+        return n;
+      });
+    }
   }
 
   if (loading || !user) {
@@ -91,6 +190,7 @@ export function DashboardShell() {
         name={user.displayName || user.email || "You"}
         photoURL={user.photoURL}
         onOpenProfile={() => setProfileOpen(true)}
+        onOpenHelp={() => setTourOpen(true)}
         onSignOut={async () => {
           await signOut();
           router.replace("/login");
@@ -103,6 +203,14 @@ export function DashboardShell() {
           <div className="mb-3 flex items-center justify-between">
             <h1 className="text-sm font-medium text-muted">Today&apos;s bubbles</h1>
             <div className="flex gap-2">
+              {expired.length > 0 && (
+                <button
+                  onClick={() => setExpiredOpen(true)}
+                  className="flex items-center gap-1.5 rounded-full glass px-4 py-2 text-xs font-medium text-muted transition hover:text-foreground"
+                >
+                  <Clock className="h-3.5 w-3.5" /> Expired ({expired.length})
+                </button>
+              )}
               <button
                 onClick={() => send("auto-schedule")}
                 disabled={pending || active.length === 0}
@@ -125,6 +233,7 @@ export function DashboardShell() {
               <BubbleCanvas
                 tasks={active}
                 now={now}
+                poppingIds={popping}
                 onOpen={(id) => {
                   // A scheduled bubble opens its time editor (with a link to the details); others open details.
                   const block = schedule?.blocks.find((b) => b.taskId === id && b.status !== "done");
@@ -194,7 +303,16 @@ export function DashboardShell() {
       </nav>
 
       <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
-      <TaskFormSheet open={formOpen} onClose={() => setFormOpen(false)} onSubmit={addTask} />
+      <TaskFormSheet open={formOpen} onClose={() => setFormOpen(false)} onSubmit={addTask} history={history} />
+      <ExpiredSheet
+        open={expiredOpen}
+        tasks={expired}
+        now={now}
+        onClose={() => setExpiredOpen(false)}
+        onReschedule={reschedule}
+        onDelete={(t) => deleteTask(t.id)}
+      />
+      <OnboardingTour open={tourOpen || autoTour} onClose={closeTour} />
       <BlockEditSheet
         block={schedule?.blocks.find((b) => b.id === editBlockId && b.status !== "done") ?? null}
         others={(schedule?.blocks ?? []).filter((b) => b.id !== editBlockId && b.status !== "done")}
@@ -213,6 +331,9 @@ export function DashboardShell() {
         onComplete={completeTask}
         onDelete={(t) => deleteTask(t.id)}
         onLogTime={(t, m) => logMinutes(t.id, m)}
+        onStartTimer={(t) => startTimer(t.id)}
+        onStopTimer={stopTimer}
+        onSetRecurrence={setRecurrence}
       />
     </div>
   );

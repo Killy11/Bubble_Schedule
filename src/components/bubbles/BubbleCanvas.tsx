@@ -13,10 +13,13 @@ export function BubbleCanvas({
   tasks,
   now,
   onOpen,
+  poppingIds,
 }: {
   tasks: Task[];
   now: number;
   onOpen: (id: string) => void;
+  /** Bubbles playing their pop animation (task being completed). */
+  poppingIds?: ReadonlySet<string>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -48,7 +51,7 @@ export function BubbleCanvas({
         {tasks.map((t, i) => {
           const place = placeById.get(t.id);
           return place ? (
-            <Bubble key={t.id} task={t} place={place} now={now} index={i} onOpen={onOpen} />
+            <Bubble key={t.id} task={t} place={place} now={now} index={i} onOpen={onOpen} popping={poppingIds?.has(t.id) ?? false} />
           ) : null;
         })}
       </AnimatePresence>

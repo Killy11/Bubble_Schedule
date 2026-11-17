@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Loader2, SendHorizontal, Sparkles } from "lucide-react";
+import { MicButton } from "@/components/MicButton";
 import type { ChatMessage } from "@/types";
 import type { ScheduleRequest } from "@/types/api";
 
@@ -97,9 +98,10 @@ export function ChatPanel({
             value={text}
             onChange={(e) => setText(e.target.value)}
             maxLength={1000}
-            placeholder="Add a task or ask for changes…"
+            placeholder="Type or speak a task, or ask for changes…"
             className="glass min-w-0 flex-1 rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-muted focus:border-[rgb(var(--glow-a))]"
           />
+          <MicButton value={text} onChange={(t) => setText(t.slice(0, 1000))} />
           <button
             type="submit"
             disabled={pending || !text.trim()}

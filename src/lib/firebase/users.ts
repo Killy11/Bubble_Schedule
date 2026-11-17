@@ -33,3 +33,8 @@ export async function upsertUserProfile(fbUser: FirebaseUser): Promise<void> {
   };
   await setDoc(ref, profile);
 }
+
+/** Remember that the user has seen (or skipped) the first-run tutorial. */
+export async function markOnboardingComplete(uid: string): Promise<void> {
+  await updateDoc(doc(db, "users", uid), { hasCompletedOnboarding: true });
+}

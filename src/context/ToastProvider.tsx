@@ -9,6 +9,8 @@ export interface ToastInput {
   body?: string;
   /** Called when the toast body is clicked (e.g. navigate to the schedule). */
   onClick?: () => void;
+  /** Optional button under the text (e.g. "Reschedule"). */
+  action?: { label: string; onClick: () => void };
 }
 interface ToastItem extends ToastInput {
   id: number;
@@ -60,6 +62,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <p className="break-words text-sm font-medium">{t.title}</p>
                 {t.body && <p className="mt-0.5 break-words text-xs text-muted">{t.body}</p>}
               </button>
+              {t.action && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    t.action?.onClick();
+                    dismiss(t.id);
+                  }}
+                  className="shrink-0 self-center rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background transition hover:opacity-90"
+                >
+                  {t.action.label}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => dismiss(t.id)}

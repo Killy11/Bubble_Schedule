@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { Orb } from "@/components/Orb";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -63,6 +63,7 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   // Firebase says we're signed in but proxy.ts let us through to /login (no/expired cookie):
   // re-mint the session cookie, then continue.
@@ -133,16 +134,27 @@ export default function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
             className="glass w-full rounded-full px-5 py-3 text-sm outline-none transition placeholder:text-muted focus:border-[rgb(var(--glow-a))]"
           />
-          <input
-            type="password"
-            required
-            minLength={6}
-            autoComplete={mode === "signup" ? "new-password" : "current-password"}
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="glass w-full rounded-full px-5 py-3 text-sm outline-none transition placeholder:text-muted focus:border-[rgb(var(--glow-a))]"
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              required
+              minLength={6}
+              autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              placeholder="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="glass w-full rounded-full py-3 pl-5 pr-12 text-sm outline-none transition placeholder:text-muted focus:border-[rgb(var(--glow-a))]"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-pressed={showPassword}
+              className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-muted transition hover:text-foreground"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
           <button
             type="submit"
             disabled={disabled}
