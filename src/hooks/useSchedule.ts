@@ -36,6 +36,57 @@ export function useSchedule(uid: string | undefined, dateKey: DateKey) {
     [uid, dateKey, schedule],
   );
 
+  /** Set every block of a task back to "planned" (undo / restore of a completion). */
+  const markTaskBlocksPlanned = useCallback(
+    async (taskId: string) => {
+      if (!uid) return;
+      const ref = doc(db, "users", uid, "schedules", dateKey).withConverter(scheduleConverter);
+      await runTransaction(db, async (tx) => {
+        const cur = (await tx.get(ref)).data();
+        if (!cur?.blocks.some((b) => b.taskId === taskId && b.status === "done")) return;
+        const blocks = cur.blocks.map((b) => (b.taskId === taskId ? { ...b, status: "planned" as const } : b));
+        tx.update(doc(db, "users", uid, "schedules", dateKey), { blocks: toFirestoreData(blocks), updatedAt: new Date() });
+      });
+    },
+    [uid, dateKey],
+  );
+
+  /** Remove tasks' blocks from the plan; returns them so a delete can be undone. */
+  const removeTaskBlocks = useCallback(
+    async (taskIds: string[]): Promise<ScheduleBlock[]> => {
+      if (!uid) return [];
+      const ids = new Set(taskIds);
+      const ref = doc(db, "users", uid, "schedules", dateKey).withConverter(scheduleConverter);
+      return runTransaction(db, async (tx) => {
+        const cur = (await tx.get(ref)).data();
+        const removed = cur?.blocks.filter((b) => ids.has(b.taskId)) ?? [];
+        if (!cur || removed.length === 0) return [];
+        tx.update(doc(db, "users", uid, "schedules", dateKey), {
+          blocks: toFirestoreData(cur.blocks.filter((b) => !ids.has(b.taskId))),
+          updatedAt: new Date(),
+        });
+        return removed;
+      });
+    },
+    [uid, dateKey],
+  );
+
+  /** Put blocks back (undo of a delete). Blocks already present are left alone. */
+  const restoreBlocks = useCallback(
+    async (restored: ScheduleBlock[]) => {
+      if (!uid || restored.length === 0) return;
+      const ref = doc(db, "users", uid, "schedules", dateKey).withConverter(scheduleConverter);
+      await runTransaction(db, async (tx) => {
+        const cur = (await tx.get(ref)).data();
+        if (!cur) return;
+        const have = new Set(cur.blocks.map((b) => b.id));
+        const blocks = [...cur.blocks, ...restored.filter((b) => !have.has(b.id))].sort((a, b) => a.start.localeCompare(b.start));
+        tx.update(doc(db, "users", uid, "schedules", dateKey), { blocks: toFirestoreData(blocks), updatedAt: new Date() });
+      });
+    },
+    [uid, dateKey],
+  );
+
   /** Keep the denormalized block titles in sync after a task is renamed. */
   const renameTaskBlocks = useCallback(
     async (taskId: string, title: string) => {
@@ -78,5 +129,7 @@ export function useSchedule(uid: string | undefined, dateKey: DateKey) {
     [patchBlock],
   );
 
-  return { schedule, markTaskBlocksDone, renameTaskBlocks, editBlock };
+  return {
+    schedule, markTaskBlocksDone, markTaskBlocksPlanned, removeTaskBlocks, restoreBlocks, renameTaskBlocks, editBlock,
+  };
 }

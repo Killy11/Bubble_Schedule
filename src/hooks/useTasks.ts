@@ -6,6 +6,7 @@ import {
   deleteDoc,
   deleteField,
   doc,
+  getDoc,
   increment,
   onSnapshot,
   orderBy,
@@ -13,6 +14,7 @@ import {
   runTransaction,
   setDoc,
   updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { historyConverter, taskConverter, toFirestoreData } from "@/lib/firebase/converters";
@@ -29,6 +31,12 @@ export interface NewTaskInput {
   recurrence?: Recurrence;
   /** Duration guessed from the user's history; stored as an AI-style estimate, not as a user value. */
   historyEstimate?: { durationMin: number; reasoning: string };
+}
+
+/** What it takes to take a completion back. */
+export interface CompleteUndo {
+  before: Task;
+  spawnedId: string | null;
 }
 
 const minutesSince = (iso: string, nowMs: number) => Math.max(0, Math.round((nowMs - Date.parse(iso)) / 60_000));
@@ -93,8 +101,8 @@ export function useTasks(
   );
 
   const deleteTask = useCallback(
-    async (id: string) => {
-      if (uid) await deleteDoc(doc(db, "users", uid, "tasks", id));
+    async (task: Task) => {
+      if (uid) await deleteDoc(doc(db, "users", uid, "tasks", task.id));
     },
     [uid],
   );
@@ -105,17 +113,20 @@ export function useTasks(
    * sweep) can never create duplicates.
    */
   const ensureNext = useCallback(
-    async (task: Task) => {
-      if (!uid || !task.recurrence) return;
+    async (task: Task): Promise<string | null> => {
+      if (!uid || !task.recurrence) return null;
       const next = nextOccurrence(task.deadline, task.recurrence, timezone, Date.now());
-      if (!next) return;
+      if (!next) return null;
       const series = task.seriesId ?? task.id;
       const nextRef = doc(db, "users", uid, "tasks", `${series}_${next.dateKey}`).withConverter(taskConverter);
       const prevRef = doc(db, "users", uid, "tasks", task.id);
       const nowIso = new Date().toISOString();
+      let createdId: string | null = null;
       await runTransaction(db, async (tx) => {
+        createdId = null; // the callback may run more than once
         const existing = await tx.get(nextRef);
         if (!existing.exists()) {
+          createdId = nextRef.id;
           const copy: Task = {
             id: nextRef.id,
             title: task.title,
@@ -134,14 +145,15 @@ export function useTasks(
         }
         tx.update(prevRef, { nextSpawned: true });
       });
+      return createdId;
     },
     [uid, timezone],
   );
 
   /** Complete a task: record the actual time, save it to the history, and create the next occurrence. */
   const complete = useCallback(
-    async (task: Task, opts: { actualMin?: number } = {}) => {
-      if (!uid) return;
+    async (task: Task, opts: { actualMin?: number } = {}): Promise<CompleteUndo | null> => {
+      if (!uid) return null;
       const nowDate = new Date();
       const tracked = (task.loggedMinutes ?? 0) + (task.startedAt ? minutesSince(task.startedAt, nowDate.getTime()) : 0);
       const picked = opts.actualMin ?? (tracked > 0 ? tracked : undefined);
@@ -160,6 +172,7 @@ export function useTasks(
       });
 
       // Best effort: the task is already completed, so a failure here must not look like one.
+      let spawnedId: string | null = null;
       const extras: Promise<unknown>[] = [];
       if (actual) {
         extras.push(
@@ -169,11 +182,90 @@ export function useTasks(
           ),
         );
       }
-      if (task.recurrence) extras.push(ensureNext(task));
+      if (task.recurrence) extras.push(ensureNext(task).then((id) => { spawnedId = id; }));
       const results = await Promise.allSettled(extras);
       for (const r of results) if (r.status === "rejected") console.warn("task completion follow-up failed:", r.reason);
+      return { before: task, spawnedId };
     },
     [uid, ensureNext],
+  );
+
+  /** Take back a completion made seconds ago: the task, its history record and any spawned next occurrence. */
+  const undoComplete = useCallback(
+    async ({ before, spawnedId }: CompleteUndo) => {
+      if (!uid) return;
+      await updateDoc(doc(db, "users", uid, "tasks", before.id), {
+        status: "active",
+        completedAt: deleteField(),
+        loggedMinutes: before.loggedMinutes ?? 0,
+        startedAt: before.startedAt ? new Date(before.startedAt) : deleteField(),
+        ...(before.subtasks ? { subtasks: toFirestoreData(before.subtasks) } : {}),
+        ...(before.nextSpawned ? {} : { nextSpawned: deleteField() }),
+        updatedAt: new Date(),
+      });
+      const cleanup: Promise<unknown>[] = [deleteDoc(doc(db, "users", uid, "history", before.id))];
+      if (spawnedId) {
+        // Only remove the auto-created copy if nobody has touched it since.
+        const ref = doc(db, "users", uid, "tasks", spawnedId);
+        cleanup.push(
+          getDoc(ref).then((snap) => {
+            const d = snap.data();
+            if (snap.exists() && d?.status === "active" && !(d.loggedMinutes > 0)) return deleteDoc(ref);
+          }),
+        );
+      }
+      const results = await Promise.allSettled(cleanup);
+      for (const r of results) if (r.status === "rejected") console.warn("undo cleanup failed:", r.reason);
+    },
+    [uid],
+  );
+
+  /**
+   * Bring a completed task back to the canvas. If every part was done, the last one is reopened
+   * (and its time taken back) so the task isn't "active" at 100%.
+   */
+  const restoreTask = useCallback(
+    async (task: Task) => {
+      if (!uid) return;
+      const subs = task.subtasks;
+      let reopen: Subtask | undefined;
+      if (subs?.length && subs.every((s) => s.completed)) {
+        reopen = [...subs].sort((a, b) => (b.scheduledStart ?? "").localeCompare(a.scheduledStart ?? ""))[0];
+      }
+      await updateDoc(doc(db, "users", uid, "tasks", task.id), {
+        status: "active",
+        completedAt: deleteField(),
+        updatedAt: new Date(),
+        ...(reopen && subs
+          ? {
+              subtasks: toFirestoreData(subs.map((s) => (s.id === reopen!.id ? { ...s, completed: false } : s))),
+              loggedMinutes: Math.max(0, (task.loggedMinutes ?? 0) - reopen.durationMinutes),
+            }
+          : {}),
+      });
+    },
+    [uid],
+  );
+
+  /** Bring back a task document that was just deleted (all fields as they were). */
+  const restoreDeleted = useCallback(
+    async (task: Task) => {
+      if (uid) await setDoc(doc(db, "users", uid, "tasks", task.id).withConverter(taskConverter), task);
+    },
+    [uid],
+  );
+
+  /** Permanently delete tasks (chunks of 400, under the batch limit). */
+  const deleteMany = useCallback(
+    async (ids: string[]) => {
+      if (!uid) return;
+      for (let i = 0; i < ids.length; i += 400) {
+        const batch = writeBatch(db);
+        for (const id of ids.slice(i, i + 400)) batch.delete(doc(db, "users", uid, "tasks", id));
+        await batch.commit();
+      }
+    },
+    [uid],
   );
 
   /**
@@ -356,6 +448,10 @@ export function useTasks(
     error,
     addTask,
     deleteTask,
+    deleteMany,
+    restoreDeleted,
+    restoreTask,
+    undoComplete,
     complete,
     logMinutes,
     startTimer,

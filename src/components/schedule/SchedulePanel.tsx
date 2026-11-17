@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, ListTree, Pencil, Pin, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { Archive, Check, ListTree, Pencil, Pin, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 import { formatDeadline, formatTime } from "@/lib/time";
 import type { ScheduleBlock } from "@/types";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
@@ -37,6 +38,10 @@ export function SchedulePanel({
   onOpenBlock,
   onOpenTask,
   onToggleSubtask,
+  allTasks,
+  onRestoreTask,
+  onDeleteTask,
+  onOpenCompleted,
 }: {
   schedule: Schedule | null;
   tasks: Task[];
@@ -45,8 +50,18 @@ export function SchedulePanel({
   onOpenBlock: (blockId: string) => void;
   onOpenTask: (taskId: string) => void;
   onToggleSubtask: (task: Task, sub: Subtask) => void;
+  /** Every task (any status), so finished blocks can offer Restore. */
+  allTasks: Task[];
+  onRestoreTask: (taskId: string) => void;
+  onDeleteTask: (taskId: string) => void;
+  onOpenCompleted: () => void;
 }) {
-  const blocks = schedule?.blocks ?? [];
+  const [showCompleted, setShowCompleted] = useState(false);
+  const allBlocks = schedule?.blocks ?? [];
+  const doneCount = allBlocks.filter((b) => b.status === "done").length;
+  // Finished blocks stay out of the timeline unless asked for.
+  const blocks = showCompleted ? allBlocks : allBlocks.filter((b) => b.status !== "done");
+  const everyTask = new Map(allTasks.map((t) => [t.id, t]));
   const change = schedule?.lastChange;
   const taskById = new Map(tasks.map((t) => [t.id, t]));
 
@@ -73,6 +88,29 @@ export function SchedulePanel({
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
+      <div className="flex items-center justify-between gap-2">
+        {doneCount > 0 ? (
+          <button
+            type="button"
+            onClick={() => setShowCompleted((v) => !v)}
+            aria-pressed={showCompleted}
+            className={`rounded-full px-3 py-1.5 text-xs transition ${
+              showCompleted ? "bg-foreground text-background" : "glass text-muted hover:text-foreground"
+            }`}
+          >
+            {showCompleted ? "Hide" : "Show"} completed ({doneCount})
+          </button>
+        ) : (
+          <span />
+        )}
+        <button
+          type="button"
+          onClick={onOpenCompleted}
+          className="glass flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-muted transition hover:text-foreground"
+        >
+          <Archive className="h-3.5 w-3.5" /> Completed
+        </button>
+      </div>
       {change && (
         <section className="glass rounded-2xl p-4">
           <div className="mb-1 flex items-center gap-2 text-xs font-medium text-[rgb(var(--glow-a))]">
@@ -98,7 +136,7 @@ export function SchedulePanel({
 
       {days.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted">
-          <p>Nothing scheduled for today yet.</p>
+          <p>{doneCount > 0 ? "Everything scheduled is done." : "Nothing scheduled for today yet."}</p>
           <p>
             Add some bubbles, then hit{" "}
             <span className="text-foreground">Auto-schedule</span>.
@@ -132,10 +170,10 @@ export function SchedulePanel({
                       }`}
                     />
                     <div
-                      className={`glass flex items-start gap-3 rounded-2xl p-3 ${done ? "opacity-50" : ""}`}
+                      className="glass flex items-start gap-3 rounded-2xl p-3"
                     >
                       <div
-                        className={`min-w-0 flex-1 ${done ? "" : "cursor-pointer"}`}
+                        className={`min-w-0 flex-1 ${done ? "opacity-50" : "cursor-pointer"}`}
                         {...(done
                           ? {}
                           : {
@@ -172,6 +210,30 @@ export function SchedulePanel({
                           <p className="mt-1 text-xs text-muted">{b.reason}</p>
                         )}
                       </div>
+                      {done && (
+                        <span className="flex shrink-0 gap-1">
+                          {everyTask.has(b.taskId) && (
+                            <button
+                              type="button"
+                              onClick={() => onRestoreTask(b.taskId)}
+                              aria-label={`Restore ${b.title}`}
+                              title="Restore"
+                              className="rounded-full border border-line p-1.5 text-muted transition hover:border-[rgb(var(--glow-a))] hover:text-[rgb(var(--glow-a))]"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onDeleteTask(b.taskId)}
+                            aria-label={`Delete ${b.title} permanently`}
+                            title="Delete"
+                            className="rounded-full border border-line p-1.5 text-muted transition hover:border-red-500 hover:text-red-500"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </span>
+                      )}
                       {!done && (
                         <button
                           onClick={() => onComplete(b.taskId)}

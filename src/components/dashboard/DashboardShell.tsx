@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Calendar, Clock, MessageCircle, Plus, Sparkles } from "lucide-react";
+import { Archive, Calendar, Clock, MessageCircle, Plus, Sparkles } from "lucide-react";
 import { useReducedMotion } from "framer-motion";
 import { Orb } from "@/components/Orb";
 import { useAuth } from "@/context/AuthProvider";
@@ -18,6 +18,7 @@ import { describeSuggestion, suggestDuration } from "@/lib/history";
 import { markOnboardingComplete } from "@/lib/firebase/users";
 import { BubbleCanvas } from "@/components/bubbles/BubbleCanvas";
 import { POP_MS } from "@/components/bubbles/Bubble";
+import { CompletedSheet } from "@/components/bubbles/CompletedSheet";
 import { ExpiredSheet } from "@/components/bubbles/ExpiredSheet";
 import { OnboardingTour } from "@/components/OnboardingTour";
 import { TaskDetailSheet } from "@/components/bubbles/TaskDetailSheet";
@@ -64,6 +65,7 @@ export function DashboardShell() {
   const history = useHistory(uid);
 
   const [expiredOpen, setExpiredOpen] = useState(false);
+  const [completedOpen, setCompletedOpen] = useState(false);
   const [popping, setPopping] = useState<ReadonlySet<string>>(new Set());
   const [tourOpen, setTourOpen] = useState(false);
   const [tourDismissed, setTourDismissed] = useState(() => readLocal(ONBOARDED_KEY) === "1");
@@ -83,7 +85,7 @@ export function DashboardShell() {
   );
 
   const {
-    tasks, loading: tasksLoading, error, addTask, deleteTask, complete, logMinutes,
+    tasks, loading: tasksLoading, error, addTask, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, logMinutes,
     startTimer, stopTimer, setRecurrence, updateTask, saveSubtasks, toggleSubtask, reschedule,
   } = useTasks(uid, timezone, now, handleExpired);
 
@@ -105,7 +107,9 @@ export function DashboardShell() {
       if (manual) toast({ title: `Couldn't split “${task.title}”`, body: message });
     },
   );
-  const { schedule, markTaskBlocksDone, renameTaskBlocks, editBlock } = useSchedule(uid, today);
+  const {
+    schedule, markTaskBlocksDone, markTaskBlocksPlanned, removeTaskBlocks, restoreBlocks, renameTaskBlocks, editBlock,
+  } = useSchedule(uid, today);
 
   // Tasks made without a duration (e.g. from chat) get one from similar tasks the user finished before.
   const addTaskSmart = useCallback(
@@ -133,6 +137,11 @@ export function DashboardShell() {
   const active = useMemo(() => tasks.filter((t) => t.status === "active"), [tasks]);
   const expired = useMemo(
     () => tasks.filter((t) => t.status === "expired").sort((a, b) => b.deadline.localeCompare(a.deadline)).slice(0, 30),
+    [tasks],
+  );
+
+  const completed = useMemo(
+    () => tasks.filter((t) => t.status === "completed").sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? "")),
     [tasks],
   );
 
@@ -172,6 +181,44 @@ export function DashboardShell() {
     return parts.join(" · ");
   }, [tasksLoading, active.length, schedule, doneToday, now]);
 
+  /** Delete a bubble (and its slot in today's plan), with a 6 s way back. */
+  async function removeTask(t: Task) {
+    try {
+      const blocks = await removeTaskBlocks([t.id]);
+      await deleteTask(t);
+      toast({
+        title: "Task deleted",
+        body: t.title,
+        placement: "bottom",
+        durationMs: 6000,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            restoreDeleted(t)
+              .then(() => restoreBlocks(blocks))
+              .catch((e) => {
+                console.warn("undo delete failed:", e);
+                toast({ title: "Couldn't restore that task", body: "Please try again." });
+              });
+          },
+        },
+      });
+    } catch (e) {
+      console.warn("delete failed:", e);
+      toast({ title: "Couldn't delete that task", body: "Please try again." });
+    }
+  }
+
+  async function restoreCompleted(t: Task) {
+    await restoreTask(t);
+    await markTaskBlocksPlanned(t.id).catch(() => {});
+    toast({ title: "Task restored", body: t.title });
+  }
+  async function deleteForever(taskIds: string[]) {
+    await deleteMany(taskIds);
+    await removeTaskBlocks(taskIds).catch(() => {});
+  }
+
   /** Check / uncheck a part. Checking the last one finishes the whole task, with the full pop. */
   async function toggleSubtaskFlow(t: Task, sub: Subtask) {
     const checked = !sub.completed;
@@ -194,7 +241,24 @@ export function DashboardShell() {
     setPopping((p) => new Set(p).add(t.id));
     try {
       await sleep(reducedMotion ? 120 : POP_MS);
-      await Promise.all([complete(t, { actualMin }), markTaskBlocksDone(t.id)]);
+      const [undo] = await Promise.all([complete(t, { actualMin }), markTaskBlocksDone(t.id)]);
+      if (undo) {
+        toast({
+          title: "Task completed",
+          body: t.title,
+          placement: "bottom",
+          durationMs: 6000,
+          action: {
+            label: "Undo",
+            onClick: () => {
+              Promise.all([undoComplete(undo), markTaskBlocksPlanned(t.id)]).catch((e) => {
+                console.warn("undo failed:", e);
+                toast({ title: "Couldn't undo", body: "Please try again from the Completed list." });
+              });
+            },
+          },
+        });
+      }
     } catch (e) {
       console.warn("complete failed:", e);
       toast({ title: "Couldn't complete that bubble", body: "Please try again." });
@@ -242,6 +306,14 @@ export function DashboardShell() {
           <div className="mb-3 flex items-center justify-between">
             <h1 className="text-sm font-medium text-muted">Today&apos;s bubbles</h1>
             <div className="flex gap-2">
+              {completed.length > 0 && (
+                <button
+                  onClick={() => setCompletedOpen(true)}
+                  className="flex items-center gap-1.5 rounded-full glass px-4 py-2 text-xs font-medium text-muted transition hover:text-foreground"
+                >
+                  <Archive className="h-3.5 w-3.5" /> Completed ({completed.length})
+                </button>
+              )}
               {expired.length > 0 && (
                 <button
                   onClick={() => setExpiredOpen(true)}
@@ -316,6 +388,15 @@ export function DashboardShell() {
                 onOpenBlock={setEditBlockId}
                 onOpenTask={setOpenId}
                 onToggleSubtask={(t, s) => void toggleSubtaskFlow(t, s)}
+                allTasks={tasks}
+                onOpenCompleted={() => setCompletedOpen(true)}
+                onRestoreTask={(id) => {
+                  const t = tasks.find((x) => x.id === id);
+                  if (t) void restoreCompleted(t).catch(() => toast({ title: "Couldn't restore that task" }));
+                }}
+                onDeleteTask={(id) => {
+                  void deleteForever([id]).catch(() => toast({ title: "Couldn't delete that task" }));
+                }}
                 onComplete={(taskId) => {
                   const t = active.find((x) => x.id === taskId);
                   if (t) void completeTask(t);
@@ -351,7 +432,15 @@ export function DashboardShell() {
         now={now}
         onClose={() => setExpiredOpen(false)}
         onReschedule={reschedule}
-        onDelete={(t) => deleteTask(t.id)}
+        onDelete={removeTask}
+      />
+      <CompletedSheet
+        open={completedOpen}
+        tasks={completed}
+        onClose={() => setCompletedOpen(false)}
+        onRestore={restoreCompleted}
+        onDelete={(t) => deleteForever([t.id])}
+        onClearAll={() => deleteForever(completed.map((t) => t.id))}
       />
       <OnboardingTour open={tourOpen || autoTour} onClose={closeTour} />
       <BlockEditSheet
@@ -370,7 +459,7 @@ export function DashboardShell() {
         now={now}
         onClose={() => setOpenId(null)}
         onComplete={completeTask}
-        onDelete={(t) => deleteTask(t.id)}
+        onDelete={removeTask}
         onLogTime={(t, m) => logMinutes(t.id, m)}
         onStartTimer={(t) => startTimer(t.id)}
         onStopTimer={stopTimer}
