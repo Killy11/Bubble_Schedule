@@ -26,8 +26,10 @@ import { ChatPanel } from "@/components/chat/ChatPanel";
 import { SchedulePanel } from "@/components/schedule/SchedulePanel";
 import { BlockEditSheet } from "@/components/schedule/BlockEditSheet";
 import { ProfileSheet } from "@/components/profile/ProfileSheet";
+import { useDecompose } from "@/hooks/useDecompose";
+import { formatWindow, nextSubtask } from "@/lib/subtasks";
 import { Header } from "./Header";
-import type { Task } from "@/types";
+import type { Subtask, Task } from "@/types";
 import type { NewTaskInput } from "@/hooks/useTasks";
 
 const ONBOARDED_KEY = "bs:onboarded";
@@ -82,8 +84,27 @@ export function DashboardShell() {
 
   const {
     tasks, loading: tasksLoading, error, addTask, deleteTask, complete, logMinutes,
-    startTimer, stopTimer, setRecurrence, updateTask, reschedule,
+    startTimer, stopTimer, setRecurrence, updateTask, saveSubtasks, toggleSubtask, reschedule,
   } = useTasks(uid, timezone, now, handleExpired);
+
+  // Big tasks are split into scheduled parts automatically (and on demand from the task modal).
+  const { working: splitting, split } = useDecompose(
+    tasks,
+    !!uid && !tasksLoading,
+    ({ task, subtasks, placed, total }) => {
+      const next = nextSubtask(subtasks);
+      toast({
+        title: `“${task.title}” split into ${total} parts`,
+        body: placed < total
+          ? `Only ${placed} of ${total} fit before the deadline. Check the times.`
+          : next ? `First up: ${formatWindow(next, Date.now())}` : undefined,
+        onClick: () => setOpenId(task.id),
+      });
+    },
+    (task, message, manual) => {
+      if (manual) toast({ title: `Couldn't split “${task.title}”`, body: message });
+    },
+  );
   const { schedule, markTaskBlocksDone, renameTaskBlocks, editBlock } = useSchedule(uid, today);
 
   // Tasks made without a duration (e.g. from chat) get one from similar tasks the user finished before.
@@ -150,6 +171,23 @@ export function DashboardShell() {
     if (next) parts.push(`next: ${next.title} ${formatTime(next.start)}`);
     return parts.join(" · ");
   }, [tasksLoading, active.length, schedule, doneToday, now]);
+
+  /** Check / uncheck a part. Checking the last one finishes the whole task, with the full pop. */
+  async function toggleSubtaskFlow(t: Task, sub: Subtask) {
+    const checked = !sub.completed;
+    try {
+      const othersLeft = (t.subtasks ?? []).some((s) => s.id !== sub.id && !s.completed);
+      if (checked && !othersLeft) {
+        setOpenId(null);
+        await completeTask({ ...t, loggedMinutes: (t.loggedMinutes ?? 0) + sub.durationMinutes });
+      } else {
+        await toggleSubtask(t, sub.id, checked);
+      }
+    } catch (e) {
+      console.warn("toggle part failed:", e);
+      toast({ title: "Couldn't update that part", body: "Please try again." });
+    }
+  }
 
   /** Pop the bubble first, then write the completion (so the canvas and Firestore change together). */
   async function completeTask(t: Task, actualMin?: number) {
@@ -276,6 +314,8 @@ export function DashboardShell() {
                 tasks={active}
                 now={now}
                 onOpenBlock={setEditBlockId}
+                onOpenTask={setOpenId}
+                onToggleSubtask={(t, s) => void toggleSubtaskFlow(t, s)}
                 onComplete={(taskId) => {
                   const t = active.find((x) => x.id === taskId);
                   if (t) void completeTask(t);
@@ -335,6 +375,10 @@ export function DashboardShell() {
         onStartTimer={(t) => startTimer(t.id)}
         onStopTimer={stopTimer}
         onSetRecurrence={setRecurrence}
+        splitting={!!openTask && splitting.has(openTask.id)}
+        onToggleSubtask={(t, s, checked) => (checked === !s.completed ? toggleSubtaskFlow(t, s) : Promise.resolve())}
+        onSaveSubtasks={saveSubtasks}
+        onSplit={(t) => void split(t)}
         onEdit={async (t, patch) => {
           await updateTask(t, patch);
           if (patch.title.trim() !== t.title) await renameTaskBlocks(t.id, patch.title.trim()).catch(() => {});

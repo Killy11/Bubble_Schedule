@@ -51,6 +51,16 @@ export interface HistoryRecord {
   completedAt: ISODateTime;
 }
 
+/** One part of a large task, with the time window in which to work on it. */
+export interface Subtask {
+  id: string;
+  title: string;
+  durationMinutes: number;
+  scheduledStart?: ISODateTime;
+  scheduledEnd?: ISODateTime;
+  completed: boolean;
+}
+
 /** users/{uid}/tasks/{taskId} */
 export interface Task {
   id: string;
@@ -67,6 +77,10 @@ export interface Task {
     estimatedAt: ISODateTime;
   };
   status: "active" | "completed" | "expired";
+  /** Large tasks are split into sequential parts, each with its own time slot. */
+  subtasks?: Subtask[];
+  /** AI splitting has been tried (success or not), so it isn't tried again automatically. */
+  subtasksAttempted?: boolean;
   /** Repeat rule. Occurrences of one series share `seriesId`; the next one is created when this one ends. */
   recurrence?: Recurrence;
   seriesId?: string;

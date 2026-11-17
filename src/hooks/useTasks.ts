@@ -15,10 +15,10 @@ import {
   updateDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
-import { historyConverter, taskConverter } from "@/lib/firebase/converters";
+import { historyConverter, taskConverter, toFirestoreData } from "@/lib/firebase/converters";
 import { cleanRecurrence, nextOccurrence } from "@/lib/recurrence";
 import { makeHistoryRecord } from "@/lib/history";
-import type { Priority, Recurrence, Task } from "@/types";
+import type { Priority, Recurrence, Subtask, Task } from "@/types";
 
 export interface NewTaskInput {
   title: string;
@@ -153,6 +153,10 @@ export function useTasks(
         updatedAt: nowDate,
         startedAt: deleteField(),
         ...(actual ? { loggedMinutes: actual } : {}),
+        // Finishing the task finishes all its parts.
+        ...(task.subtasks?.length
+          ? { subtasks: toFirestoreData(task.subtasks.map((s) => ({ ...s, completed: true }))) }
+          : {}),
       });
 
       // Best effort: the task is already completed, so a failure here must not look like one.
@@ -217,6 +221,39 @@ export function useTasks(
       await updateDoc(doc(db, "users", uid, "tasks", task.id), {
         recurrence: clean ?? deleteField(),
         ...(clean ? { seriesId: task.seriesId ?? task.id } : {}),
+        updatedAt: new Date(),
+      });
+    },
+    [uid],
+  );
+
+  /** Replace the whole parts list (add / edit / remove a part). */
+  const saveSubtasks = useCallback(
+    async (task: Task, subtasks: Subtask[]) => {
+      if (!uid) return;
+      await updateDoc(doc(db, "users", uid, "tasks", task.id), {
+        subtasks: toFirestoreData(subtasks),
+        subtasksAttempted: true,
+        updatedAt: new Date(),
+      });
+    },
+    [uid],
+  );
+
+  /**
+   * Check / uncheck one part. Its duration is added to (or taken back from) the time spent, so the
+   * remaining time drops and the bubble shrinks.
+   */
+  const toggleSubtask = useCallback(
+    async (task: Task, subtaskId: string, completed: boolean) => {
+      if (!uid) return;
+      const sub = task.subtasks?.find((s) => s.id === subtaskId);
+      if (!sub || sub.completed === completed) return;
+      const subtasks = task.subtasks!.map((s) => (s.id === subtaskId ? { ...s, completed } : s));
+      const delta = completed ? sub.durationMinutes : -Math.min(sub.durationMinutes, task.loggedMinutes ?? 0);
+      await updateDoc(doc(db, "users", uid, "tasks", task.id), {
+        subtasks: toFirestoreData(subtasks),
+        ...(delta !== 0 ? { loggedMinutes: increment(delta) } : {}),
         updatedAt: new Date(),
       });
     },
@@ -324,6 +361,8 @@ export function useTasks(
     startTimer,
     stopTimer,
     setRecurrence,
+    saveSubtasks,
+    toggleSubtask,
     updateTask,
     reschedule,
   };

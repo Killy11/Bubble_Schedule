@@ -4,10 +4,11 @@ import { useState } from "react";
 import { Check, Clock, Flag, Loader2, Pencil, Play, Repeat, Sparkles, Square, Trash2 } from "lucide-react";
 import { Sheet } from "@/components/Sheet";
 import { RecurrencePicker } from "./RecurrencePicker";
+import { SubtaskList } from "./SubtaskList";
 import { formatDeadline } from "@/lib/time";
 import { effectiveDuration, effectivePriority } from "@/lib/bubbles/effective";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
-import type { Priority, Recurrence, Task } from "@/types";
+import type { Priority, Recurrence, Subtask, Task } from "@/types";
 
 export interface TaskEdit {
   title: string;
@@ -41,6 +42,10 @@ export function TaskDetailSheet({
   onStopTimer,
   onSetRecurrence,
   onEdit,
+  splitting,
+  onToggleSubtask,
+  onSaveSubtasks,
+  onSplit,
 }: {
   task: Task | null;
   now: number;
@@ -53,6 +58,10 @@ export function TaskDetailSheet({
   onStopTimer: (t: Task) => Promise<void>;
   onSetRecurrence: (t: Task, r: Recurrence | null) => Promise<void>;
   onEdit: (t: Task, patch: TaskEdit) => Promise<void>;
+  splitting: boolean;
+  onToggleSubtask: (t: Task, sub: Subtask, checked: boolean) => Promise<void>;
+  onSaveSubtasks: (t: Task, subs: Subtask[]) => Promise<void>;
+  onSplit: (t: Task) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [actual, setActual] = useState("");
@@ -109,6 +118,16 @@ export function TaskDetailSheet({
           </button>
           </>
           )}
+
+          <SubtaskList
+            key={`parts-${task.id}`}
+            task={task}
+            now={now}
+            splitting={splitting}
+            onToggle={onToggleSubtask}
+            onSave={onSaveSubtasks}
+            onSplit={onSplit}
+          />
 
           <TimeLogger
             key={task.id}

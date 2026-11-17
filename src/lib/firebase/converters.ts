@@ -27,6 +27,8 @@ const DATE_KEYS = new Set([
   "deadline",
   "completedAt",
   "startedAt",
+  "scheduledStart",
+  "scheduledEnd",
   "expiredAt",
   "estimatedAt",
   "start",

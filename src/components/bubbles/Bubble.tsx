@@ -6,6 +6,7 @@ import { Orb } from "@/components/Orb";
 import { BubbleText } from "./BubbleText";
 import { bubbleHue } from "@/lib/bubbles/urgency";
 import { recurrenceLabel } from "@/lib/recurrence";
+import { progressLabel, subtaskProgress } from "@/lib/subtasks";
 import { formatDeadline } from "@/lib/time";
 import type { Task } from "@/types";
 import type { BubblePlacement } from "@/lib/bubbles/layout";
@@ -76,6 +77,7 @@ export function Bubble({
   const dur = 5 + (index % 5) * 1.3;
   const amp = 5 + (index % 3) * 2;
   const geometry = { x: place.x, y: place.y, width: place.d, height: place.d };
+  const parts = subtaskProgress(task);
   const repeats = task.recurrence ? recurrenceLabel(task.recurrence).toLowerCase() : null;
 
   return (
@@ -110,7 +112,7 @@ export function Bubble({
         type="button"
         onClick={() => onOpen(task.id)}
         disabled={popping}
-        aria-label={`${task.title}, due ${formatDeadline(task.deadline, now)}${repeats ? `, repeats ${repeats}` : ""}`}
+        aria-label={`${task.title}, due ${formatDeadline(task.deadline, now)}${repeats ? `, repeats ${repeats}` : ""}${parts ? `, ${progressLabel(task, now)}` : ""}`}
         animate={{ y: [0, -amp, 0], x: [0, amp / 2, 0] }}
         transition={{ duration: dur, repeat: Infinity, ease: "easeInOut", delay: index * 0.35 }}
         whileHover={{ scale: 1.07 }}
@@ -121,7 +123,11 @@ export function Bubble({
           <BubbleText
             title={task.title}
             diameter={place.d}
-            subtitle={place.d >= 100 ? formatDeadline(task.deadline, now) : undefined}
+            subtitle={
+              place.d >= 100
+                ? parts ? `${parts.done}/${parts.total} parts` : formatDeadline(task.deadline, now)
+                : undefined
+            }
           />
         </Orb>
         {repeats && place.d >= 64 && (

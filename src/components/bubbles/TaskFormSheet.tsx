@@ -120,6 +120,11 @@ function Form({
           </select>
         </label>
       </div>
+      {Number(shownDuration) > 120 && (
+        <p className="-mt-1 text-xs text-muted">
+          Over 2 hours: AI will split this into short parts and give each one a time slot.
+        </p>
+      )}
       {suggestion && !durationTouched && (
         <p className="-mt-1 text-xs text-muted">{describeSuggestion(suggestion)}. Edit it if you like.</p>
       )}

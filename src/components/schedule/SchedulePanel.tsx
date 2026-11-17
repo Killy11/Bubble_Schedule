@@ -1,10 +1,11 @@
 "use client";
 
-import { Check, Pencil, Pin, Sparkles } from "lucide-react";
+import { Check, ListTree, Pencil, Pin, Sparkles } from "lucide-react";
 import { formatDeadline, formatTime } from "@/lib/time";
 import type { ScheduleBlock } from "@/types";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
-import type { Schedule, Task } from "@/types";
+import type { Schedule, Subtask, Task } from "@/types";
+import { formatDuration } from "@/lib/subtasks";
 
 const dayStart = (t: number) => new Date(t).setHours(0, 0, 0, 0);
 
@@ -34,12 +35,16 @@ export function SchedulePanel({
   now,
   onComplete,
   onOpenBlock,
+  onOpenTask,
+  onToggleSubtask,
 }: {
   schedule: Schedule | null;
   tasks: Task[];
   now: number;
   onComplete: (taskId: string) => void;
   onOpenBlock: (blockId: string) => void;
+  onOpenTask: (taskId: string) => void;
+  onToggleSubtask: (task: Task, sub: Subtask) => void;
 }) {
   const blocks = schedule?.blocks ?? [];
   const change = schedule?.lastChange;
@@ -51,7 +56,20 @@ export function SchedulePanel({
     const key = dayStart(new Date(b.start).getTime());
     groups.set(key, [...(groups.get(key) ?? []), b]);
   }
-  const days = [...groups.entries()].sort((a, c) => a[0] - c[0]);
+  // Upcoming parts of big tasks live on the task, not in the day plan: show them on their days too.
+  const sessionsByDay = new Map<number, Array<{ task: Task; sub: Subtask }>>();
+  for (const task of tasks) {
+    for (const sub of task.subtasks ?? []) {
+      if (sub.completed || !sub.scheduledStart || !sub.scheduledEnd) continue;
+      const day = dayStart(Date.parse(sub.scheduledStart));
+      if (day < dayStart(now)) continue;
+      sessionsByDay.set(day, [...(sessionsByDay.get(day) ?? []), { task, sub }]);
+    }
+  }
+  for (const list of sessionsByDay.values()) list.sort((a, c) => a.sub.scheduledStart!.localeCompare(c.sub.scheduledStart!));
+  const days = [...new Set([...groups.keys(), ...sessionsByDay.keys()])]
+    .sort((a, c) => a - c)
+    .map((day) => [day, groups.get(day) ?? []] as const);
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
@@ -78,7 +96,7 @@ export function SchedulePanel({
         </section>
       )}
 
-      {blocks.length === 0 ? (
+      {days.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted">
           <p>Nothing scheduled for today yet.</p>
           <p>
@@ -168,6 +186,30 @@ export function SchedulePanel({
                 );
               })}
             </ol>
+            {(sessionsByDay.get(day) ?? []).length > 0 && (
+              <ul className={`space-y-2 ${dayBlocks.length ? "mt-3" : ""}`} aria-label="Parts of bigger tasks">
+                {sessionsByDay.get(day)!.map(({ task, sub }) => (
+                  <li key={sub.id} className="glass flex items-start gap-3 rounded-2xl border-dashed p-3">
+                    <button type="button" onClick={() => onOpenTask(task.id)} className="min-w-0 flex-1 text-left">
+                      <p className="flex items-center gap-1.5 text-xs text-muted">
+                        <ListTree aria-hidden className="h-3 w-3" />
+                        {formatTime(sub.scheduledStart!)} – {formatTime(sub.scheduledEnd!)} · {formatDuration(sub.durationMinutes)}
+                      </p>
+                      <p className="line-clamp-2 break-words text-sm font-medium">{sub.title}</p>
+                      <p className="truncate text-xs text-muted">Part of {task.title}</p>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onToggleSubtask(task, sub)}
+                      aria-label={`Mark done: ${sub.title}`}
+                      className="rounded-full border border-line p-1.5 text-muted transition hover:border-[rgb(var(--glow-a))] hover:text-[rgb(var(--glow-a))]"
+                    >
+                      <Check className="h-4 w-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
         ))
       )}

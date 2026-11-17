@@ -55,7 +55,7 @@ export async function POST(request: Request) {
   const user = userSnap.exists ? fromFirestoreData<User>(userSnap.data()) : null;
   const tz = user?.timezone ?? "UTC";
   const settings = sanitizeSettings({ ...DEFAULT_SETTINGS, ...user?.settings });
-  const tasks = taskSnap.docs.map((d) => {
+  const allTasks = taskSnap.docs.map((d) => {
     const t = fromFirestoreData<Task>(d.data());
     return { ...t, id: d.id, loggedMinutes: t.loggedMinutes ?? 0 }; // older docs predate the field
   });
@@ -64,7 +64,20 @@ export async function POST(request: Request) {
     .map((d) => ({ ...fromFirestoreData<ChatMessage>(d.data()), id: d.id }))
     .reverse();
 
-  if (tasks.length === 0) return err("You have no active tasks yet. Add a bubble first.", 400);
+  if (allTasks.length === 0) return err("You have no active tasks yet. Add a bubble first.", 400);
+
+  // Tasks split into scheduled parts are planned by those parts: the day planner leaves the parent
+  // alone and treats each upcoming part as an immovable block to plan around.
+  const hasPlannedParts = (t: Task) => !!t.subtasks?.some((s) => !s.completed && s.scheduledStart && s.scheduledEnd);
+  const tasks = allTasks.filter((t) => !hasPlannedParts(t));
+  const partBlocks: ScheduleBlock[] = allTasks.filter(hasPlannedParts).flatMap((t) =>
+    t.subtasks!
+      .filter((s) => !s.completed && s.scheduledStart && s.scheduledEnd && Date.parse(s.scheduledEnd) > now.getTime())
+      .map((s) => ({
+        id: `part_${s.id}`, taskId: t.id, title: `${t.title}: ${s.title}`,
+        start: s.scheduledStart!, end: s.scheduledEnd!, status: "planned" as const, isPinned: true,
+      })),
+  );
 
   // ── Decide what is allowed to move ─────────────────────────────────────────────────
   const nowMs = now.getTime();
@@ -155,6 +168,7 @@ export async function POST(request: Request) {
   }
 
   // ── Ask the model (validate → retry once with the problems → drop what still fails) ──
+  locked = [...locked, ...partBlocks];
   const busy = locked.map((b) => ({ start: new Date(b.start), end: new Date(b.end) }));
   const placeIds = new Set(toPlace.map((t) => t.id));
   const turns: Turn[] = [
