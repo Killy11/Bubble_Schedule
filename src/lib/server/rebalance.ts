@@ -17,7 +17,7 @@ export interface RebalanceResult {
 /**
  * Re-plan ALL active tasks (and their parts) and save the result: new times for parts on the
  * tasks, and one block per part-less task in today's schedule. Locked-in tasks first, then the
- * rest by earliest deadline and priority, with each pacing's breaks and daily load.
+ * rest by earliest deadline, with each pacing's breaks and daily load.
  * Deterministic: no AI call.
  */
 export async function rebalanceAll(uid: string, now: Date): Promise<RebalanceResult> {
@@ -90,7 +90,7 @@ export async function rebalanceAll(uid: string, now: Date): Promise<RebalanceRes
     title: titleOf.get(b.taskId) ?? "Task",
     start: new Date(b.start).toISOString(),
     end: new Date(b.end).toISOString(),
-    reason: "Planned by earliest deadline, then priority",
+    reason: "Planned by earliest deadline",
     status: "planned",
   }));
   const blocks = [...done, ...pinnedBlocks, ...fresh].sort((a, b) => a.start.localeCompare(b.start));
@@ -100,8 +100,8 @@ export async function rebalanceAll(uid: string, now: Date): Promise<RebalanceRes
     consideredTaskIds: tasks.map((t) => t.id),
     lastChange: {
       summary: plan.unplaced.length
-        ? `Re-planned by deadline and priority. ${plan.unplaced.length} task${plan.unplaced.length > 1 ? "s" : ""} can't fully fit before ${plan.unplaced.length > 1 ? "their deadlines" : "its deadline"}.`
-        : "Re-planned by earliest deadline, then priority.",
+        ? `Re-planned by deadline. ${plan.unplaced.length} task${plan.unplaced.length > 1 ? "s" : ""} can't fully fit before ${plan.unplaced.length > 1 ? "their deadlines" : "its deadline"}.`
+        : "Re-planned by earliest deadline.",
       changes: [],
       triggeredBy: "auto-schedule",
       at: nowIso,

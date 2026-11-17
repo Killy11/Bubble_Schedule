@@ -1,5 +1,4 @@
 import type { Task } from "@/types";
-import { effectivePriority } from "./effective";
 
 /** Piecewise-linear interpolation over [x, y] anchors sorted by x; clamps outside the range. */
 function ramp(x: number, pts: Array<[number, number]>): number {
@@ -19,7 +18,7 @@ export const hoursLeft = (task: Task, nowMs: number): number =>
 
 /**
  * Radius multiplier as the deadline nears (1 → 1.4). Smooth through 24h / 12h / 6h / 2h / overdue,
- * and applied to every priority, so even a Low task visibly grows.
+ * and applied to every task.
  */
 export function deadlineGrowth(hours: number): number {
   return ramp(hours, [[0, 1.4], [2, 1.3], [6, 1.2], [12, 1.1], [24, 1.05], [48, 1]]);
@@ -30,15 +29,7 @@ export function urgency(hours: number): number {
   return ramp(hours, [[0, 1], [2, 0.85], [6, 0.65], [12, 0.45], [24, 0.25], [72, 0.08], [168, 0]]);
 }
 
-const PRIORITY_WEIGHT = { high: 1, medium: 0.6, low: 0.3 } as const;
-
-/**
- * Combined urgency-priority weight in 0–1 (higher = closer to the centre, scheduled first).
- * Deadline pressure is weighted a little above priority, so a Low task that is overdue
- * outranks a High task due next week.
- */
+/** 0–1 weight from how soon the deadline is (higher = closer to the centre, scheduled first). */
 export function taskWeight(task: Task, nowMs: number): number {
-  const p = effectivePriority(task);
-  const prio = p ? PRIORITY_WEIGHT[p] : 0.45;
-  return 0.45 * prio + 0.55 * urgency(hoursLeft(task, nowMs));
+  return urgency(hoursLeft(task, nowMs));
 }

@@ -20,14 +20,14 @@ Rules:
   Never place two blocks closer together than "minBreakMinutes", locked blocks included, and never put one right against a locked block unless both are locked.
 - Among tasks of the same pacing, the earlier deadline goes first. The day runs across the whole working window ("workingHours"), so a task due in the evening still fits that day.
 - DAILY LOAD: plan at most about 4–5 hours of non-locked work per day (each day's "targetMinutes"), leaving generous breathing room, rather than filling the whole working day.
-- Each task has a "weight" (0–1) combining priority and deadline urgency. Higher-weight tasks get the earliest suitable slots; lower-weight tasks fill the remaining time.
+- Each task has a "weight" (0–1) from how close its deadline is. Higher-weight tasks get the earliest suitable slots; lower-weight tasks fill the remaining time. There is no manual priority: urgency is the deadline.
 - HISTORY: a task may carry "historicalAvgMin" and "historySamples": how long this user actually took on similar tasks they finished before. When durationMin is null, base your duration estimate on historicalAvgMin (adjust only if the title clearly describes something much bigger or smaller), and say so in that estimate's reasoning, e.g. "You usually take ~45 min on similar tasks".
-- Add a taskEstimates entry for every task whose durationMin OR priority is null (your estimate for the missing value; the user's own values are never overridden). If durationMin is set, the block must be exactly that long (minus loggedMinutes when it is above 0, but at least 15 minutes).
+- Add a taskEstimates entry for every task whose durationMin is null (your estimate; the user's own values are never overridden). If durationMin is set, the block must be exactly that long (minus loggedMinutes when it is above 0, but at least 15 minutes).
 
 SCHEDULING STRATEGY:
 1. Front-load with a safety buffer. Do tasks as EARLY as possible, but every block must END by the task's "mustEndBy" time (the deadline minus a safety margin). Never schedule right up to the deadline: the margin is there in case things go wrong. A task due in 5 days belongs in the first days, not on its last day.
 2. Distribute evenly. Each availableDay has "freeMinutes". Each day has a "targetMinutes" load (70% of freeMinutes, never more than 270 = 4.5 hours): once a day's blocks add up to targetMinutes, move the remaining tasks to the next available day instead of filling it to the brim. Only exceed targetMinutes when a task would otherwise miss its mustEndBy. Do not put many hours on today while the following days are empty, but never delay a task past the earliest sensible day just to balance: urgent and high-weight tasks go first, and a day that still has room should be used before a later one. When two days are equally good, take the earlier one.
-3. If a task cannot fit before its mustEndBy, put it in "unscheduled" with a short reason. Tasks whose deadline is beyond the last availableDay may be left unscheduled ("will be planned later") unless they are high priority or the user asks for them.
+3. If a task cannot fit before its mustEndBy, put it in "unscheduled" with a short reason. Tasks whose deadline is beyond the last availableDay may be left unscheduled ("will be planned later") unless the user asks for them.
 
 MODE says how much freedom you have:
   • locked / incremental: the user only pressed Auto-schedule or just added tasks. Keep every task in "currentSchedule" at its current time unless a higher-weight new task needs that slot (isNew=true tasks are the new ones). Disturb as little as possible.
@@ -89,7 +89,6 @@ export function buildUserPrompt(c: PromptContext): string {
       historicalAvgMin: c.durationHints?.get(t.id)?.minutes ?? null,
       historySamples: c.durationHints?.get(t.id)?.samples ?? 0,
       loggedMinutes: t.loggedMinutes ?? 0,
-      priority: t.priority ?? null,
       pacing: t.pacing ?? "balanced",
       weight: Number((c.weights.get(t.id) ?? 0).toFixed(2)),
       isNew: c.newTaskIds.has(t.id),

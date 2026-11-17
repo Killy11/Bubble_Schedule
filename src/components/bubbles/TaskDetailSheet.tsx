@@ -4,18 +4,20 @@ import { useState } from "react";
 import { CalendarClock, Check, Clock, Flag, Loader2, Pencil, Play, Repeat, Sparkles, Square, Trash2 } from "lucide-react";
 import { Sheet } from "@/components/Sheet";
 import { RecurrencePicker } from "./RecurrencePicker";
+import { formatDuration } from "@/lib/subtasks";
 import { SubtaskList } from "./SubtaskList";
 import { PacingSelector } from "@/components/PacingSelector";
 import { PACING_META, pacingOf } from "@/lib/pacing";
 import { formatDeadline, formatOverdue } from "@/lib/time";
-import { effectiveDuration, effectivePriority } from "@/lib/bubbles/effective";
+import { effectiveDuration } from "@/lib/bubbles/effective";
+import { DurationFields } from "@/components/DurationFields";
+import { clampDuration, splitMinutes, totalMinutes } from "@/lib/duration";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
-import type { Pacing, Priority, Recurrence, Subtask, Task } from "@/types";
+import type { Pacing, Recurrence, Subtask, Task } from "@/types";
 
 export interface TaskEdit {
   title: string;
   deadline: string; // ISO
-  priority: Priority | null;
   durationMin: number | null;
   pacing: Pacing;
 }
@@ -85,9 +87,8 @@ export function TaskDetailSheet({
   const timerMin = task?.startedAt ? Math.max(0, Math.floor((now - Date.parse(task.startedAt)) / 60_000)) : 0;
   const tracked = (task?.loggedMinutes ?? 0) + timerMin;
   const dur = task && effectiveDuration(task);
-  const pr = task && effectivePriority(task);
   const hue = task ? bubbleHue(task, now) : "green";
-  const guessed = task && (!task.durationMin || !task.priority) && task.aiEstimate;
+  const guessed = task && !task.durationMin && task.aiEstimate;
 
   return (
     <Sheet open={!!task} onClose={close} title={task?.title ?? ""}>
@@ -114,8 +115,7 @@ export function TaskDetailSheet({
               </span></div>
             <div className="flex items-center gap-2 text-muted"><Flag className="h-4 w-4" />
               <span className="text-foreground">
-                {pr ? pr[0].toUpperCase() + pr.slice(1) : "No"} priority
-                {dur ? ` · ${dur} min` : " · standard size"}
+                {dur ? `Takes ${formatDuration(dur)}` : "Standard size"}
                 {guessed ? " (AI estimate)" : ""}
               </span></div>
             {task.aiEstimate?.reasoning && (
@@ -137,7 +137,7 @@ export function TaskDetailSheet({
           )}
           <button type="button" onClick={() => setEditing(true)}
             className="glass flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs text-muted transition hover:text-foreground">
-            <Pencil className="h-3.5 w-3.5" /> Edit title, due date &amp; priority
+            <Pencil className="h-3.5 w-3.5" /> Edit title, due date &amp; duration
           </button>
           </>
           )}
@@ -246,8 +246,8 @@ function TimeLogger({
       <div>
         <p className="text-sm">
           {total
-            ? `${logged} / ${total} min spent · ${remaining} min remaining`
-            : `${logged} min spent`}
+            ? `${formatDuration(logged)} / ${formatDuration(total)} spent · ${formatDuration(remaining ?? 0)} remaining`
+            : `${formatDuration(logged)} spent`}
         </p>
         {total && (
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line" role="progressbar"
@@ -257,12 +257,12 @@ function TimeLogger({
           </div>
         )}
         {total && logged > total && (
-          <p className="mt-1 text-xs text-muted">Over the estimate by {logged - total} min.</p>
+          <p className="mt-1 text-xs text-muted">Over the estimate by {formatDuration(logged - total)}.</p>
         )}
       </div>
 
       <div className="flex items-center justify-between gap-2 text-sm">
-        <span className="text-muted">{task.startedAt ? `Timer running · ${timerMin} min` : "Working on it now?"}</span>
+        <span className="text-muted">{task.startedAt ? `Timer running · ${formatDuration(timerMin)}` : "Working on it now?"}</span>
         <button
           type="button"
           disabled={saving}
@@ -325,8 +325,8 @@ function EditForm({
 }) {
   const [title, setTitle] = useState(task.title);
   const [deadline, setDeadline] = useState(toLocalInput(task.deadline));
-  const [priority, setPriority] = useState<Priority | "">(task.priority ?? "");
-  const [duration, setDuration] = useState(task.durationMin ? String(task.durationMin) : "");
+  const [hours, setHours] = useState(() => splitMinutes(task.durationMin).hours);
+  const [mins, setMins] = useState(() => splitMinutes(task.durationMin).minutes);
   const [pacing, setPacing] = useState<Pacing>(pacingOf(task));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -343,8 +343,10 @@ function EditForm({
       await onSave({
         title: title.trim(),
         deadline: when.toISOString(),
-        priority: priority || null,
-        durationMin: duration ? Math.max(5, Math.min(480, Math.round(Number(duration)))) : null,
+        durationMin: (() => {
+          const t = totalMinutes(hours, mins);
+          return t ? clampDuration(t) : null;
+        })(),
         pacing,
       });
     } catch {
@@ -365,23 +367,9 @@ function EditForm({
         <input required type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)}
           className={`${field} mt-1 text-foreground`} />
       </label>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block text-xs text-muted">
-          Priority
-          <select value={priority} onChange={(e) => setPriority(e.target.value as Priority | "")}
-            className={`${field} mt-1 text-foreground`}>
-            <option value="">AI will guess</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-        </label>
-        <label className="block text-xs text-muted">
-          Duration (min)
-          <input type="number" inputMode="numeric" min={5} max={480} step={5} value={duration}
-            onChange={(e) => setDuration(e.target.value)} placeholder="AI will guess"
-            className={`${field} mt-1 text-foreground`} />
-        </label>
+      <div className="text-xs text-muted">
+        <span className="mb-1 block">Duration</span>
+        <DurationFields hours={hours} minutes={mins} onHours={setHours} onMinutes={setMins} />
       </div>
       <div className="text-xs text-muted">
         <span className="mb-1 block">Focus intensity</span>

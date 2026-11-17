@@ -321,12 +321,9 @@ export async function POST(request: Request) {
   for (const e of raw.taskEstimates) {
     const t = taskById.get(e.taskId);
     if (!t || !placeIds.has(t.id)) continue;
-    const needsDuration = t.durationMin === undefined;
-    const needsPriority = t.priority === undefined;
-    if (!needsDuration && !needsPriority) continue;
+    if (t.durationMin !== undefined) continue;
     const aiEstimate: NonNullable<Task["aiEstimate"]> = {
-      durationMin: needsDuration ? Math.max(5, Math.min(480, Math.round(e.durationMin))) : undefined,
-      priority: needsPriority ? e.priority : undefined,
+      durationMin: Math.max(5, Math.min(480, Math.round(e.durationMin))),
       reasoning: e.reasoning,
       estimatedAt: nowIso,
     };

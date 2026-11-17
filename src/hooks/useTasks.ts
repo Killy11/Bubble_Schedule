@@ -20,13 +20,13 @@ import { db } from "@/lib/firebase/client";
 import { historyConverter, taskConverter, toFirestoreData } from "@/lib/firebase/converters";
 import { cleanRecurrence, nextOccurrence } from "@/lib/recurrence";
 import { makeHistoryRecord } from "@/lib/history";
-import type { Pacing, Priority, Recurrence, Subtask, Task } from "@/types";
+import { oneDayFlagFor, withinOneDay } from "@/lib/oneDay";
+import type { Pacing, Recurrence, Subtask, Task } from "@/types";
 
 export interface NewTaskInput {
   title: string;
   deadline: string; // ISO
   durationMin?: number;
-  priority?: Priority;
   description?: string;
   recurrence?: Recurrence;
   pacing?: Pacing;
@@ -50,6 +50,8 @@ export function useTasks(
   now: number,
   /** Called with tasks that pass their deadline while the app is open. */
   onOverdue?: (tasks: Task[]) => void,
+  /** Called when tasks enter their last 24 hours while the app is open ("1 day left"). */
+  onOneDay?: (tasks: Task[]) => void,
 ) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -89,10 +91,10 @@ export function useTasks(
         description: input.description?.trim() || undefined,
         durationMin: input.durationMin,
         loggedMinutes: 0,
-        priority: input.priority,
         aiEstimate: input.historyEstimate
           ? { durationMin: input.historyEstimate.durationMin, reasoning: input.historyEstimate.reasoning, estimatedAt: nowIso }
           : undefined,
+        oneDayNotified: oneDayFlagFor(input.deadline, Date.now()) || undefined,
         recurrence,
         pacing: input.pacing,
         requestedParts: input.requestedParts,
@@ -140,7 +142,7 @@ export function useTasks(
             description: task.description,
             durationMin: task.durationMin,
             loggedMinutes: 0,
-            priority: task.priority,
+            oneDayNotified: oneDayFlagFor(next.deadline, Date.now()) || undefined,
             recurrence: task.recurrence,
             pacing: task.pacing,
             seriesId: series,
@@ -359,22 +361,23 @@ export function useTasks(
     [uid],
   );
 
-  /** Edit the basic fields. `priority`/`durationMin` null = back to "let the AI guess". */
+  /** Edit the basic fields. `durationMin` null = back to "let the AI guess". */
   const updateTask = useCallback(
     async (
       task: Task,
-      patch: { title: string; deadline: string; priority: Priority | null; durationMin: number | null; pacing: Pacing },
+      patch: { title: string; deadline: string; durationMin: number | null; pacing: Pacing },
     ) => {
       if (!uid) return;
       const deadlineChanged = Date.parse(patch.deadline) !== Date.parse(task.deadline);
       await updateDoc(doc(db, "users", uid, "tasks", task.id), {
         title: patch.title.trim(),
         deadline: new Date(patch.deadline),
-        priority: patch.priority ?? deleteField(),
         durationMin: patch.durationMin ?? deleteField(),
         pacing: patch.pacing,
         // A new deadline deserves fresh "due soon" / "expired" alerts.
-        ...(deadlineChanged ? { notified: false, notifiedOverdue: false } : {}),
+        ...(deadlineChanged
+          ? { notified: false, notifiedOverdue: false, oneDayNotified: oneDayFlagFor(patch.deadline, Date.now()) }
+          : {}),
         updatedAt: new Date(),
       });
     },
@@ -404,6 +407,7 @@ export function useTasks(
         expiredAt: deleteField(),
         notified: false,
         notifiedOverdue: false,
+        oneDayNotified: oneDayFlagFor(deadlineIso, Date.now()),
         ...(subtasks ? { subtasks: toFirestoreData(subtasks) } : {}),
         updatedAt: new Date(),
       });
@@ -437,6 +441,42 @@ export function useTasks(
       ensureNext(t).catch((e) => console.warn("recurrence (overdue) failed:", e));
     }
   }, [uid, loading, tasks, now, ensureNext]);
+
+  // ── "1 day left": once per task, when it enters its last 24 hours ───────────────────────
+  // The claim is a transaction on the task's `oneDayNotified` flag, so two tabs (or the server's
+  // reminder job) can never announce the same task twice. Runs on every clock tick and on load.
+  const onOneDayRef = useRef(onOneDay);
+  useEffect(() => {
+    onOneDayRef.current = onOneDay;
+  });
+  const claiming = useRef(new Set<string>());
+  useEffect(() => {
+    if (!uid || loading) return;
+    const due = tasks.filter(
+      (t) => t.status === "active" && !t.oneDayNotified && withinOneDay(t.deadline, now) && !claiming.current.has(t.id),
+    );
+    if (due.length === 0) return;
+    due.forEach((t) => claiming.current.add(t.id));
+    void (async () => {
+      const won: Task[] = [];
+      for (const t of due) {
+        try {
+          const ref = doc(db, "users", uid, "tasks", t.id);
+          const claimed = await runTransaction(db, async (tx) => {
+            const snap = await tx.get(ref);
+            if (!snap.exists() || snap.get("status") !== "active" || snap.get("oneDayNotified") === true) return false;
+            tx.update(ref, { oneDayNotified: true });
+            return true;
+          });
+          if (claimed) won.push(t);
+        } catch (e) {
+          console.warn("1-day notice failed:", t.id, e);
+          claiming.current.delete(t.id); // try again on the next tick
+        }
+      }
+      if (won.length) onOneDayRef.current?.(won);
+    })();
+  }, [uid, loading, tasks, now]);
 
   // Tasks that older versions marked "expired" are brought back: they show as Overdue now.
   const revived = useRef(new Set<string>());

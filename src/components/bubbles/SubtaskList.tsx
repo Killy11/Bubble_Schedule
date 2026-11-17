@@ -4,6 +4,8 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Check, ListTree, Loader2, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { pacingOf } from "@/lib/pacing";
+import { DurationFields } from "@/components/DurationFields";
+import { splitMinutes, totalMinutes } from "@/lib/duration";
 import { formatDuration, formatWindow, MAX_SUBTASKS, newSubtaskId, progressLabel, subtaskProgress } from "@/lib/subtasks";
 import type { Subtask, Task } from "@/types";
 
@@ -250,14 +252,15 @@ function EditRow({
   onCancel: () => void;
 }) {
   const [title, setTitle] = useState(sub.title);
-  const [minutes, setMinutes] = useState(String(sub.durationMinutes));
+  const [hours, setHours] = useState(() => splitMinutes(sub.durationMinutes).hours);
+  const [minutes, setMinutes] = useState(() => splitMinutes(sub.durationMinutes).minutes);
   const [start, setStart] = useState(toLocalInput(sub.scheduledStart));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const min = Math.round(Number(minutes));
+    const min = totalMinutes(hours, minutes) ?? 0;
     if (!title.trim()) return setError("Give this part a title.");
     if (!Number.isFinite(min) || min < 5 || min > 480) return setError("Duration must be 5–480 minutes.");
     let scheduled: Pick<Subtask, "scheduledStart" | "scheduledEnd"> = {};
@@ -284,8 +287,9 @@ function EditRow({
         <input autoFocus value={title} maxLength={100} onChange={(e) => setTitle(e.target.value)}
           placeholder="What to do in this session" aria-label="Part title" className={`${input} w-full`} />
         <div className="flex flex-wrap gap-2">
-          <input type="number" inputMode="numeric" min={5} max={480} step={5} value={minutes}
-            onChange={(e) => setMinutes(e.target.value)} aria-label="Duration in minutes" className={`${input} w-24`} />
+          <div className="w-44 shrink-0">
+            <DurationFields hours={hours} minutes={minutes} onHours={setHours} onMinutes={setMinutes} hint={false} />
+          </div>
           <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)}
             aria-label="Start time" className={`${input} min-w-0 flex-1`} />
         </div>

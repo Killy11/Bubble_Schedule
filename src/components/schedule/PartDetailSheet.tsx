@@ -4,7 +4,6 @@ import { Check, Circle, Clock, Loader2, Pencil } from "lucide-react";
 import { useState } from "react";
 import { Sheet } from "@/components/Sheet";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
-import { effectivePriority } from "@/lib/bubbles/effective";
 import { PACING_META, pacingOf } from "@/lib/pacing";
 import { formatDuration, formatWindow, subtaskProgress } from "@/lib/subtasks";
 import { formatDeadline, formatOverdue } from "@/lib/time";
@@ -30,7 +29,6 @@ export function PartDetailSheet({
   const [busy, setBusy] = useState(false);
   const hue = task ? bubbleHue(task, now) : "green";
   const progress = task ? subtaskProgress(task) : null;
-  const priority = task && effectivePriority(task);
   const siblings = task
     ? [...(task.subtasks ?? [])].sort((a, b) => (a.scheduledStart ?? "9").localeCompare(b.scheduledStart ?? "9"))
     : [];
@@ -71,7 +69,6 @@ export function PartDetailSheet({
               <p className="break-words text-base font-semibold">{task.title}</p>
               <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
                 <span className="hue-badge"><span className="hue-dot h-2 w-2 rounded-full" /> {HUE_META[hue].label}</span>
-                {priority && <span>{priority[0].toUpperCase() + priority.slice(1)} priority</span>}
                 <span>· {PACING_META[pacingOf(task)].label}</span>
                 <span>· {hue === "overdue" ? formatOverdue(task.deadline, now) : `due ${formatDeadline(task.deadline, now)}`}</span>
               </p>

@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
-import { effectiveDuration, effectivePriority } from "@/lib/bubbles/effective";
+import { effectiveDuration } from "@/lib/bubbles/effective";
 import type { Task } from "@/types";
 
 /**
  * What the planner depends on. Completing a task or a part doesn't change it (finishing something
  * must not reshuffle the rest of the day), but creating, deleting, restoring, or changing a
- * deadline, priority, duration or the parts does.
+ * deadline, duration, pacing or the parts does.
  */
 function planSignature(tasks: readonly Task[]): string {
   return tasks
@@ -16,7 +16,6 @@ function planSignature(tasks: readonly Task[]): string {
       [
         t.id,
         t.deadline,
-        effectivePriority(t) ?? "",
         effectiveDuration(t) ?? "",
         t.pacing ?? "balanced",
         t.requestedParts ?? "",
@@ -30,9 +29,9 @@ function planSignature(tasks: readonly Task[]): string {
 const DEBOUNCE_MS = 800;
 
 /**
- * Keeps the whole plan in order: whenever the set of tasks, or a task's deadline / priority /
- * duration / parts, changes, ask /api/rebalance to re-plan everything by earliest deadline, then
- * priority. Changes made while the app was closed are picked up on the next edit, not on load.
+ * Keeps the whole plan in order: whenever the set of tasks, or a task's deadline /
+ * duration / parts, changes, ask /api/rebalance to re-plan everything by earliest deadline.
+ * Changes made while the app was closed are picked up on the next edit, not on load.
  */
 export function useRebalance(
   tasks: readonly Task[],

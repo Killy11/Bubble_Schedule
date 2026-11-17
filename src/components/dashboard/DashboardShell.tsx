@@ -28,6 +28,7 @@ import { SchedulePanel } from "@/components/schedule/SchedulePanel";
 import { BlockEditSheet } from "@/components/schedule/BlockEditSheet";
 import { ProfileSheet } from "@/components/profile/ProfileSheet";
 import { useDecompose } from "@/hooks/useDecompose";
+import { oneDayBody } from "@/lib/oneDay";
 import { useRebalance } from "@/hooks/useRebalance";
 import { formatWindow, nextSubtask } from "@/lib/subtasks";
 import { Header } from "./Header";
@@ -94,10 +95,23 @@ export function DashboardShell() {
     [toast],
   );
 
+  // A bubble just entered its last 24 hours: one warning per task.
+  const handleOneDay = useCallback(
+    (list: Task[]) => {
+      const first = list[0];
+      toast({
+        title: list.length === 1 ? `⏰ 1 day left: «${first.title}»` : `⏰ 1 day left on ${list.length} tasks`,
+        body: list.length === 1 ? oneDayBody(first.deadline, Date.now()) : `«${first.title}» and ${list.length - 1} more are due within 24 hours.`,
+        onClick: () => setOpenId(first.id),
+      });
+    },
+    [toast],
+  );
+
   const {
     tasks, loading: tasksLoading, error, addTask, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, logMinutes,
     startTimer, stopTimer, setRecurrence, updateTask, saveSubtasks, toggleSubtask, reschedule,
-  } = useTasks(uid, timezone, now, handleOverdue);
+  } = useTasks(uid, timezone, now, handleOverdue, handleOneDay);
 
   // Big tasks are split into scheduled parts automatically (and on demand from the task modal).
   const { working: splitting, split } = useDecompose(
@@ -121,7 +135,7 @@ export function DashboardShell() {
     schedule, markTaskBlocksDone, markTaskBlocksPlanned, removeTaskBlocks, restoreBlocks, renameTaskBlocks, editBlock,
   } = useSchedule(uid, today);
 
-  // Any create / edit / delete re-plans everything by earliest deadline, then priority.
+  // Any create / edit / delete re-plans everything by earliest deadline.
   const lastUnplaced = useRef("");
   useRebalance(tasks, !!uid && !tasksLoading, (unplaced) => {
     const key = unplaced.map((t) => t.id).sort().join(",");

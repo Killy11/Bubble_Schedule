@@ -126,10 +126,10 @@ export function useChat(
         const pacing = detectPacing(message) ?? defaultPacing;
         const requestedParts = parseSplitRequest(message) ?? undefined;
         for (const t of result.tasks) {
-          await addTask({ title: t.title, deadline: t.deadline, priority: t.priority, durationMin: t.durationMin, pacing, requestedParts });
+          await addTask({ title: t.title, deadline: t.deadline, durationMin: t.durationMin, pacing, requestedParts });
         }
         await post("assistant", result.reply, "text", "sent");
-        // New tasks are folded into the plan automatically (the server only moves lower-priority blocks).
+        // New tasks are folded into the plan automatically (the server only moves lower-weight blocks).
         if (result.tasks.length > 0) {
           try {
             await runSchedule("auto-schedule");

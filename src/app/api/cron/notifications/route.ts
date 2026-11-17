@@ -4,8 +4,9 @@ import { FieldValue } from "firebase-admin/firestore";
 import { adminDb, adminMessaging } from "@/lib/firebase/admin";
 
 /**
- * Cron endpoint (every ~5 min): pushes "due soon" and "overdue" alerts for tasks.
+ * Cron endpoint (every ~5 min): pushes "1 day left", "due soon" and "overdue" alerts for tasks.
  *
+ *  - 1 day left: active task whose deadline is within the next 24 hours         -> sets `oneDayNotified: true`
  *  - due soon: active task whose deadline is within the next SOON_MIN minutes   -> sets `notified: true`
  *  - overdue : active task whose deadline passed within the last OVERDUE_MIN    -> sets `notifiedOverdue: true`
  *              (the task stays on the canvas as Overdue until the user reschedules, finishes or deletes it)
@@ -17,6 +18,7 @@ import { adminDb, adminMessaging } from "@/lib/firebase/admin";
 export const maxDuration = 60;
 
 const SOON_MIN = 30;
+const DAY_MIN = 24 * 60;
 const OVERDUE_MIN = 60; // don't announce things that went overdue long ago
 const MAX_TASKS = 300;
 const DEAD_TOKEN_CODES = new Set([
@@ -24,8 +26,12 @@ const DEAD_TOKEN_CODES = new Set([
   "messaging/invalid-registration-token",
 ]);
 
-type Kind = "soon" | "overdue";
-const FLAG: Record<Kind, "notified" | "notifiedOverdue"> = { soon: "notified", overdue: "notifiedOverdue" };
+type Kind = "day" | "soon" | "overdue";
+const FLAG: Record<Kind, "oneDayNotified" | "notified" | "notifiedOverdue"> = {
+  day: "oneDayNotified",
+  soon: "notified",
+  overdue: "notifiedOverdue",
+};
 
 function authorized(request: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -44,7 +50,7 @@ export async function GET(request: Request) {
     .collectionGroup("tasks")
     .where("status", "==", "active")
     .where("deadline", ">=", new Date(now - OVERDUE_MIN * 60_000))
-    .where("deadline", "<=", new Date(now + SOON_MIN * 60_000))
+    .where("deadline", "<=", new Date(now + DAY_MIN * 60_000))
     .limit(MAX_TASKS)
     .get();
 
@@ -53,7 +59,7 @@ export async function GET(request: Request) {
     const data = d.data();
     const uid = d.ref.parent.parent?.id;
     const dl = (data.deadline as { toDate(): Date }).toDate().getTime();
-    const kind: Kind = dl <= now ? "overdue" : "soon";
+    const kind: Kind = dl <= now ? "overdue" : dl - now <= SOON_MIN * 60_000 ? "soon" : "day";
     if (!uid || data[FLAG[kind]] === true) return [];
     return [{ ref: d.ref, uid, kind, title: String(data.title ?? "Task"), minutes: Math.max(1, Math.round((dl - now) / 60_000)) }];
   });
@@ -78,19 +84,26 @@ export async function GET(request: Request) {
         tx.update(
           job.ref,
           job.kind === "overdue"
-            ? { notified: true, notifiedOverdue: true }
-            : { notified: true },
+            ? { oneDayNotified: true, notified: true, notifiedOverdue: true }
+            : job.kind === "soon"
+              ? { oneDayNotified: true, notified: true } // the "1 day left" notice would be stale now
+              : { oneDayNotified: true },
         );
         return true;
       });
       if (!claimed) continue;
 
-      const body = job.kind === "overdue" ? "This task is now overdue. Open the app to reschedule it." : `Due in ${job.minutes} min.`;
+      const body =
+        job.kind === "overdue"
+          ? "This task is now overdue. Open the app to reschedule it."
+          : job.kind === "day"
+            ? `Due in about ${Math.max(1, Math.round(job.minutes / 60))} h.`
+            : `Due in ${job.minutes} min.`;
       try {
         // Data-only: public/firebase-messaging-sw.js builds the notification.
         const res = await adminMessaging().sendEachForMulticast({
           tokens,
-          data: { title: job.kind === "overdue" ? `Overdue: ${job.title}` : job.title, body, url: "/dashboard", blockId: `${job.ref.id}_${job.kind}` },
+          data: { title: job.kind === "overdue" ? `Overdue: ${job.title}` : job.kind === "day" ? `⏰ 1 day left: «${job.title}»` : job.title, body, url: "/dashboard", blockId: `${job.ref.id}_${job.kind}` },
           webpush: { headers: { Urgency: "high", TTL: "1800" } },
         });
         const dead = tokens.filter((_, i) => {
@@ -107,7 +120,9 @@ export async function GET(request: Request) {
         console.error("cron/notifications: send failed", job.ref.path, e);
         result.failed++;
         // Release the claim so the next run retries.
-        await job.ref.update(job.kind === "overdue" ? { notifiedOverdue: false } : { notified: false });
+        await job.ref.update(
+          job.kind === "overdue" ? { notifiedOverdue: false } : job.kind === "soon" ? { notified: false } : { oneDayNotified: false },
+        );
       }
     }
   }

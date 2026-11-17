@@ -16,8 +16,8 @@ const STEPS: Step[] = [
     title: "Colours tell you what needs you",
     body: (
       <>
-        <b className="text-red-500">Red</b> is urgent: due within 2 days.{" "}
-        <b className="text-amber-500">Yellow</b> means 2–5 days. <b className="text-green-500">Green</b> is safe, 5+ days away.
+        <b className="text-red-500">Red</b> is urgent: less than a day left.{" "}
+        <b className="text-amber-500">Yellow</b> means 1–5 days. <b className="text-green-500">Green</b> is safe, 5+ days away.
         A deep <b className="text-pink-600">plum</b> bubble is overdue. It is never deleted: reschedule it or finish it.
         The more pressing a task, the bigger its bubble.
       </>

@@ -10,7 +10,9 @@ import { DECOMPOSE_AT_MIN } from "@/lib/subtasks";
 import { detectPacing, PACING_META, parseSplitRequest } from "@/lib/pacing";
 import type { NewTaskInput } from "@/hooks/useTasks";
 import { describeSuggestion, suggestDuration } from "@/lib/history";
-import type { HistoryRecord, Pacing, Priority, Recurrence } from "@/types";
+import type { HistoryRecord, Pacing, Recurrence } from "@/types";
+import { DurationFields } from "@/components/DurationFields";
+import { clampDuration, splitMinutes, totalMinutes } from "@/lib/duration";
 
 const field =
   "glass w-full rounded-2xl px-4 py-2.5 text-sm outline-none transition focus:border-[rgb(var(--glow-a))] placeholder:text-muted";
@@ -57,9 +59,9 @@ function Form({
 }) {
   const [title, setTitle] = useState("");
   const [deadline, setDeadline] = useState(defaultDeadline);
-  const [duration, setDuration] = useState("");
+  const [hours, setHours] = useState("");
+  const [mins, setMins] = useState("");
   const [durationTouched, setDurationTouched] = useState(false);
-  const [priority, setPriority] = useState<Priority | "">("");
   const [recurrence, setRecurrence] = useState<Recurrence | null>(null);
   const [pacingPick, setPacingPick] = useState<Pacing | null>(null);
   const [busy, setBusy] = useState(false);
@@ -67,7 +69,10 @@ function Form({
 
   // Prefill the duration from similar tasks the user finished before, until they type their own.
   const suggestion = useMemo(() => suggestDuration(title, history), [title, history]);
-  const shownDuration = durationTouched ? duration : suggestion ? String(suggestion.minutes) : "";
+  const suggested = splitMinutes(suggestion?.minutes);
+  const shownHours = durationTouched ? hours : suggested.hours;
+  const shownMins = durationTouched ? mins : suggested.minutes;
+  const totalMin = totalMinutes(shownHours, shownMins); // blank both → undefined → the AI estimates
   const anchorDow = new Date(deadline).getDay();
   // "chill", "все підряд", "розбий на 3 частини"… typed or spoken in the title set the pacing, until picked by hand.
   const detected = detectPacing(title);
@@ -85,8 +90,7 @@ function Form({
       await onSubmit({
         title,
         deadline: when.toISOString(),
-        durationMin: shownDuration ? Math.max(5, Math.min(480, Number(shownDuration))) : undefined,
-        priority: priority || undefined,
+        durationMin: totalMin ? clampDuration(totalMin) : undefined,
         recurrence: recurrence ?? undefined,
         pacing,
         requestedParts,
@@ -116,23 +120,14 @@ function Form({
         <input required type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)}
           className={`${field} mt-1`} />
       </label>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block text-xs text-muted">
-          Duration (min)
-          <input type="number" inputMode="numeric" min={5} max={480} step={5} value={shownDuration}
-            onChange={(e) => { setDuration(e.target.value); setDurationTouched(true); }}
-            placeholder="AI will guess" className={`${field} mt-1`} />
-        </label>
-        <label className="block text-xs text-muted">
-          Priority
-          <select value={priority} onChange={(e) => setPriority(e.target.value as Priority | "")}
-            className={`${field} mt-1`}>
-            <option value="">AI will guess</option>
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-        </label>
+      <div className="text-xs text-muted">
+        <span className="mb-1 block">Duration</span>
+        <DurationFields
+          hours={shownHours}
+          minutes={shownMins}
+          onHours={(v) => { setHours(v); setMins(shownMins); setDurationTouched(true); }}
+          onMinutes={(v) => { setMins(v); setHours(shownHours); setDurationTouched(true); }}
+        />
       </div>
       <div className="text-xs text-muted">
         <span className="mb-1 block">Focus intensity</span>
@@ -146,7 +141,7 @@ function Form({
         const at = DECOMPOSE_AT_MIN[pacing];
         if (requestedParts) return <p className="-mt-1 text-xs text-muted">Will be split into {requestedParts} parts, as you asked.</p>;
         if (pacing === "locked") return <p className="-mt-1 text-xs text-muted">Locked-in tasks stay in one piece; say “split into 3 parts” to break one up.</p>;
-        return at && Number(shownDuration) >= at ? (
+        return at && (totalMin ?? 0) >= at ? (
           <p className="-mt-1 text-xs text-muted">
             {at >= 180 ? "3 hours or more" : "90 minutes or more"}: AI will split this into ~1 hour parts and give each a time slot.
           </p>

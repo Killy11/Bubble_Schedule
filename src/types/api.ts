@@ -3,7 +3,6 @@ import type {
   ChatMessage,
   DateKey,
   ISODateTime,
-  Priority,
   Schedule,
   Task,
 } from "./index";
@@ -20,7 +19,6 @@ export interface AiScheduleResult {
   taskEstimates: Array<{
     taskId: string;
     durationMin: number;
-    priority: Priority;
     reasoning: string;
   }>;
   blocks: Array<{
@@ -51,11 +49,10 @@ export interface AssistantRequest {
   nowISO: ISODateTime;
 }
 
-/** A task the assistant extracted, matching the Task schema (title, priority, time). */
+/** A task the assistant extracted, matching the Task schema (title, time). */
 export interface AssistantTask {
   title: string; // ≤ 100 chars
   deadline: ISODateTime; // required; UTC ISO
-  priority?: Priority;
   durationMin?: number;
   /** The user gave no time, so the server picked one (end of today, or tomorrow). */
   assumedDeadline: boolean;

@@ -1,4 +1,5 @@
 import type { HistoryRecord } from "@/types";
+import { formatDuration } from "@/lib/subtasks";
 
 /** Words that carry no meaning for matching tasks (English + Ukrainian). */
 const STOP = new Set(
@@ -59,7 +60,7 @@ export function suggestDuration(title: string, records: readonly HistoryRecord[]
 }
 
 export function describeSuggestion(s: DurationSuggestion): string {
-  return `Based on ${s.samples} similar task${s.samples > 1 ? "s" : ""} you finished (avg ${s.avgActual} min)`;
+  return `Based on ${s.samples} similar task${s.samples > 1 ? "s" : ""} you finished (avg ${formatDuration(s.avgActual)})`;
 }
 
 /** Build the record stored when a task is completed. */

@@ -1,4 +1,3 @@
-import type { Priority } from "@/types";
 
 /**
  * What the model returns. Times are WALL-CLOCK local times ("YYYY-MM-DDTHH:mm", user's timezone);
@@ -6,7 +5,7 @@ import type { Priority } from "@/types";
  * model cannot get offsets or the diff wrong. Final result is the agreed AiScheduleResult.
  */
 export interface AiRawResult {
-  taskEstimates: Array<{ taskId: string; durationMin: number; priority: Priority; reasoning: string }>;
+  taskEstimates: Array<{ taskId: string; durationMin: number; reasoning: string }>;
   blocks: Array<{ taskId: string; start: string; end: string; reason: string }>;
   unscheduled: Array<{ taskId: string; reason: string }>;
   summary: string;
@@ -24,11 +23,10 @@ export const SCHEDULE_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["taskId", "durationMin", "priority", "reasoning"],
+        required: ["taskId", "durationMin", "reasoning"],
         properties: {
           taskId: { type: "string" },
           durationMin: { type: "integer" },
-          priority: { type: "string", enum: ["low", "medium", "high"] },
           reasoning: { type: "string" },
         },
       },

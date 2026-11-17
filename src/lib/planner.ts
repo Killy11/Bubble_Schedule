@@ -20,9 +20,8 @@ export interface PlanUnit {
   durationMin: number;
   deadlineMs: number;
   pacing: Pacing;
-  /** Position in the planning order (earliest deadline, then priority). */
+  /** Position in the planning order (earliest deadline first). */
   orderIdx: number;
-  rank: number;
   /** Order among the parts of one task, and how many parts it has. */
   seq: number;
   count: number;
@@ -164,7 +163,7 @@ export function planUnits(o: {
 
   const prevKey = new Map<string, string>();
   for (const parts of byTask.values()) parts.forEach((p, i) => i > 0 && prevKey.set(p.key, parts[i - 1].key));
-  const pending = [...rest].sort((a, b) => a.orderIdx - b.orderIdx || b.rank - a.rank || a.seq - b.seq);
+  const pending = [...rest].sort((a, b) => a.orderIdx - b.orderIdx || a.seq - b.seq);
   const done = new Set<string>();
   const placedRest: Interval[] = [];
 

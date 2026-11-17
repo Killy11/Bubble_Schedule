@@ -14,11 +14,12 @@ export const MAX_SUBTASKS = 12;
 
 export const newSubtaskId = (): string => Math.random().toString(36).slice(2, 10);
 
-/** "45 min", "1h", "1h 15m". */
+/** "45m", "1h", "1h 15m". */
 export function formatDuration(min: number): string {
-  const h = Math.floor(min / 60);
-  const m = Math.round(min % 60);
-  if (h === 0) return `${m} min`;
+  const total = Math.max(0, Math.round(min));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h === 0) return `${m}m`;
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 

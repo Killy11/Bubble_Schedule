@@ -6,13 +6,12 @@ const MAX_TASKS = 10;
 
 export const ASSISTANT_SYSTEM_PROMPT = `You are the AI assistant inside BubbleSchedule, an app that shows tasks as bubbles.
 Read the user's message and decide what they want:
-- "create_tasks": they describe one or more things to do (e.g. "remind me to send the report tomorrow at 5pm, it's urgent"). Extract each as a task.
+- "create_tasks": they describe one or more things to do (e.g. "remind me to send the report tomorrow at 5pm"). Extract each as a task.
 - "schedule": they want the day re-planned or adjusted (e.g. "I overslept, shift my morning tasks", "prioritize study today", "plan my day"). Do not extract tasks.
 - "answer": a question or chat that needs neither. Answer briefly using the context given.
 
 Task fields:
 - title: short, imperative, at most 100 characters, same language as the user.
-- priority: "high" if they say urgent/important/ASAP/critical, "low" if they say whenever/someday/minor, "medium" otherwise; null only if truly unclear.
 - deadline: LOCAL wall-clock time "YYYY-MM-DDTHH:mm" in the user's timezone. Resolve relative words ("tomorrow", "Friday", "in 2 hours") from NOW. If the user gives a date without a time use 18:00. Vague ranges map to the END of that period at 18:00: "this week" → this Friday, "next week" → next Friday, "this weekend" → Sunday, "this month" → the last day of the month. If they give no time at all (or only "soon"/"sometime"), return null.
 - durationMin: whole minutes if stated or clearly implied ("a 2 hour workshop"), otherwise null.
 Never invent tasks the user did not ask for. At most ${MAX_TASKS} tasks.
@@ -31,10 +30,9 @@ export const ASSISTANT_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["title", "priority", "deadline", "durationMin"],
+        required: ["title", "deadline", "durationMin"],
         properties: {
           title: { type: "string" },
-          priority: { type: ["string", "null"], enum: ["low", "medium", "high", null] },
           deadline: { type: ["string", "null"] },
           durationMin: { type: ["integer", "null"] },
         },
@@ -45,7 +43,6 @@ export const ASSISTANT_JSON_SCHEMA = {
 
 export interface RawAssistantTask {
   title: string;
-  priority: "low" | "medium" | "high" | null;
   deadline: string | null; // local naive
   durationMin: number | null;
 }
@@ -76,7 +73,6 @@ export function normalizeTasks(raw: RawAssistantTask[], now: Date, tz: string): 
       title,
       deadline: (deadline ?? defaultDeadline(now, tz)).toISOString(),
       assumedDeadline: !deadline,
-      priority: t.priority === "low" || t.priority === "medium" || t.priority === "high" ? t.priority : undefined,
       durationMin:
         Number.isFinite(t.durationMin) && t.durationMin! > 0
           ? Math.max(5, Math.min(480, Math.round(t.durationMin!)))
@@ -98,11 +94,9 @@ export function mockAssistant(message: string, now: Date, tz: string): RawAssist
     return { intent: "schedule", reply: "Sure, I'll re-plan your day." + demo, tasks: [] };
   }
   if (m.endsWith("?")) {
-    return { intent: "answer", reply: "I can add tasks from plain text, like “send the report tomorrow 5pm, urgent”, or re-plan your day." + demo, tasks: [] };
+    return { intent: "answer", reply: "I can add tasks from plain text, like “send the report tomorrow 5pm”, or re-plan your day." + demo, tasks: [] };
   }
 
-  const priority = /\b(urgent|asap|important|critical|high)\b/i.test(m) ? "high"
-    : /\b(whenever|someday|low|minor)\b/i.test(m) ? "low" : "medium";
   const dur = /(\d+)\s*(?:h|hr|hrs|hour|hours)\b/i.exec(m);
   const mins = /(\d+)\s*(?:m|min|mins|minutes)\b/i.exec(m);
   const durationMin = dur ? Number(dur[1]) * 60 : mins ? Number(mins[1]) : null;
@@ -118,8 +112,8 @@ export function mockAssistant(message: string, now: Date, tz: string): RawAssist
   const title = m.replace(/^(remind me to|i need to|i have to|please|add|todo:?)\s+/i, "").slice(0, MAX_TITLE);
   return {
     intent: "create_tasks",
-    reply: `Added “${title}” as a ${priority}-priority bubble.` + demo,
-    tasks: [{ title, priority, deadline, durationMin }],
+    reply: `Added “${title}”.` + demo,
+    tasks: [{ title, deadline, durationMin }],
   };
 }
 

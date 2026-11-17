@@ -1,22 +1,15 @@
-import type { Pacing, Priority, Subtask, Task, UserSettings } from "@/types";
-import { effectiveDuration, effectivePriority } from "@/lib/bubbles/effective";
+import type { Pacing, Subtask, Task, UserSettings } from "@/types";
+import { effectiveDuration } from "@/lib/bubbles/effective";
 import { pacingOf } from "@/lib/pacing";
 import { needsDecomposition } from "@/lib/subtasks";
 import { planUnits, DAY_CAP_MIN, type PlanUnit } from "@/lib/planner";
 import type { Interval } from "@/lib/decompose";
 
-const PRIORITY_RANK: Record<Priority, number> = { high: 3, medium: 2, low: 1 };
-
-const rank = (t: Task): number => {
-  const p = effectivePriority(t);
-  return p ? PRIORITY_RANK[p] : 0;
-};
-
-/** Earliest deadline first, then highest priority, then oldest. (Every task has a deadline.) */
+/** Earliest deadline first, then oldest. Urgency comes from the deadline alone. */
 export function planningOrder(tasks: readonly Task[]): Task[] {
   return [...tasks].sort(
     (a, b) =>
-      Date.parse(a.deadline) - Date.parse(b.deadline) || rank(b) - rank(a) || a.createdAt.localeCompare(b.createdAt),
+      Date.parse(a.deadline) - Date.parse(b.deadline) || a.createdAt.localeCompare(b.createdAt),
   );
 }
 
@@ -66,7 +59,7 @@ export function planAll(o: {
     const deadlineMs = Date.parse(t.deadline);
     if (deadlineMs <= o.nowMs + 30 * 60_000) return; // about to expire: nothing useful to plan
     const pacing: Pacing = pacingOf(t);
-    const base = { taskId: t.id, deadlineMs, pacing, orderIdx, rank: rank(t) };
+    const base = { taskId: t.id, deadlineMs, pacing, orderIdx };
 
     if (t.subtasks?.length) {
       const parts = t.subtasks

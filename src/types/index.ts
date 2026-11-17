@@ -1,6 +1,5 @@
 export type ISODateTime = string; // "2026-11-16T09:30:00.000Z"; converters map to/from Timestamp
 export type DateKey = string; // "YYYY-MM-DD" in the user's timezone
-export type Priority = "low" | "medium" | "high";
 /** Focus intensity: how a task is laid out in the schedule. */
 export type Pacing = "chill" | "balanced" | "locked";
 
@@ -73,10 +72,8 @@ export interface Task {
   description?: string;
   durationMin?: number; // OPTIONAL, user-provided
   loggedMinutes: number; // time already spent (defaults to 0); shrinks the bubble
-  priority?: Priority; // OPTIONAL, user-provided
   aiEstimate?: {
     durationMin?: number;
-    priority?: Priority;
     reasoning?: string;
     estimatedAt: ISODateTime;
   };
@@ -101,12 +98,14 @@ export interface Task {
   /** Set by /api/cron/notifications once the "due soon" / "overdue" push has been sent. */
   notified?: boolean;
   notifiedOverdue?: boolean;
+  /** The "1 day left" warning has been shown / pushed (once per task). */
+  oneDayNotified?: boolean;
   completedAt?: ISODateTime;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
 }
 // Effective values: durationMin ?? aiEstimate?.durationMin ?? settings.defaultTaskMinutes.
-// User values always win. The AI never overwrites durationMin or priority.
+// User values always win. The AI never overwrites durationMin.
 
 /** users/{uid}/schedules/{dateKey} */
 export interface Schedule {
