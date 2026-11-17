@@ -4,7 +4,7 @@ import { Mic, Square } from "lucide-react";
 import { useToast } from "@/context/ToastProvider";
 import { useSpeechInput, useSpeechLang } from "@/hooks/useSpeechInput";
 
-/** Mic + language switch (UK / EN). Dictates into the text value owned by the parent. */
+/** Mic + language switch (UA / EN). Dictates into the text value owned by the parent. */
 export function MicButton({
   value,
   onChange,
@@ -33,7 +33,7 @@ export function MicButton({
         title="Voice language"
         className="glass h-7 rounded-full px-2 text-[10px] font-semibold tracking-wide text-muted transition hover:text-foreground disabled:opacity-50"
       >
-        {lang === "uk-UA" ? "UK" : "EN"}
+        {lang === "uk-UA" ? "UA" : "EN"}
       </button>
       <button
         type="button"
