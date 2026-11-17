@@ -110,6 +110,7 @@ export function SubtaskList({
             <EditRow
               key={s.id}
               sub={s}
+              deadline={task.deadline}
               onCancel={() => setEditingId(null)}
               onSave={async (u) => {
                 if (await save(subs.map((x) => (x.id === s.id ? u : x)))) setEditingId(null);
@@ -131,6 +132,7 @@ export function SubtaskList({
       {adding ? (
         <EditRow
           sub={{ id: newSubtaskId(), title: "", durationMinutes: 30, completed: false }}
+          deadline={task.deadline}
           isNew
           onCancel={() => setAdding(false)}
           onSave={async (u) => {
@@ -223,11 +225,13 @@ function Row({
 
 function EditRow({
   sub,
+  deadline,
   isNew,
   onSave,
   onCancel,
 }: {
   sub: Subtask;
+  deadline: string;
   isNew?: boolean;
   onSave: (s: Subtask) => Promise<void>;
   onCancel: () => void;
@@ -247,11 +251,17 @@ function EditRow({
     if (start) {
       const t = new Date(start).getTime();
       if (Number.isNaN(t)) return setError("Pick a valid start time.");
+      if (t + min * 60_000 >= Date.parse(deadline)) return setError("This session must end before the task's due date.");
       scheduled = { scheduledStart: new Date(t).toISOString(), scheduledEnd: new Date(t + min * 60_000).toISOString() };
     }
+    // A time typed in by hand is kept: automatic re-planning works around it instead of moving it.
+    const pinned = !!start && (isNew || start !== toLocalInput(sub.scheduledStart) || !!sub.pinned);
     setBusy(true);
     setError(null);
-    await onSave({ id: sub.id, title: title.trim().slice(0, 100), durationMinutes: min, completed: sub.completed, ...scheduled });
+    await onSave({
+      id: sub.id, title: title.trim().slice(0, 100), durationMinutes: min, completed: sub.completed,
+      ...(pinned ? { pinned: true } : {}), ...scheduled,
+    });
     setBusy(false);
   }
 
@@ -266,7 +276,7 @@ function EditRow({
           <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)}
             aria-label="Start time" className={`${input} min-w-0 flex-1`} />
         </div>
-        <p className="text-[11px] text-muted">The end time follows from the duration. Leave the start empty for “not scheduled”.</p>
+        <p className="text-[11px] text-muted">The end time follows from the duration. Leave the start empty to let the planner choose it. A time you set stays put.</p>
         {error && <p role="alert" className="text-xs text-red-500">{error}</p>}
         <div className="flex gap-2">
           <button type="submit" disabled={busy}

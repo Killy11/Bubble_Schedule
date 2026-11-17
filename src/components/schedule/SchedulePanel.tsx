@@ -57,11 +57,13 @@ export function SchedulePanel({
   onOpenCompleted: () => void;
 }) {
   const [showCompleted, setShowCompleted] = useState(false);
-  const allBlocks = schedule?.blocks ?? [];
+  // A task split into parts is shown ONLY through its parts: its single big block (from an older plan)
+  // would overlap them, so it is never rendered.
+  const everyTask = new Map(allTasks.map((t) => [t.id, t]));
+  const allBlocks = (schedule?.blocks ?? []).filter((b) => !everyTask.get(b.taskId)?.subtasks?.length);
   const doneCount = allBlocks.filter((b) => b.status === "done").length;
   // Finished blocks stay out of the timeline unless asked for.
   const blocks = showCompleted ? allBlocks : allBlocks.filter((b) => b.status !== "done");
-  const everyTask = new Map(allTasks.map((t) => [t.id, t]));
   const change = schedule?.lastChange;
   const taskById = new Map(tasks.map((t) => [t.id, t]));
 

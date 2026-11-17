@@ -22,6 +22,10 @@ const MAX_MESSAGE = 1000;
 const REBUILD_RE =
   /\b(from scratch|start (over|afresh)|re-?build|re-?plan (everything|all|the (whole|entire))|redo (the |my )?(whole |entire )?(schedule|plan)|re-?schedule (everything|all))\b/i;
 
+/** The user explicitly wants short breaks / back-to-back work ("без перерв", "підряд", "back-to-back"…). */
+const SHORT_BREAK_RE =
+  /без\s+перерв|без\s+пауз|без\s+відпочинку|підряд|корот[кш]\S*\s+перерв|мінімальн\S*\s+перерв|back[\s-]*to[\s-]*back|no\s+breaks?|without\s+breaks?|short(er)?\s+breaks?|minimal\s+breaks?|quick\s+breaks?/iu;
+
 const err = (error: string, status: number) => NextResponse.json({ error }, { status });
 
 export async function POST(request: Request) {
@@ -116,6 +120,7 @@ export async function POST(request: Request) {
     : !hadBlock.has(t.id) && t.createdAt > prev.updatedAt,
   );
 
+  const minBreakMin = message && SHORT_BREAK_RE.test(message) ? 10 : 30;
   const userDirected = body.trigger === "user-message" && !!message?.trim();
   const mode: ScheduleMode =
     userDirected && REBUILD_RE.test(message!) ? "rebuild"
@@ -178,7 +183,7 @@ export async function POST(request: Request) {
         tz, targetDate: body.targetDate, nowISO: body.nowISO, settings, mode,
         tasks: toPlace, newTaskIds: new Set(newTasks.map((t) => t.id)), weights, locked,
         blocks: livePlanned.filter((b) => placeIds.has(b.taskId)),
-        history, message, trigger: body.trigger,
+        history, message, trigger: body.trigger, minBreakMin,
         durationHints: new Map(
           toPlace.flatMap((t) => {
             const h = suggestDuration(t.title, pastWork);
@@ -203,6 +208,7 @@ export async function POST(request: Request) {
       });
       ({ ok, rejected } = checkBlocks({
         tz, targetDate: body.targetDate, now, settings, tasks: toPlace, busy, raw,
+        minBreakMin, strictBreaks: attempt === 0, // the retry only insists on no overlaps, so a task is never dropped just for a short break
       }));
       if (rejected.length === 0) break;
       turns.push(

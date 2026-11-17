@@ -23,6 +23,10 @@ interface Ctx {
   tasks: Task[];
   /** Locked blocks: immovable, nothing may overlap them. */
   busy?: Array<{ start: Date; end: Date }>;
+  /** Required rest between blocks (and around locked ones), in minutes. */
+  minBreakMin?: number;
+  /** Reject blocks that break the rest rule (the first attempt; the retry only enforces no-overlap). */
+  strictBreaks?: boolean;
   raw: AiRawResult;
 }
 
@@ -32,6 +36,7 @@ export function checkBlocks(c: Ctx): { ok: CheckedBlock[]; rejected: Rejected[] 
   const estimate = new Map(c.raw.taskEstimates.map((e) => [e.taskId, e.durationMin]));
   const days = planningDays(c.targetDate, c.settings.workingDays);
   const { start: ws, end: we } = c.settings.workingHours;
+  const gap = c.strictBreaks ? (c.minBreakMin ?? 0) * 60_000 : 0;
   const rejected: Rejected[] = [];
   const candidates: CheckedBlock[] = [];
   const seen = new Set<string>();
@@ -67,6 +72,8 @@ export function checkBlocks(c: Ctx): { ok: CheckedBlock[]; rejected: Rejected[] 
       { bad(`must end by ${toLocalNaive(new Date(mustEnd), c.tz)} (deadline minus a safety margin)`); continue; }
     if ((c.busy ?? []).some((x) => start < x.end && end > x.start))
       { bad("overlaps a locked block"); continue; }
+    if (gap > 0 && (c.busy ?? []).some((x) => start.getTime() < x.end.getTime() + gap && end.getTime() > x.start.getTime() - gap))
+      { bad(`needs at least ${c.minBreakMin} minutes of rest before and after a locked block`); continue; }
     candidates.push({ taskId: b.taskId, start, end, reason: b.reason });
   }
 
@@ -77,6 +84,8 @@ export function checkBlocks(c: Ctx): { ok: CheckedBlock[]; rejected: Rejected[] 
     const prev = ok[ok.length - 1];
     if (prev && b.start < prev.end) {
       rejected.push({ taskId: b.taskId, problem: "overlaps another block" });
+    } else if (prev && gap > 0 && b.start.getTime() < prev.end.getTime() + gap) {
+      rejected.push({ taskId: b.taskId, problem: `needs at least ${c.minBreakMin} minutes of rest after the previous block` });
     } else ok.push(b);
   }
   return { ok, rejected };

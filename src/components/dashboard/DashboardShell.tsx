@@ -28,6 +28,7 @@ import { SchedulePanel } from "@/components/schedule/SchedulePanel";
 import { BlockEditSheet } from "@/components/schedule/BlockEditSheet";
 import { ProfileSheet } from "@/components/profile/ProfileSheet";
 import { useDecompose } from "@/hooks/useDecompose";
+import { useRebalance } from "@/hooks/useRebalance";
 import { formatWindow, nextSubtask } from "@/lib/subtasks";
 import { Header } from "./Header";
 import type { Subtask, Task } from "@/types";
@@ -110,6 +111,22 @@ export function DashboardShell() {
   const {
     schedule, markTaskBlocksDone, markTaskBlocksPlanned, removeTaskBlocks, restoreBlocks, renameTaskBlocks, editBlock,
   } = useSchedule(uid, today);
+
+  // Any create / edit / delete re-plans everything by earliest deadline, then priority.
+  const lastUnplaced = useRef("");
+  useRebalance(tasks, !!uid && !tasksLoading, (unplaced) => {
+    const key = unplaced.map((t) => t.id).sort().join(",");
+    if (!key || key === lastUnplaced.current) {
+      lastUnplaced.current = key;
+      return;
+    }
+    lastUnplaced.current = key;
+    const names = unplaced.slice(0, 2).map((t) => `“${t.title}”`).join(", ");
+    toast({
+      title: unplaced.length === 1 ? "A task can't fully fit before its deadline" : `${unplaced.length} tasks can't fully fit before their deadlines`,
+      body: `${names}${unplaced.length > 2 ? " and more" : ""}: move a deadline, shorten it, or free some time.`,
+    });
+  });
 
   // Tasks made without a duration (e.g. from chat) get one from similar tasks the user finished before.
   const addTaskSmart = useCallback(
@@ -347,7 +364,8 @@ export function DashboardShell() {
                 poppingIds={popping}
                 onOpen={(id) => {
                   // A scheduled bubble opens its time editor (with a link to the details); others open details.
-                  const block = schedule?.blocks.find((b) => b.taskId === id && b.status !== "done");
+                  const hasParts = !!active.find((t) => t.id === id)?.subtasks?.length; // parts have no single block to edit
+                  const block = hasParts ? undefined : schedule?.blocks.find((b) => b.taskId === id && b.status !== "done");
                   if (block) setEditBlockId(block.id);
                   else setOpenId(id);
                 }}

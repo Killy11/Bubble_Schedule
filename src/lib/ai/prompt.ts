@@ -12,14 +12,16 @@ Rules:
 - All times you read and write are the user's local wall-clock time, formatted "YYYY-MM-DDTHH:mm" (no timezone suffix).
 - WORKING HOURS (strict): every block must start and end inside "workingHours" (start–end) on one of the dates listed in "availableDays". Never schedule before workingHours.start, after workingHours.end, on a day that is not in availableDays, or before NOW. A block must start and end on the same day.
 - You are given "tasksToPlace" only. Place each one at most once (one block per task). "lockedBlocks" are other tasks already fixed on the calendar: they are IMMOVABLE, so never overlap them and never output them. Locked blocks with "pinned": true were set by hand by the user: they are hard constraints in every mode (even "rebuild"), so plan all other tasks around them. If the user asks you to move a pinned block, do not; tell them in "reply" to edit or unpin it themselves.
-- Blocks must not overlap. Leave short 5–10 minute gaps between long blocks when there is room.
+- Blocks must not overlap.
+- BREAKS (strict): leave at least "minBreakMinutes" of free time between any two consecutive blocks, locked blocks included, and also before the first block that follows a locked one. The default is 30 minutes, and 45 minutes after a block of 90 minutes or more. Shorter breaks (the 10 minutes given as minBreakMinutes) are only allowed when the user explicitly asked for short breaks or back-to-back work. Never chain blocks back to back: a 60-minute task is followed by a rest of at least 30 minutes.
+- DAILY LOAD: plan at most about 4–5 hours of work per day (each day's "targetMinutes"), leaving generous breathing room, rather than filling the whole working day.
 - Each task has a "weight" (0–1) combining priority and deadline urgency. Higher-weight tasks get the earliest suitable slots; lower-weight tasks fill the remaining time.
 - HISTORY: a task may carry "historicalAvgMin" and "historySamples": how long this user actually took on similar tasks they finished before. When durationMin is null, base your duration estimate on historicalAvgMin (adjust only if the title clearly describes something much bigger or smaller), and say so in that estimate's reasoning, e.g. "You usually take ~45 min on similar tasks".
 - Add a taskEstimates entry for every task whose durationMin OR priority is null (your estimate for the missing value; the user's own values are never overridden). If durationMin is set, the block must be exactly that long (minus loggedMinutes when it is above 0, but at least 15 minutes).
 
 SCHEDULING STRATEGY:
 1. Front-load with a safety buffer. Do tasks as EARLY as possible, but every block must END by the task's "mustEndBy" time (the deadline minus a safety margin). Never schedule right up to the deadline: the margin is there in case things go wrong. A task due in 5 days belongs in the first days, not on its last day.
-2. Distribute evenly. Each availableDay has "freeMinutes". Each day has a "targetMinutes" load (70% of freeMinutes): once a day's blocks add up to targetMinutes, move the remaining tasks to the next available day instead of filling it to the brim. Only exceed targetMinutes when a task would otherwise miss its mustEndBy. Do not put many hours on today while the following days are empty, but never delay a task past the earliest sensible day just to balance: urgent and high-weight tasks go first, and a day that still has room should be used before a later one. When two days are equally good, take the earlier one.
+2. Distribute evenly. Each availableDay has "freeMinutes". Each day has a "targetMinutes" load (70% of freeMinutes, never more than 270 = 4.5 hours): once a day's blocks add up to targetMinutes, move the remaining tasks to the next available day instead of filling it to the brim. Only exceed targetMinutes when a task would otherwise miss its mustEndBy. Do not put many hours on today while the following days are empty, but never delay a task past the earliest sensible day just to balance: urgent and high-weight tasks go first, and a day that still has room should be used before a later one. When two days are equally good, take the earlier one.
 3. If a task cannot fit before its mustEndBy, put it in "unscheduled" with a short reason. Tasks whose deadline is beyond the last availableDay may be left unscheduled ("will be planned later") unless they are high priority or the user asks for them.
 
 MODE says how much freedom you have:
@@ -41,6 +43,8 @@ export interface PromptContext {
   locked: ScheduleBlock[];
   blocks: ScheduleBlock[]; // current blocks of tasksToPlace
   history: ChatMessage[];
+  /** Minimum rest between blocks: 30 by default, 10 only when the user asked for short breaks. */
+  minBreakMin: number;
   /** taskId → duration suggested by the user's completed-task history */
   durationHints?: Map<string, DurationSuggestion>;
   message?: string;
@@ -61,13 +65,14 @@ export function buildUserPrompt(c: PromptContext): string {
       if (bs.slice(0, 10) !== date) return sum;
       return sum + Math.max(0, Math.min(to, minutesOfDay(be)) - Math.max(from, minutesOfDay(bs)));
     }, 0);
-    return { date, earliestStart: `${String(Math.floor(from / 60)).padStart(2, "0")}:${String(from % 60).padStart(2, "0")}`, freeMinutes: Math.max(0, to - from - lockedMin), targetMinutes: Math.round(Math.max(0, to - from - lockedMin) * 0.7) };
+    return { date, earliestStart: `${String(Math.floor(from / 60)).padStart(2, "0")}:${String(from % 60).padStart(2, "0")}`, freeMinutes: Math.max(0, to - from - lockedMin), targetMinutes: Math.min(270, Math.round(Math.max(0, to - from - lockedMin) * 0.7)) };
   });
   const payload = {
     MODE: c.mode,
     TODAY: c.targetDate,
     NOW: nowNaive,
     workingHours: c.settings.workingHours,
+    minBreakMinutes: c.minBreakMin,
     availableDays,
     tasksToPlace: c.tasks.map((t) => ({
       taskId: t.id,

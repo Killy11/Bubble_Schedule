@@ -59,6 +59,8 @@ export interface Subtask {
   scheduledStart?: ISODateTime;
   scheduledEnd?: ISODateTime;
   completed: boolean;
+  /** The user set this time by hand: automatic re-planning works around it instead of moving it. */
+  pinned?: boolean;
 }
 
 /** users/{uid}/tasks/{taskId} */
