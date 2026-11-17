@@ -120,7 +120,6 @@ export async function POST(request: Request) {
     : !hadBlock.has(t.id) && t.createdAt > prev.updatedAt,
   );
 
-  const minBreakMin = message && SHORT_BREAK_RE.test(message) ? 10 : 30;
   const userDirected = body.trigger === "user-message" && !!message?.trim();
   const mode: ScheduleMode =
     userDirected && REBUILD_RE.test(message!) ? "rebuild"
@@ -148,6 +147,11 @@ export async function POST(request: Request) {
     locked = livePlanned.filter((b) => isPinnedNow(b) || !movable.has(b.taskId));
   }
 
+  // Smallest rest any block needs: 5 with a locked-in task (or "no breaks" wording), 15 for the balanced
+  // wave, 30 when everything is chill. The prompt spells out the full per-pacing rhythm.
+  const pacings = toPlace.map((t) => t.pacing ?? "balanced");
+  const minBreakMin =
+    pacings.includes("locked") || (message && SHORT_BREAK_RE.test(message)) ? 5 : pacings.every((p) => p === "chill") ? 30 : 15;
   const nowIso = new Date().toISOString();
   const assistantRef = db.collection(`users/${uid}/messages`).doc();
 

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Check, ListTree, Loader2, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { pacingOf } from "@/lib/pacing";
 import { formatDuration, formatWindow, MAX_SUBTASKS, newSubtaskId, progressLabel, subtaskProgress } from "@/lib/subtasks";
 import type { Subtask, Task } from "@/types";
 
@@ -49,8 +50,9 @@ export function SubtaskList({
   splitting: boolean;
   onToggle: (t: Task, sub: Subtask, checked: boolean) => Promise<void>;
   onSave: (t: Task, subs: Subtask[]) => Promise<void>;
-  onSplit: (t: Task) => void;
+  onSplit: (t: Task, parts?: number) => void;
 }) {
+  const [partCount, setPartCount] = useState("");
   const subs = task.subtasks ?? [];
   const progress = subtaskProgress(task);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -82,13 +84,24 @@ export function SubtaskList({
         <button
           type="button"
           disabled={splitting}
-          onClick={() => onSplit(task)}
+          onClick={() => {
+            const n = Math.round(Number(partCount));
+            onSplit(task, partCount && n >= 2 && n <= MAX_SUBTASKS ? n : undefined);
+          }}
           className="flex shrink-0 items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background transition hover:opacity-90 disabled:opacity-60"
         >
           {splitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
           {splitting ? "Planning…" : subs.length ? "Re-split with AI" : "Split into subtasks with AI"}
         </button>
       </div>
+
+      <label className="flex items-center gap-2 text-xs text-muted">
+        Parts
+        <input type="number" inputMode="numeric" min={2} max={MAX_SUBTASKS} value={partCount}
+          onChange={(e) => setPartCount(e.target.value)} placeholder="auto" aria-label="Number of parts"
+          className="glass w-16 rounded-lg px-2 py-1 text-xs text-foreground outline-none placeholder:text-muted focus:border-[rgb(var(--glow-a))]" />
+        <span>{pacingOf(task) === "locked" ? "Locked-in tasks stay whole unless you set a number." : "Leave empty to let the AI decide."}</span>
+      </label>
 
       {progress && (
         <div className="h-1.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-valuemin={0}

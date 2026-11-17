@@ -1,5 +1,6 @@
 import type { DateKey, UserSettings } from "@/types";
 import { addDays, minutesOfDay, weekdayOf } from "@/lib/time";
+import { upgradeWorkingHours } from "@/lib/settings";
 
 /** How many calendar days ahead (including the target day) the planner may use. */
 export const HORIZON_DAYS = 7;
@@ -13,7 +14,7 @@ export function sanitizeSettings(s: UserSettings): UserSettings {
   const days = Array.isArray(s.workingDays) ? s.workingDays.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6) : [];
   return {
     ...s,
-    workingHours: hoursOk ? wh : { start: "09:00", end: "18:00" },
+    workingHours: hoursOk ? upgradeWorkingHours(wh) : { start: "09:00", end: "21:00" },
     workingDays: days.length ? days : [0, 1, 2, 3, 4, 5, 6],
   };
 }

@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { Archive, Check, ListTree, Pencil, Pin, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { Archive, Check, Pencil, Pin, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { PacingSelector } from "@/components/PacingSelector";
 import { formatDeadline, formatTime } from "@/lib/time";
-import type { ScheduleBlock } from "@/types";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
-import type { Schedule, Subtask, Task } from "@/types";
 import { formatDuration } from "@/lib/subtasks";
+import type { Hue } from "@/components/Orb";
+import type { Pacing, Schedule, ScheduleBlock, Subtask, Task } from "@/types";
 
 const dayStart = (t: number) => new Date(t).setHours(0, 0, 0, 0);
 
@@ -16,103 +17,113 @@ function dayLabel(dayMs: number, now: number): string {
   if (diff === 0) return "Today";
   if (diff === 1) return "Tomorrow";
   if (diff === -1) return "Yesterday";
-  return new Date(dayMs).toLocaleDateString([], {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  return new Date(dayMs).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
 }
 
-const TYPE_LABEL = {
-  added: "Added",
-  moved: "Moved",
-  removed: "Removed",
-  resized: "Resized",
-} as const;
+const TYPE_LABEL = { added: "Added", moved: "Moved", removed: "Removed", resized: "Resized" } as const;
+
+/** One card on the timeline: a standalone task's block, or one step of a bigger task. */
+type Entry =
+  | { kind: "block"; key: string; start: number; end: number; block: ScheduleBlock; task?: Task }
+  | { kind: "part"; key: string; start: number; end: number; task: Task; sub: Subtask; step: number; steps: number };
 
 export function SchedulePanel({
   schedule,
   tasks,
-  now,
-  onComplete,
-  onOpenBlock,
-  onOpenTask,
-  onToggleSubtask,
   allTasks,
+  now,
+  pacing,
+  onChangePacing,
+  onComplete,
+  onOpenTask,
+  onOpenPart,
+  onEditBlockTime,
+  onToggleSubtask,
   onRestoreTask,
   onDeleteTask,
   onOpenCompleted,
 }: {
   schedule: Schedule | null;
+  /** Active tasks. */
   tasks: Task[];
-  now: number;
-  onComplete: (taskId: string) => void;
-  onOpenBlock: (blockId: string) => void;
-  onOpenTask: (taskId: string) => void;
-  onToggleSubtask: (task: Task, sub: Subtask) => void;
   /** Every task (any status), so finished blocks can offer Restore. */
   allTasks: Task[];
+  now: number;
+  /** Pacing given to new tasks. */
+  pacing: Pacing;
+  onChangePacing: (p: Pacing) => void;
+  onComplete: (taskId: string) => void;
+  /** A standalone task's card was clicked: open its details. */
+  onOpenTask: (taskId: string) => void;
+  /** A step's card was clicked: open the step with its parent's context. */
+  onOpenPart: (taskId: string, subId: string) => void;
+  onEditBlockTime: (blockId: string) => void;
+  onToggleSubtask: (task: Task, sub: Subtask) => void;
   onRestoreTask: (taskId: string) => void;
   onDeleteTask: (taskId: string) => void;
   onOpenCompleted: () => void;
 }) {
   const [showCompleted, setShowCompleted] = useState(false);
-  // A task split into parts is shown ONLY through its parts: its single big block (from an older plan)
-  // would overlap them, so it is never rendered.
-  const everyTask = new Map(allTasks.map((t) => [t.id, t]));
-  const allBlocks = (schedule?.blocks ?? []).filter((b) => !everyTask.get(b.taskId)?.subtasks?.length);
-  const doneCount = allBlocks.filter((b) => b.status === "done").length;
-  // Finished blocks stay out of the timeline unless asked for.
-  const blocks = showCompleted ? allBlocks : allBlocks.filter((b) => b.status !== "done");
   const change = schedule?.lastChange;
-  const taskById = new Map(tasks.map((t) => [t.id, t]));
+  const everyTask = new Map(allTasks.map((t) => [t.id, t]));
 
-  // The plan spans several days: group by the day each block is scheduled (blocks are start-sorted).
-  const groups = new Map<number, ScheduleBlock[]>();
-  for (const b of blocks) {
-    const key = dayStart(new Date(b.start).getTime());
-    groups.set(key, [...(groups.get(key) ?? []), b]);
-  }
-  // Upcoming parts of big tasks live on the task, not in the day plan: show them on their days too.
-  const sessionsByDay = new Map<number, Array<{ task: Task; sub: Subtask }>>();
+  // A task split into steps shows ONLY through its steps; its single big block (from an older plan) is never drawn.
+  const blocks = (schedule?.blocks ?? []).filter((b) => !everyTask.get(b.taskId)?.subtasks?.length);
+  const entries: Entry[] = blocks.map((b) => ({
+    kind: "block", key: b.id, start: Date.parse(b.start), end: Date.parse(b.end), block: b, task: everyTask.get(b.taskId),
+  }));
   for (const task of tasks) {
-    for (const sub of task.subtasks ?? []) {
-      if (sub.completed || !sub.scheduledStart || !sub.scheduledEnd) continue;
-      const day = dayStart(Date.parse(sub.scheduledStart));
-      if (day < dayStart(now)) continue;
-      sessionsByDay.set(day, [...(sessionsByDay.get(day) ?? []), { task, sub }]);
-    }
+    const subs = [...(task.subtasks ?? [])].sort((a, c) => (a.scheduledStart ?? "9").localeCompare(c.scheduledStart ?? "9"));
+    subs.forEach((sub, i) => {
+      if (!sub.scheduledStart || !sub.scheduledEnd) return;
+      entries.push({
+        kind: "part", key: `part_${sub.id}`, task, sub, step: i + 1, steps: subs.length,
+        start: Date.parse(sub.scheduledStart), end: Date.parse(sub.scheduledEnd),
+      });
+    });
   }
-  for (const list of sessionsByDay.values()) list.sort((a, c) => a.sub.scheduledStart!.localeCompare(c.sub.scheduledStart!));
-  const days = [...new Set([...groups.keys(), ...sessionsByDay.keys()])]
-    .sort((a, c) => a - c)
-    .map((day) => [day, groups.get(day) ?? []] as const);
+  const isDone = (e: Entry) => (e.kind === "block" ? e.block.status === "done" : e.sub.completed);
+  const doneCount = entries.filter(isDone).length;
+  const visible = (showCompleted ? entries : entries.filter((e) => !isDone(e)))
+    .filter((e) => e.kind === "block" || dayStart(e.start) >= dayStart(now))
+    .sort((a, c) => a.start - c.start);
+
+  const groups = new Map<number, Entry[]>();
+  for (const e of visible) groups.set(dayStart(e.start), [...(groups.get(dayStart(e.start)) ?? []), e]);
+  const days = [...groups.entries()].sort((a, c) => a[0] - c[0]);
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
-      <div className="flex items-center justify-between gap-2">
-        {doneCount > 0 ? (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          {doneCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setShowCompleted((v) => !v)}
+              aria-pressed={showCompleted}
+              className={`rounded-full px-3 py-1.5 text-xs transition ${
+                showCompleted ? "bg-foreground text-background" : "glass text-muted hover:text-foreground"
+              }`}
+            >
+              {showCompleted ? "Hide" : "Show"} completed ({doneCount})
+            </button>
+          ) : (
+            <span />
+          )}
           <button
             type="button"
-            onClick={() => setShowCompleted((v) => !v)}
-            aria-pressed={showCompleted}
-            className={`rounded-full px-3 py-1.5 text-xs transition ${
-              showCompleted ? "bg-foreground text-background" : "glass text-muted hover:text-foreground"
-            }`}
+            onClick={onOpenCompleted}
+            className="glass flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-muted transition hover:text-foreground"
           >
-            {showCompleted ? "Hide" : "Show"} completed ({doneCount})
+            <Archive className="h-3.5 w-3.5" /> Completed
           </button>
-        ) : (
-          <span />
-        )}
-        <button
-          type="button"
-          onClick={onOpenCompleted}
-          className="glass flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-muted transition hover:text-foreground"
-        >
-          <Archive className="h-3.5 w-3.5" /> Completed
-        </button>
+        </div>
+        <div>
+          <p className="mb-1 text-[11px] text-muted">Focus intensity for new tasks</p>
+          <PacingSelector value={pacing} onChange={onChangePacing} compact />
+        </div>
       </div>
+
       {change && (
         <section className="glass rounded-2xl p-4">
           <div className="mb-1 flex items-center gap-2 text-xs font-medium text-[rgb(var(--glow-a))]">
@@ -123,10 +134,7 @@ export function SchedulePanel({
             <ul className="mt-3 space-y-1.5 text-xs text-muted">
               {change.changes.map((c, i) => (
                 <li key={i}>
-                  <span className="font-medium text-foreground">
-                    {TYPE_LABEL[c.type]}
-                  </span>{" "}
-                  {c.title}
+                  <span className="font-medium text-foreground">{TYPE_LABEL[c.type]}</span> {c.title}
                   {c.to && ` → ${formatTime(c.to.start)}`}
                   {c.why && <span> · {c.why}</span>}
                 </li>
@@ -138,145 +146,150 @@ export function SchedulePanel({
 
       {days.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center text-sm text-muted">
-          <p>{doneCount > 0 ? "Everything scheduled is done." : "Nothing scheduled for today yet."}</p>
+          <p>{doneCount > 0 ? "Everything scheduled is done." : "Nothing scheduled yet."}</p>
           <p>
-            Add some bubbles, then hit{" "}
-            <span className="text-foreground">Auto-schedule</span>.
+            Add some bubbles and they are planned for you, or hit <span className="text-foreground">Auto-schedule</span>.
           </p>
         </div>
       ) : (
-        days.map(([day, dayBlocks]) => (
+        days.map(([day, list]) => (
           <section key={day}>
-            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
-              {dayLabel(day, now)}
-            </h3>
+            <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">{dayLabel(day, now)}</h3>
             <ol className="relative space-y-3 border-l border-line pl-5">
-              {dayBlocks.map((b) => {
-                const done = b.status === "done";
-                const current =
-                  !done &&
-                  new Date(b.start).getTime() <= now &&
-                  now < new Date(b.end).getTime();
-                const task = taskById.get(b.taskId);
-                const hue = task && !done ? bubbleHue(task, now) : null; // same colour as the bubble
-                return (
-                  <li
-                    key={b.id}
-                    className={`relative ${hue ? `hue-${hue}` : ""}`}
-                  >
-                    <span
-                      className={`absolute -left-[25px] top-4 rounded-full ${
-                        hue
-                          ? `hue-dot ${current ? "h-3.5 w-3.5 -left-[27px] top-[14px]" : "h-2.5 w-2.5"}`
-                          : "h-2.5 w-2.5 bg-muted/50"
-                      }`}
-                    />
-                    <div
-                      className="glass flex items-start gap-3 rounded-2xl p-3"
-                    >
-                      <div
-                        className={`min-w-0 flex-1 ${done ? "opacity-50" : "cursor-pointer"}`}
-                        {...(done
-                          ? {}
-                          : {
-                              role: "button",
-                              tabIndex: 0,
-                              "aria-label": `Edit time of ${b.title}`,
-                              onClick: () => onOpenBlock(b.id),
-                              onKeyDown: (ev: React.KeyboardEvent) => {
-                                if (ev.key === "Enter" || ev.key === " ") {
-                                  ev.preventDefault();
-                                  onOpenBlock(b.id);
-                                }
-                              },
-                            })}
-                      >
-                        <p className="flex items-center gap-2 text-xs text-muted">
-                          {formatTime(b.start)} – {formatTime(b.end)}
-                          {b.isPinned && !done && <Pin aria-label="Pinned" className="h-3 w-3 text-foreground" />}
-                          {!done && <Pencil aria-hidden className="h-3 w-3 opacity-60" />}
-                          {hue && (
-                            <span className="hue-badge">
-                              {HUE_META[hue].label}
-                            </span>
-                          )}
-                          {task && !done && <span>· due {formatDeadline(task.deadline, now)}</span>}
-                        </p>
-                        <p
-                          title={b.title}
-                          className={`line-clamp-2 break-words text-sm font-medium ${done ? "line-through" : ""}`}
-                        >
-                          {b.title}
-                        </p>
-                        {b.reason && !done && (
-                          <p className="mt-1 text-xs text-muted">{b.reason}</p>
-                        )}
-                      </div>
-                      {done && (
-                        <span className="flex shrink-0 gap-1">
-                          {everyTask.has(b.taskId) && (
-                            <button
-                              type="button"
-                              onClick={() => onRestoreTask(b.taskId)}
-                              aria-label={`Restore ${b.title}`}
-                              title="Restore"
-                              className="rounded-full border border-line p-1.5 text-muted transition hover:border-[rgb(var(--glow-a))] hover:text-[rgb(var(--glow-a))]"
-                            >
-                              <RotateCcw className="h-4 w-4" />
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => onDeleteTask(b.taskId)}
-                            aria-label={`Delete ${b.title} permanently`}
-                            title="Delete"
-                            className="rounded-full border border-line p-1.5 text-muted transition hover:border-red-500 hover:text-red-500"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </span>
-                      )}
-                      {!done && (
-                        <button
-                          onClick={() => onComplete(b.taskId)}
-                          aria-label={`Complete ${b.title}`}
-                          className="rounded-full border border-line p-1.5 text-muted transition hover:border-[rgb(var(--glow-a))] hover:text-[rgb(var(--glow-a))]"
-                        >
-                          <Check className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
+              {list.map((e) => (
+                <Card
+                  key={e.key}
+                  entry={e}
+                  now={now}
+                  hasTask={e.kind === "block" ? everyTask.has(e.block.taskId) : true}
+                  onOpen={() => (e.kind === "part" ? onOpenPart(e.task.id, e.sub.id) : onOpenTask(e.block.taskId))}
+                  onEditTime={e.kind === "block" ? () => onEditBlockTime(e.block.id) : undefined}
+                  onComplete={() => (e.kind === "part" ? onToggleSubtask(e.task, e.sub) : onComplete(e.block.taskId))}
+                  onRestore={() => e.kind === "block" && onRestoreTask(e.block.taskId)}
+                  onDelete={() => e.kind === "block" && onDeleteTask(e.block.taskId)}
+                />
+              ))}
             </ol>
-            {(sessionsByDay.get(day) ?? []).length > 0 && (
-              <ul className={`space-y-2 ${dayBlocks.length ? "mt-3" : ""}`} aria-label="Parts of bigger tasks">
-                {sessionsByDay.get(day)!.map(({ task, sub }) => (
-                  <li key={sub.id} className="glass flex items-start gap-3 rounded-2xl border-dashed p-3">
-                    <button type="button" onClick={() => onOpenTask(task.id)} className="min-w-0 flex-1 text-left">
-                      <p className="flex items-center gap-1.5 text-xs text-muted">
-                        <ListTree aria-hidden className="h-3 w-3" />
-                        {formatTime(sub.scheduledStart!)} – {formatTime(sub.scheduledEnd!)} · {formatDuration(sub.durationMinutes)}
-                      </p>
-                      <p className="line-clamp-2 break-words text-sm font-medium">{sub.title}</p>
-                      <p className="truncate text-xs text-muted">Part of {task.title}</p>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onToggleSubtask(task, sub)}
-                      aria-label={`Mark done: ${sub.title}`}
-                      className="rounded-full border border-line p-1.5 text-muted transition hover:border-[rgb(var(--glow-a))] hover:text-[rgb(var(--glow-a))]"
-                    >
-                      <Check className="h-4 w-4" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
           </section>
         ))
       )}
     </div>
+  );
+}
+
+/** The single card design used for every timeline item. Steps take their parent bubble's colour. */
+function Card({
+  entry: e,
+  now,
+  hasTask,
+  onOpen,
+  onEditTime,
+  onComplete,
+  onRestore,
+  onDelete,
+}: {
+  entry: Entry;
+  now: number;
+  hasTask: boolean;
+  onOpen: () => void;
+  onEditTime?: () => void;
+  onComplete: () => void;
+  onRestore: () => void;
+  onDelete: () => void;
+}) {
+  const done = e.kind === "block" ? e.block.status === "done" : e.sub.completed;
+  const current = !done && e.start <= now && now < e.end;
+  const task = e.task;
+  const hue: Hue | null = task && !done ? bubbleHue(task, now) : null;
+  const title = e.kind === "part" ? e.sub.title : e.block.title;
+  const minutes = Math.round((e.end - e.start) / 60_000);
+  const pinned = e.kind === "block" && e.block.isPinned && !done;
+  const subtitle =
+    e.kind === "part"
+      ? `Step ${e.step}/${e.steps} · ${e.task.title}`
+      : task && !done
+        ? `Due ${formatDeadline(task.deadline, now)}`
+        : null;
+
+  return (
+    <li className={`relative ${hue ? `hue-${hue}` : ""}`}>
+      <span
+        className={`absolute -left-[25px] top-4 rounded-full ${
+          hue ? `hue-dot ${current ? "h-3.5 w-3.5 -left-[27px] top-[14px]" : "h-2.5 w-2.5"}` : "h-2.5 w-2.5 bg-muted/50"
+        }`}
+      />
+      <div
+        className="glass flex items-start gap-3 rounded-2xl p-3"
+        style={hue ? { borderLeft: "3px solid rgb(var(--c) / 0.75)" } : undefined}
+      >
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`${title}, ${formatTime(new Date(e.start).toISOString())} to ${formatTime(new Date(e.end).toISOString())}. Show details`}
+          className={`min-w-0 flex-1 text-left ${done ? "opacity-50" : ""}`}
+        >
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+            <span>
+              {formatTime(new Date(e.start).toISOString())} – {formatTime(new Date(e.end).toISOString())} · {formatDuration(minutes)}
+            </span>
+            {pinned && <Pin aria-label="Pinned" className="h-3 w-3 text-foreground" />}
+            {hue && <span className="hue-badge">{HUE_META[hue].label}</span>}
+          </p>
+          <p title={title} className={`line-clamp-2 break-words text-sm font-medium ${done ? "line-through" : ""}`}>
+            {title}
+          </p>
+          {subtitle && <p className="truncate text-xs text-muted">{subtitle}</p>}
+          {e.kind === "block" && e.block.reason && !done && <p className="mt-1 text-xs text-muted">{e.block.reason}</p>}
+        </button>
+
+        <span className="flex shrink-0 items-center gap-1">
+          {onEditTime && !done && (
+            <button
+              type="button"
+              onClick={onEditTime}
+              aria-label={`Edit the time of ${title}`}
+              title="Edit time"
+              className="rounded-full p-1.5 text-muted transition hover:text-foreground"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {done && e.kind === "block" && (
+            <>
+              {hasTask && (
+                <button
+                  type="button"
+                  onClick={onRestore}
+                  aria-label={`Restore ${title}`}
+                  title="Restore"
+                  className="rounded-full border border-line p-1.5 text-muted transition hover:border-[rgb(var(--glow-a))] hover:text-[rgb(var(--glow-a))]"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onDelete}
+                aria-label={`Delete ${title} permanently`}
+                title="Delete"
+                className="rounded-full border border-line p-1.5 text-muted transition hover:border-red-500 hover:text-red-500"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </>
+          )}
+          {!done && (
+            <button
+              type="button"
+              onClick={onComplete}
+              aria-label={`Complete ${title}`}
+              className="rounded-full border border-line p-1.5 text-muted transition hover:border-[rgb(var(--glow-a))] hover:text-[rgb(var(--glow-a))]"
+            >
+              <Check className="h-4 w-4" />
+            </button>
+          )}
+        </span>
+      </div>
+    </li>
   );
 }

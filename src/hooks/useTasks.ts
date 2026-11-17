@@ -20,7 +20,7 @@ import { db } from "@/lib/firebase/client";
 import { historyConverter, taskConverter, toFirestoreData } from "@/lib/firebase/converters";
 import { cleanRecurrence, nextOccurrence } from "@/lib/recurrence";
 import { makeHistoryRecord } from "@/lib/history";
-import type { Priority, Recurrence, Subtask, Task } from "@/types";
+import type { Pacing, Priority, Recurrence, Subtask, Task } from "@/types";
 
 export interface NewTaskInput {
   title: string;
@@ -29,6 +29,9 @@ export interface NewTaskInput {
   priority?: Priority;
   description?: string;
   recurrence?: Recurrence;
+  pacing?: Pacing;
+  /** The user asked for exactly this many parts. */
+  requestedParts?: number;
   /** Duration guessed from the user's history; stored as an AI-style estimate, not as a user value. */
   historyEstimate?: { durationMin: number; reasoning: string };
 }
@@ -90,6 +93,8 @@ export function useTasks(
           ? { durationMin: input.historyEstimate.durationMin, reasoning: input.historyEstimate.reasoning, estimatedAt: nowIso }
           : undefined,
         recurrence,
+        pacing: input.pacing,
+        requestedParts: input.requestedParts,
         seriesId: recurrence ? ref.id : undefined,
         status: "active",
         createdAt: nowIso,
@@ -136,6 +141,7 @@ export function useTasks(
             loggedMinutes: 0,
             priority: task.priority,
             recurrence: task.recurrence,
+            pacing: task.pacing,
             seriesId: series,
             status: "active",
             createdAt: nowIso,
@@ -356,7 +362,7 @@ export function useTasks(
   const updateTask = useCallback(
     async (
       task: Task,
-      patch: { title: string; deadline: string; priority: Priority | null; durationMin: number | null },
+      patch: { title: string; deadline: string; priority: Priority | null; durationMin: number | null; pacing: Pacing },
     ) => {
       if (!uid) return;
       const deadlineChanged = Date.parse(patch.deadline) !== Date.parse(task.deadline);
@@ -365,6 +371,7 @@ export function useTasks(
         deadline: new Date(patch.deadline),
         priority: patch.priority ?? deleteField(),
         durationMin: patch.durationMin ?? deleteField(),
+        pacing: patch.pacing,
         // A new deadline deserves fresh "due soon" / "expired" alerts.
         ...(deadlineChanged ? { notified: false, notifiedOverdue: false } : {}),
         updatedAt: new Date(),

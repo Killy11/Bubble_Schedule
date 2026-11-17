@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Loader2, SendHorizontal, Sparkles } from "lucide-react";
 import { MicButton } from "@/components/MicButton";
-import type { ChatMessage } from "@/types";
+import { PacingSelector } from "@/components/PacingSelector";
+import type { ChatMessage, Pacing } from "@/types";
 import type { ScheduleRequest } from "@/types/api";
 
 const SUGGESTIONS = ["I overslept, shift my morning tasks", "Prioritize study today", "Make my day lighter"];
@@ -14,6 +15,8 @@ export function ChatPanel({
   hasTasks,
   onSend,
   onAsk,
+  pacing,
+  onChangePacing,
 }: {
   messages: ChatMessage[];
   pending: boolean;
@@ -22,6 +25,9 @@ export function ChatPanel({
   onSend: (trigger: ScheduleRequest["trigger"], text?: string) => void;
   /** Free text: the assistant decides whether to add tasks, re-plan, or just answer. */
   onAsk: (text: string) => void;
+  /** Pacing for tasks created here, unless the message says otherwise ("chill", "все підряд"…). */
+  pacing: Pacing;
+  onChangePacing: (p: Pacing) => void;
 }) {
   const [text, setText] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
@@ -74,6 +80,10 @@ export function ChatPanel({
       </div>
 
       <div className="space-y-3 border-t border-line p-3">
+        <div>
+          <p className="mb-1 text-[11px] text-muted">Focus intensity for new tasks</p>
+          <PacingSelector value={pacing} onChange={onChangePacing} compact />
+        </div>
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => onSend("auto-schedule")}

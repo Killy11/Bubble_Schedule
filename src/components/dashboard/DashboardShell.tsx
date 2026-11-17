@@ -31,10 +31,12 @@ import { useDecompose } from "@/hooks/useDecompose";
 import { useRebalance } from "@/hooks/useRebalance";
 import { formatWindow, nextSubtask } from "@/lib/subtasks";
 import { Header } from "./Header";
-import type { Subtask, Task } from "@/types";
+import type { Pacing, Subtask, Task } from "@/types";
+import { PartDetailSheet } from "@/components/schedule/PartDetailSheet";
 import type { NewTaskInput } from "@/hooks/useTasks";
 
 const ONBOARDED_KEY = "bs:onboarded";
+const PACING_KEY = "bs:pacing";
 const EXPIRED_SEEN_KEY = "bs:expiredSeenAt";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -69,6 +71,15 @@ export function DashboardShell() {
   const [completedOpen, setCompletedOpen] = useState(false);
   const [popping, setPopping] = useState<ReadonlySet<string>>(new Set());
   const [tourOpen, setTourOpen] = useState(false);
+  // Pacing given to new tasks (the form, the chat) unless the text says otherwise.
+  const [defaultPacing, setDefaultPacingState] = useState<Pacing>(() => {
+    const saved = readLocal(PACING_KEY);
+    return saved === "chill" || saved === "locked" ? saved : "balanced";
+  });
+  const setDefaultPacing = (p: Pacing) => {
+    setDefaultPacingState(p);
+    writeLocal(PACING_KEY, p);
+  };
   const [tourDismissed, setTourDismissed] = useState(() => readLocal(ONBOARDED_KEY) === "1");
 
   // Bubbles that expired just now: say which, and offer a one-tap way to bring them back.
@@ -132,16 +143,18 @@ export function DashboardShell() {
   const addTaskSmart = useCallback(
     (input: NewTaskInput) => {
       const s = input.durationMin ? null : suggestDuration(input.title, history);
-      return addTask(s ? { ...input, historyEstimate: { durationMin: s.minutes, reasoning: describeSuggestion(s) } } : input);
+      const withPacing = { ...input, pacing: input.pacing ?? defaultPacing };
+      return addTask(s ? { ...withPacing, historyEstimate: { durationMin: s.minutes, reasoning: describeSuggestion(s) } } : withPacing);
     },
-    [addTask, history],
+    [addTask, history, defaultPacing],
   );
-  const { messages, pending, send, ask } = useChat(uid, today, addTaskSmart);
+  const { messages, pending, send, ask } = useChat(uid, today, addTaskSmart, defaultPacing);
 
   const [tab, setTab] = useState<Tab>("bubbles");
   const [formOpen, setFormOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [openPart, setOpenPart] = useState<{ taskId: string; subId: string } | null>(null);
   const [editBlockId, setEditBlockId] = useState<string | null>(null);
 
   // Cookie says signed in but Firebase says otherwise: clear the cookie so /login doesn't bounce back.
@@ -243,6 +256,7 @@ export function DashboardShell() {
       const othersLeft = (t.subtasks ?? []).some((s) => s.id !== sub.id && !s.completed);
       if (checked && !othersLeft) {
         setOpenId(null);
+        setOpenPart(null);
         await completeTask({ ...t, loggedMinutes: (t.loggedMinutes ?? 0) + sub.durationMinutes });
       } else {
         await toggleSubtask(t, sub.id, checked);
@@ -403,8 +417,11 @@ export function DashboardShell() {
                 schedule={schedule}
                 tasks={active}
                 now={now}
-                onOpenBlock={setEditBlockId}
+                onEditBlockTime={setEditBlockId}
                 onOpenTask={setOpenId}
+                onOpenPart={(taskId, subId) => setOpenPart({ taskId, subId })}
+                pacing={defaultPacing}
+                onChangePacing={setDefaultPacing}
                 onToggleSubtask={(t, s) => void toggleSubtaskFlow(t, s)}
                 allTasks={tasks}
                 onOpenCompleted={() => setCompletedOpen(true)}
@@ -421,7 +438,8 @@ export function DashboardShell() {
                 }}
               />
             ) : (
-              <ChatPanel messages={messages} pending={pending} hasTasks={active.length > 0} onSend={send} onAsk={ask} />
+              <ChatPanel messages={messages} pending={pending} hasTasks={active.length > 0} onSend={send} onAsk={ask}
+                pacing={defaultPacing} onChangePacing={setDefaultPacing} />
             )}
           </div>
         </aside>
@@ -443,7 +461,7 @@ export function DashboardShell() {
       </nav>
 
       <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
-      <TaskFormSheet open={formOpen} onClose={() => setFormOpen(false)} onSubmit={addTask} history={history} />
+      <TaskFormSheet open={formOpen} onClose={() => setFormOpen(false)} onSubmit={addTask} history={history} defaultPacing={defaultPacing} />
       <ExpiredSheet
         open={expiredOpen}
         tasks={expired}
@@ -461,6 +479,17 @@ export function DashboardShell() {
         onClearAll={() => deleteForever(completed.map((t) => t.id))}
       />
       <OnboardingTour open={tourOpen || autoTour} onClose={closeTour} />
+      <PartDetailSheet
+        task={active.find((t) => t.id === openPart?.taskId) ?? null}
+        sub={active.find((t) => t.id === openPart?.taskId)?.subtasks?.find((s) => s.id === openPart?.subId) ?? null}
+        now={now}
+        onClose={() => setOpenPart(null)}
+        onToggle={(t, s) => toggleSubtaskFlow(t, s)}
+        onEditParent={(t) => {
+          setOpenPart(null);
+          setOpenId(t.id);
+        }}
+      />
       <BlockEditSheet
         block={schedule?.blocks.find((b) => b.id === editBlockId && b.status !== "done") ?? null}
         others={(schedule?.blocks ?? []).filter((b) => b.id !== editBlockId && b.status !== "done")}
@@ -485,7 +514,7 @@ export function DashboardShell() {
         splitting={!!openTask && splitting.has(openTask.id)}
         onToggleSubtask={(t, s, checked) => (checked === !s.completed ? toggleSubtaskFlow(t, s) : Promise.resolve())}
         onSaveSubtasks={saveSubtasks}
-        onSplit={(t) => void split(t)}
+        onSplit={(t, n) => void split(t, n)}
         onEdit={async (t, patch) => {
           await updateTask(t, patch);
           if (patch.title.trim() !== t.title) await renameTaskBlocks(t.id, patch.title.trim()).catch(() => {});

@@ -5,7 +5,8 @@ import { collection, doc, limit, onSnapshot, orderBy, query, setDoc } from "fire
 import { db } from "@/lib/firebase/client";
 import { messageConverter } from "@/lib/firebase/converters";
 import type { NewTaskInput } from "@/hooks/useTasks";
-import type { ChatMessage, DateKey } from "@/types";
+import { detectPacing, parseSplitRequest } from "@/lib/pacing";
+import type { ChatMessage, DateKey, Pacing } from "@/types";
 import type { AssistantRequest, AssistantResponse, ScheduleRequest } from "@/types/api";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -25,6 +26,8 @@ export function useChat(
   uid: string | undefined,
   targetDate: DateKey,
   addTask: (input: NewTaskInput) => Promise<void>,
+  /** Pacing for tasks created from chat when the message doesn't say otherwise. */
+  defaultPacing: Pacing,
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
@@ -119,8 +122,11 @@ export function useChat(
           await runSchedule("user-message", message); // writes its own assistant reply
           return;
         }
+        // "chill", "все підряд", "розбий на 3 частини"… in the message set how the new tasks are laid out.
+        const pacing = detectPacing(message) ?? defaultPacing;
+        const requestedParts = parseSplitRequest(message) ?? undefined;
         for (const t of result.tasks) {
-          await addTask({ title: t.title, deadline: t.deadline, priority: t.priority, durationMin: t.durationMin });
+          await addTask({ title: t.title, deadline: t.deadline, priority: t.priority, durationMin: t.durationMin, pacing, requestedParts });
         }
         await post("assistant", result.reply, "text", "sent");
         // New tasks are folded into the plan automatically (the server only moves lower-priority blocks).
@@ -132,7 +138,7 @@ export function useChat(
           }
         }
       }),
-    [guarded, post, runSchedule, addTask],
+    [guarded, post, runSchedule, addTask, defaultPacing],
   );
 
   return { messages, pending, send, ask };

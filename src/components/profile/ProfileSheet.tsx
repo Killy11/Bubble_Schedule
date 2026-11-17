@@ -93,10 +93,10 @@ export function ProfileSheet({ open, onClose }: { open: boolean; onClose: () => 
 
         {user && (
           <WorkingHours
-            key={`${settings.workingHours?.start ?? "09:00"}-${settings.workingHours?.end ?? "18:00"}`}
+            key={`${settings.workingHours?.start ?? "09:00"}-${settings.workingHours?.end ?? "21:00"}`}
             uid={user.uid}
             start={settings.workingHours?.start ?? "09:00"}
-            end={settings.workingHours?.end ?? "18:00"}
+            end={settings.workingHours?.end ?? "21:00"}
           />
         )}
 

@@ -5,16 +5,19 @@ import { Check, Clock, Flag, Loader2, Pencil, Play, Repeat, Sparkles, Square, Tr
 import { Sheet } from "@/components/Sheet";
 import { RecurrencePicker } from "./RecurrencePicker";
 import { SubtaskList } from "./SubtaskList";
+import { PacingSelector } from "@/components/PacingSelector";
+import { PACING_META, pacingOf } from "@/lib/pacing";
 import { formatDeadline } from "@/lib/time";
 import { effectiveDuration, effectivePriority } from "@/lib/bubbles/effective";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
-import type { Priority, Recurrence, Subtask, Task } from "@/types";
+import type { Pacing, Priority, Recurrence, Subtask, Task } from "@/types";
 
 export interface TaskEdit {
   title: string;
   deadline: string; // ISO
   priority: Priority | null;
   durationMin: number | null;
+  pacing: Pacing;
 }
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -61,7 +64,7 @@ export function TaskDetailSheet({
   splitting: boolean;
   onToggleSubtask: (t: Task, sub: Subtask, checked: boolean) => Promise<void>;
   onSaveSubtasks: (t: Task, subs: Subtask[]) => Promise<void>;
-  onSplit: (t: Task) => void;
+  onSplit: (t: Task, parts?: number) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [actual, setActual] = useState("");
@@ -97,6 +100,9 @@ export function TaskDetailSheet({
               <span className="hue-dot h-2 w-2 rounded-full" /> {HUE_META[hue].label}
             </span>
             <span className="text-xs text-muted">{HUE_META[hue].hint}</span>
+            {pacingOf(task) !== "balanced" && (
+              <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">{PACING_META[pacingOf(task)].label}</span>
+            )}
           </div>
           <dl className="space-y-2 text-sm">
             <div className="flex items-center gap-2 text-muted"><Clock className="h-4 w-4" />
@@ -304,6 +310,7 @@ function EditForm({
   const [deadline, setDeadline] = useState(toLocalInput(task.deadline));
   const [priority, setPriority] = useState<Priority | "">(task.priority ?? "");
   const [duration, setDuration] = useState(task.durationMin ? String(task.durationMin) : "");
+  const [pacing, setPacing] = useState<Pacing>(pacingOf(task));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -321,6 +328,7 @@ function EditForm({
         deadline: when.toISOString(),
         priority: priority || null,
         durationMin: duration ? Math.max(5, Math.min(480, Math.round(Number(duration)))) : null,
+        pacing,
       });
     } catch {
       setError("Couldn't save your changes. Please try again.");
@@ -357,6 +365,10 @@ function EditForm({
             onChange={(e) => setDuration(e.target.value)} placeholder="AI will guess"
             className={`${field} mt-1 text-foreground`} />
         </label>
+      </div>
+      <div className="text-xs text-muted">
+        <span className="mb-1 block">Focus intensity</span>
+        <PacingSelector value={pacing} onChange={setPacing} />
       </div>
       {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-3">

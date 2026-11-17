@@ -5,6 +5,7 @@ import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { userConverter } from "@/lib/firebase/converters";
 import { DEFAULT_SETTINGS } from "@/lib/firebase/users";
+import { upgradeWorkingHours } from "@/lib/settings";
 import type { User, UserSettings } from "@/types";
 
 export function useUserProfile(uid: string | undefined) {
@@ -31,7 +32,7 @@ export function useUserProfile(uid: string | undefined) {
     ...saved,
     workingHours:
       hoursOk(saved.workingHours?.start) && hoursOk(saved.workingHours?.end)
-        ? saved.workingHours!
+        ? upgradeWorkingHours(saved.workingHours!)
         : DEFAULT_SETTINGS.workingHours,
   };
   return { profile, timezone, settings };

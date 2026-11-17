@@ -1,9 +1,15 @@
-import type { Subtask, Task } from "@/types";
+import type { Pacing, Subtask, Task } from "@/types";
+import { pacingOf } from "@/lib/pacing";
 import { effectiveDuration } from "@/lib/bubbles/effective";
 import { formatTime } from "@/lib/time";
 
-/** Tasks estimated above this many minutes are split into parts automatically. */
-export const DECOMPOSE_OVER_MIN = 120;
+/**
+ * Duration (minutes) from which a task is split into parts automatically, by pacing:
+ * Balanced from 3 h, Chill from 90 min, Locked-in never (only when the user says how many parts).
+ */
+export const DECOMPOSE_AT_MIN: Record<Pacing, number | null> = { balanced: 180, chill: 90, locked: null };
+/** Target length of an automatic part. */
+export const PART_TARGET_MIN = 60;
 export const MAX_SUBTASKS = 12;
 
 export const newSubtaskId = (): string => Math.random().toString(36).slice(2, 10);
@@ -16,11 +22,12 @@ export function formatDuration(min: number): string {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
-export const needsDecomposition = (t: Task): boolean =>
-  t.status === "active" &&
-  !t.subtasks?.length &&
-  !t.subtasksAttempted &&
-  (effectiveDuration(t) ?? 0) > DECOMPOSE_OVER_MIN;
+export function needsDecomposition(t: Task): boolean {
+  if (t.status !== "active" || t.subtasks?.length || t.subtasksAttempted) return false;
+  if (t.requestedParts) return true; // the user asked for it explicitly
+  const at = DECOMPOSE_AT_MIN[pacingOf(t)];
+  return at !== null && (effectiveDuration(t) ?? 0) >= at;
+}
 
 const dayStart = (t: number) => new Date(t).setHours(0, 0, 0, 0);
 

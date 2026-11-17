@@ -1,6 +1,8 @@
 export type ISODateTime = string; // "2026-11-16T09:30:00.000Z"; converters map to/from Timestamp
 export type DateKey = string; // "YYYY-MM-DD" in the user's timezone
 export type Priority = "low" | "medium" | "high";
+/** Focus intensity: how a task is laid out in the schedule. */
+export type Pacing = "chill" | "balanced" | "locked";
 
 /** users/{uid} */
 export interface User {
@@ -79,6 +81,10 @@ export interface Task {
     estimatedAt: ISODateTime;
   };
   status: "active" | "completed" | "expired";
+  /** Focus intensity (default "balanced"). */
+  pacing?: Pacing;
+  /** The user explicitly asked to split this task into this many parts. */
+  requestedParts?: number;
   /** Large tasks are split into sequential parts, each with its own time slot. */
   subtasks?: Subtask[];
   /** AI splitting has been tried (success or not), so it isn't tried again automatically. */

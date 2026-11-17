@@ -30,13 +30,13 @@ export function useDecompose(
     cb.current = { onDone, onFail };
   });
 
-  const run = useCallback(async (task: Task, force: boolean) => {
+  const run = useCallback(async (task: Task, force: boolean, parts?: number) => {
     setWorking((w) => new Set(w).add(task.id));
     try {
       const res = await fetch("/api/decompose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ taskId: task.id, nowISO: new Date().toISOString(), force }),
+        body: JSON.stringify({ taskId: task.id, nowISO: new Date().toISOString(), force, parts }),
       });
       const data = (await res.json().catch(() => null)) as
         | { error?: string; skipped?: boolean; subtasks?: Subtask[]; placed?: number; total?: number }
@@ -63,6 +63,7 @@ export function useDecompose(
     }
   }, [tasks, ready, run]);
 
-  const split = useCallback((task: Task) => run(task, true), [run]);
+  /** Manual split; `parts` is the number the user asked for (omit to let the AI decide). */
+  const split = useCallback((task: Task, parts?: number) => run(task, true, parts), [run]);
   return { working, split };
 }

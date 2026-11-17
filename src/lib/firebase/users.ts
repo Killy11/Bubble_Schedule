@@ -5,7 +5,7 @@ import { userConverter } from "./converters";
 import type { User, UserSettings } from "@/types";
 
 export const DEFAULT_SETTINGS: UserSettings = {
-  workingHours: { start: "09:00", end: "18:00" },
+  workingHours: { start: "09:00", end: "21:00" },
   workingDays: [1, 2, 3, 4, 5],
   defaultTaskMinutes: 30,
   reminderLeadMinutes: 10,

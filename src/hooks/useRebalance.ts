@@ -18,6 +18,8 @@ function planSignature(tasks: readonly Task[]): string {
         t.deadline,
         effectivePriority(t) ?? "",
         effectiveDuration(t) ?? "",
+        t.pacing ?? "balanced",
+        t.requestedParts ?? "",
         (t.subtasks ?? []).map((s) => `${s.id}:${s.durationMinutes}:${s.pinned ? s.scheduledStart : ""}`).join(","),
       ].join("|"),
     )

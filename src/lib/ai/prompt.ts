@@ -13,8 +13,13 @@ Rules:
 - WORKING HOURS (strict): every block must start and end inside "workingHours" (start–end) on one of the dates listed in "availableDays". Never schedule before workingHours.start, after workingHours.end, on a day that is not in availableDays, or before NOW. A block must start and end on the same day.
 - You are given "tasksToPlace" only. Place each one at most once (one block per task). "lockedBlocks" are other tasks already fixed on the calendar: they are IMMOVABLE, so never overlap them and never output them. Locked blocks with "pinned": true were set by hand by the user: they are hard constraints in every mode (even "rebuild"), so plan all other tasks around them. If the user asks you to move a pinned block, do not; tell them in "reply" to edit or unpin it themselves.
 - Blocks must not overlap.
-- BREAKS (strict): leave at least "minBreakMinutes" of free time between any two consecutive blocks, locked blocks included, and also before the first block that follows a locked one. The default is 30 minutes, and 45 minutes after a block of 90 minutes or more. Shorter breaks (the 10 minutes given as minBreakMinutes) are only allowed when the user explicitly asked for short breaks or back-to-back work. Never chain blocks back to back: a 60-minute task is followed by a rest of at least 30 minutes.
-- DAILY LOAD: plan at most about 4–5 hours of work per day (each day's "targetMinutes"), leaving generous breathing room, rather than filling the whole working day.
+- PACING: every task has a "pacing" (default "balanced"), and breaks and load follow it:
+  • "locked": an immovable sprint. One single unbroken block on one day, never split or spread over days, even if it is long. It takes the earliest day with room and gets top priority: move "balanced"/"chill" tasks to later times or days to make space, never the other way round. Several locked blocks in a row are separated by only 5 minutes.
+  • "balanced": a wave rhythm. After the first focus block (~45–75 min) a 15-minute break; after the second block (about 2 hours of focus in total) a 45–60 minute break; then the cycle repeats. Keep a day to about 4–4.5 hours of work and spread the task over the days before its deadline when a day is already loaded.
+  • "chill": relaxed. Spread over several days in 45–75 minute sessions, about 2.5–3 hours of work per day, with a recharge break after every block: 30 minutes after a block under 60 minutes, 45–60 minutes after a longer one.
+  Never place two blocks closer together than "minBreakMinutes", locked blocks included, and never put one right against a locked block unless both are locked.
+- Among tasks of the same pacing, the earlier deadline goes first. The day runs across the whole working window ("workingHours"), so a task due in the evening still fits that day.
+- DAILY LOAD: plan at most about 4–5 hours of non-locked work per day (each day's "targetMinutes"), leaving generous breathing room, rather than filling the whole working day.
 - Each task has a "weight" (0–1) combining priority and deadline urgency. Higher-weight tasks get the earliest suitable slots; lower-weight tasks fill the remaining time.
 - HISTORY: a task may carry "historicalAvgMin" and "historySamples": how long this user actually took on similar tasks they finished before. When durationMin is null, base your duration estimate on historicalAvgMin (adjust only if the title clearly describes something much bigger or smaller), and say so in that estimate's reasoning, e.g. "You usually take ~45 min on similar tasks".
 - Add a taskEstimates entry for every task whose durationMin OR priority is null (your estimate for the missing value; the user's own values are never overridden). If durationMin is set, the block must be exactly that long (minus loggedMinutes when it is above 0, but at least 15 minutes).
@@ -43,7 +48,7 @@ export interface PromptContext {
   locked: ScheduleBlock[];
   blocks: ScheduleBlock[]; // current blocks of tasksToPlace
   history: ChatMessage[];
-  /** Minimum rest between blocks: 30 by default, 10 only when the user asked for short breaks. */
+  /** Smallest rest allowed between two blocks (5 when a locked-in task is involved, 15 for balanced, 30 for chill). */
   minBreakMin: number;
   /** taskId → duration suggested by the user's completed-task history */
   durationHints?: Map<string, DurationSuggestion>;
@@ -85,6 +90,7 @@ export function buildUserPrompt(c: PromptContext): string {
       historySamples: c.durationHints?.get(t.id)?.samples ?? 0,
       loggedMinutes: t.loggedMinutes ?? 0,
       priority: t.priority ?? null,
+      pacing: t.pacing ?? "balanced",
       weight: Number((c.weights.get(t.id) ?? 0).toFixed(2)),
       isNew: c.newTaskIds.has(t.id),
     })),

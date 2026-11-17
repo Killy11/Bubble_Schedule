@@ -4,10 +4,13 @@ import { useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { MicButton } from "@/components/MicButton";
 import { Sheet } from "@/components/Sheet";
+import { PacingSelector } from "@/components/PacingSelector";
 import { RecurrencePicker } from "./RecurrencePicker";
+import { DECOMPOSE_AT_MIN } from "@/lib/subtasks";
+import { detectPacing, PACING_META, parseSplitRequest } from "@/lib/pacing";
 import type { NewTaskInput } from "@/hooks/useTasks";
 import { describeSuggestion, suggestDuration } from "@/lib/history";
-import type { HistoryRecord, Priority, Recurrence } from "@/types";
+import type { HistoryRecord, Pacing, Priority, Recurrence } from "@/types";
 
 const field =
   "glass w-full rounded-2xl px-4 py-2.5 text-sm outline-none transition focus:border-[rgb(var(--glow-a))] placeholder:text-muted";
@@ -25,16 +28,18 @@ export function TaskFormSheet({
   onClose,
   onSubmit,
   history,
+  defaultPacing,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (input: NewTaskInput) => Promise<void>;
   history: readonly HistoryRecord[];
+  defaultPacing: Pacing;
 }) {
   return (
     <Sheet open={open} onClose={onClose} title="New bubble">
       {/* Remounts on each open, so the form resets and gets a fresh default deadline. */}
-      {open && <Form onClose={onClose} onSubmit={onSubmit} history={history} />}
+      {open && <Form onClose={onClose} onSubmit={onSubmit} history={history} defaultPacing={defaultPacing} />}
     </Sheet>
   );
 }
@@ -43,10 +48,12 @@ function Form({
   onClose,
   onSubmit,
   history,
+  defaultPacing,
 }: {
   onClose: () => void;
   onSubmit: (i: NewTaskInput) => Promise<void>;
   history: readonly HistoryRecord[];
+  defaultPacing: Pacing;
 }) {
   const [title, setTitle] = useState("");
   const [deadline, setDeadline] = useState(defaultDeadline);
@@ -54,6 +61,7 @@ function Form({
   const [durationTouched, setDurationTouched] = useState(false);
   const [priority, setPriority] = useState<Priority | "">("");
   const [recurrence, setRecurrence] = useState<Recurrence | null>(null);
+  const [pacingPick, setPacingPick] = useState<Pacing | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,6 +69,10 @@ function Form({
   const suggestion = useMemo(() => suggestDuration(title, history), [title, history]);
   const shownDuration = durationTouched ? duration : suggestion ? String(suggestion.minutes) : "";
   const anchorDow = new Date(deadline).getDay();
+  // "chill", "все підряд", "розбий на 3 частини"… typed or spoken in the title set the pacing, until picked by hand.
+  const detected = detectPacing(title);
+  const pacing: Pacing = pacingPick ?? detected ?? defaultPacing;
+  const requestedParts = parseSplitRequest(title) ?? undefined;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -76,6 +88,8 @@ function Form({
         durationMin: shownDuration ? Math.max(5, Math.min(480, Number(shownDuration))) : undefined,
         priority: priority || undefined,
         recurrence: recurrence ?? undefined,
+        pacing,
+        requestedParts,
       });
       onClose();
     } catch {
@@ -120,11 +134,24 @@ function Form({
           </select>
         </label>
       </div>
-      {Number(shownDuration) > 120 && (
-        <p className="-mt-1 text-xs text-muted">
-          Over 2 hours: AI will split this into short parts and give each one a time slot.
-        </p>
-      )}
+      <div className="text-xs text-muted">
+        <span className="mb-1 block">Focus intensity</span>
+        <PacingSelector
+          value={pacing}
+          onChange={setPacingPick}
+          note={pacingPick === null && detected ? `Picked up from what you wrote: ${PACING_META[detected].label}` : undefined}
+        />
+      </div>
+      {(() => {
+        const at = DECOMPOSE_AT_MIN[pacing];
+        if (requestedParts) return <p className="-mt-1 text-xs text-muted">Will be split into {requestedParts} parts, as you asked.</p>;
+        if (pacing === "locked") return <p className="-mt-1 text-xs text-muted">Locked-in tasks stay in one piece; say “split into 3 parts” to break one up.</p>;
+        return at && Number(shownDuration) >= at ? (
+          <p className="-mt-1 text-xs text-muted">
+            {at >= 180 ? "3 hours or more" : "90 minutes or more"}: AI will split this into ~1 hour parts and give each a time slot.
+          </p>
+        ) : null;
+      })()}
       {suggestion && !durationTouched && (
         <p className="-mt-1 text-xs text-muted">{describeSuggestion(suggestion)}. Edit it if you like.</p>
       )}
