@@ -35,6 +35,7 @@ const EXPIRED_SEEN_KEY = "bs:expiredSeenAt";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function readLocal(key: string): string | null {
+  if (typeof window === "undefined") return null; // prerender
   try {
     return localStorage.getItem(key);
   } catch {
@@ -81,9 +82,9 @@ export function DashboardShell() {
 
   const {
     tasks, loading: tasksLoading, error, addTask, deleteTask, complete, logMinutes,
-    startTimer, stopTimer, setRecurrence, reschedule,
+    startTimer, stopTimer, setRecurrence, updateTask, reschedule,
   } = useTasks(uid, timezone, now, handleExpired);
-  const { schedule, markTaskBlocksDone, editBlock } = useSchedule(uid, today);
+  const { schedule, markTaskBlocksDone, renameTaskBlocks, editBlock } = useSchedule(uid, today);
 
   // Tasks made without a duration (e.g. from chat) get one from similar tasks the user finished before.
   const addTaskSmart = useCallback(
@@ -334,6 +335,10 @@ export function DashboardShell() {
         onStartTimer={(t) => startTimer(t.id)}
         onStopTimer={stopTimer}
         onSetRecurrence={setRecurrence}
+        onEdit={async (t, patch) => {
+          await updateTask(t, patch);
+          if (patch.title.trim() !== t.title) await renameTaskBlocks(t.id, patch.title.trim()).catch(() => {});
+        }}
       />
     </div>
   );

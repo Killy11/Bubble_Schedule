@@ -223,6 +223,27 @@ export function useTasks(
     [uid],
   );
 
+  /** Edit the basic fields. `priority`/`durationMin` null = back to "let the AI guess". */
+  const updateTask = useCallback(
+    async (
+      task: Task,
+      patch: { title: string; deadline: string; priority: Priority | null; durationMin: number | null },
+    ) => {
+      if (!uid) return;
+      const deadlineChanged = Date.parse(patch.deadline) !== Date.parse(task.deadline);
+      await updateDoc(doc(db, "users", uid, "tasks", task.id), {
+        title: patch.title.trim(),
+        deadline: new Date(patch.deadline),
+        priority: patch.priority ?? deleteField(),
+        durationMin: patch.durationMin ?? deleteField(),
+        // A new deadline deserves fresh "due soon" / "expired" alerts.
+        ...(deadlineChanged ? { notified: false, notifiedOverdue: false } : {}),
+        updatedAt: new Date(),
+      });
+    },
+    [uid],
+  );
+
   /** Bring an expired (or active) task back with a new deadline. */
   const reschedule = useCallback(
     async (task: Task, deadlineIso: string) => {
@@ -303,6 +324,7 @@ export function useTasks(
     startTimer,
     stopTimer,
     setRecurrence,
+    updateTask,
     reschedule,
   };
 }

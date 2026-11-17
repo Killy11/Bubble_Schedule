@@ -36,6 +36,19 @@ export function useSchedule(uid: string | undefined, dateKey: DateKey) {
     [uid, dateKey, schedule],
   );
 
+  /** Keep the denormalized block titles in sync after a task is renamed. */
+  const renameTaskBlocks = useCallback(
+    async (taskId: string, title: string) => {
+      if (!uid || !schedule?.blocks.some((b) => b.taskId === taskId && b.title !== title)) return;
+      const blocks = schedule.blocks.map((b) => (b.taskId === taskId ? { ...b, title } : b));
+      await updateDoc(doc(db, "users", uid, "schedules", dateKey), {
+        blocks: toFirestoreData(blocks),
+        updatedAt: new Date(),
+      });
+    },
+    [uid, dateKey, schedule],
+  );
+
   /**
    * Change one block (read-modify-write in a transaction, so it can't clobber a concurrent AI write).
    * `patch` null = leave it as is.
@@ -65,5 +78,5 @@ export function useSchedule(uid: string | undefined, dateKey: DateKey) {
     [patchBlock],
   );
 
-  return { schedule, markTaskBlocksDone, editBlock };
+  return { schedule, markTaskBlocksDone, renameTaskBlocks, editBlock };
 }

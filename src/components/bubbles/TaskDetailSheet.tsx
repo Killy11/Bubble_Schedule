@@ -1,13 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Clock, Flag, Loader2, Play, Repeat, Sparkles, Square, Trash2 } from "lucide-react";
+import { Check, Clock, Flag, Loader2, Pencil, Play, Repeat, Sparkles, Square, Trash2 } from "lucide-react";
 import { Sheet } from "@/components/Sheet";
 import { RecurrencePicker } from "./RecurrencePicker";
 import { formatDeadline } from "@/lib/time";
 import { effectiveDuration, effectivePriority } from "@/lib/bubbles/effective";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
-import type { Recurrence, Task } from "@/types";
+import type { Priority, Recurrence, Task } from "@/types";
+
+export interface TaskEdit {
+  title: string;
+  deadline: string; // ISO
+  priority: Priority | null;
+  durationMin: number | null;
+}
+
+const pad = (n: number) => String(n).padStart(2, "0");
+const toLocalInput = (iso: string) => {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const field =
+  "glass w-full rounded-2xl px-4 py-2.5 text-sm outline-none transition focus:border-[rgb(var(--glow-a))] placeholder:text-muted";
 
 const CHIPS = [
   { label: "+15m", min: 15 },
@@ -25,6 +40,7 @@ export function TaskDetailSheet({
   onStartTimer,
   onStopTimer,
   onSetRecurrence,
+  onEdit,
 }: {
   task: Task | null;
   now: number;
@@ -36,13 +52,19 @@ export function TaskDetailSheet({
   onStartTimer: (t: Task) => Promise<void>;
   onStopTimer: (t: Task) => Promise<void>;
   onSetRecurrence: (t: Task, r: Recurrence | null) => Promise<void>;
+  onEdit: (t: Task, patch: TaskEdit) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [actual, setActual] = useState("");
+  const [editing, setEditing] = useState(false);
+  const close = () => {
+    setEditing(false);
+    onClose();
+  };
   const run = async (fn: (t: Task) => Promise<void>) => {
     if (!task) return;
     setBusy(true);
-    onClose(); // close first so the bubble can pop
+    close(); // close first so the bubble can pop
     try { await fn(task); } finally { setBusy(false); }
   };
   const timerMin = task?.startedAt ? Math.max(0, Math.floor((now - Date.parse(task.startedAt)) / 60_000)) : 0;
@@ -53,9 +75,14 @@ export function TaskDetailSheet({
   const guessed = task && (!task.durationMin || !task.priority) && task.aiEstimate;
 
   return (
-    <Sheet open={!!task} onClose={onClose} title={task?.title ?? ""}>
+    <Sheet open={!!task} onClose={close} title={task?.title ?? ""}>
       {task && (
         <div className={`space-y-5 hue-${hue}`}>
+          {editing ? (
+            <EditForm key={task.id} task={task} now={now} onCancel={() => setEditing(false)}
+              onSave={async (patch) => { await onEdit(task, patch); setEditing(false); }} />
+          ) : (
+          <>
           <div className="flex items-center gap-2">
             <span className="hue-badge">
               <span className="hue-dot h-2 w-2 rounded-full" /> {HUE_META[hue].label}
@@ -76,6 +103,12 @@ export function TaskDetailSheet({
                 <span>{task.aiEstimate.reasoning}</span></div>
             )}
           </dl>
+          <button type="button" onClick={() => setEditing(true)}
+            className="glass flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs text-muted transition hover:text-foreground">
+            <Pencil className="h-3.5 w-3.5" /> Edit title, due date &amp; priority
+          </button>
+          </>
+          )}
 
           <TimeLogger
             key={task.id}
@@ -234,5 +267,89 @@ function TimeLogger({
       {error && <p role="alert" className="text-xs text-red-500">{error}</p>}
       <p className="text-xs text-muted">Logging time only shrinks the bubble. It never changes your schedule.</p>
     </section>
+  );
+}
+
+function EditForm({
+  task,
+  now,
+  onSave,
+  onCancel,
+}: {
+  task: Task;
+  now: number;
+  onSave: (patch: TaskEdit) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [title, setTitle] = useState(task.title);
+  const [deadline, setDeadline] = useState(toLocalInput(task.deadline));
+  const [priority, setPriority] = useState<Priority | "">(task.priority ?? "");
+  const [duration, setDuration] = useState(task.durationMin ? String(task.durationMin) : "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    const when = new Date(deadline);
+    if (!title.trim()) return setError("The title can't be empty.");
+    if (Number.isNaN(when.getTime())) return setError("Pick a due date and time.");
+    if (when.getTime() <= now) return setError("Pick a time in the future (a past deadline would expire the bubble).");
+    setBusy(true);
+    setError(null);
+    try {
+      await onSave({
+        title: title.trim(),
+        deadline: when.toISOString(),
+        priority: priority || null,
+        durationMin: duration ? Math.max(5, Math.min(480, Math.round(Number(duration)))) : null,
+      });
+    } catch {
+      setError("Couldn't save your changes. Please try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <label className="block text-xs text-muted">
+        <span className="flex justify-between"><span>Title *</span><span aria-live="polite">{title.length}/100</span></span>
+        <input autoFocus required maxLength={100} value={title} onChange={(e) => setTitle(e.target.value)}
+          className={`${field} mt-1 text-foreground`} />
+      </label>
+      <label className="block text-xs text-muted">
+        Due date &amp; time *
+        <input required type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)}
+          className={`${field} mt-1 text-foreground`} />
+      </label>
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block text-xs text-muted">
+          Priority
+          <select value={priority} onChange={(e) => setPriority(e.target.value as Priority | "")}
+            className={`${field} mt-1 text-foreground`}>
+            <option value="">AI will guess</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+        </label>
+        <label className="block text-xs text-muted">
+          Duration (min)
+          <input type="number" inputMode="numeric" min={5} max={480} step={5} value={duration}
+            onChange={(e) => setDuration(e.target.value)} placeholder="AI will guess"
+            className={`${field} mt-1 text-foreground`} />
+        </label>
+      </div>
+      {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
+      <div className="flex gap-3">
+        <button type="submit" disabled={busy}
+          className="flex flex-1 items-center justify-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60">
+          {busy && <Loader2 className="h-4 w-4 animate-spin" />} Save changes
+        </button>
+        <button type="button" onClick={onCancel} disabled={busy}
+          className="glass rounded-full px-5 py-2.5 text-sm text-muted transition hover:text-foreground disabled:opacity-60">
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
