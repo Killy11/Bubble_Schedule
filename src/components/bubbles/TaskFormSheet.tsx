@@ -1,7 +1,8 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Paperclip, Scissors } from "lucide-react";
+import { ESTIMATE_ACCEPT, estimateFile, focusToPacing, type FileEstimate } from "@/lib/estimate";
 import { MicButton } from "@/components/MicButton";
 import { Sheet } from "@/components/Sheet";
 import { PacingSelector } from "@/components/PacingSelector";
@@ -70,7 +71,7 @@ function Form({
   history: readonly HistoryRecord[];
   defaultPacing: Pacing;
 }) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const [title, setTitle] = useState("");
   const [deadline, setDeadline] = useState(defaultDeadline);
   const [noDeadline, setNoDeadline] = useState(false);
@@ -81,6 +82,32 @@ function Form({
   const [pacingPick, setPacingPick] = useState<Pacing | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Assignment file analysis
+  const [estimating, setEstimating] = useState(false);
+  const [estimate, setEstimate] = useState<FileEstimate | null>(null);
+  const [partsPick, setPartsPick] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  async function analyse(file: File | undefined) {
+    if (!file || estimating) return;
+    setEstimating(true);
+    setError(null);
+    try {
+      const r = await estimateFile(file, lang, title.trim() || undefined);
+      const d = splitMinutes(r.estimatedMinutes);
+      if (!title.trim()) setTitle(r.suggestedTitle.slice(0, 100)); // never overwrite a title the user typed
+      setHours(d.hours);
+      setMins(d.minutes);
+      setDurationTouched(true);
+      setPacingPick(focusToPacing(r.recommendedFocus));
+      setPartsPick(null);
+      setEstimate(r);
+    } catch (e) {
+      setError(t(e instanceof Error ? e.message : "Couldn't analyse that file."));
+    } finally {
+      setEstimating(false);
+    }
+  }
 
   // Typing only updates `title`. Everything that analyses it (history lookup, pacing words, "split into N parts")
   // runs on a debounced copy, at low priority, so keystrokes are never blocked by it.
@@ -110,7 +137,7 @@ function Form({
         durationMin: totalMin ? clampDuration(totalMin) : undefined,
         recurrence: noDeadline ? undefined : (recurrence ?? undefined),
         pacing,
-        requestedParts: parseSplitRequest(title) ?? requestedParts,
+        requestedParts: partsPick ?? parseSplitRequest(title) ?? requestedParts,
       });
       onClose();
     } catch {
@@ -120,8 +147,9 @@ function Form({
   }
 
   const splitAt = DECOMPOSE_AT_MIN[pacing];
-  const hint = requestedParts
-    ? t("Will be split into {n} parts", { n: requestedParts })
+  const parts = partsPick ?? requestedParts;
+  const hint = parts
+    ? t("Will be split into {n} parts", { n: parts })
     : pacing !== "locked" && splitAt && (totalMin ?? 0) >= splitAt
       ? t("Will be split into parts")
       : null;
@@ -140,6 +168,20 @@ function Form({
           <MicButton value={title} onChange={(v) => setTitle(v.slice(0, 100))} size="sm" />
         </div>
       </label>
+      {/* Attach an assignment file (PDF, DOCX, TXT, photo): the AI reads it and estimates the time. Nothing is stored. */}
+      <label
+        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); void analyse(e.dataTransfer.files[0]); }}
+        className={`glass flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed px-4 py-2.5 text-xs text-muted transition hover:text-foreground ${
+          dragging ? "border-[rgb(var(--glow-a))]" : "border-line"
+        } ${estimating ? "pointer-events-none opacity-70" : ""}`}
+      >
+        {estimating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
+        {estimating ? t("Analysing the file…") : t("📎 Attach assignment file (PDF, DOCX, photo)")}
+        <input type="file" accept={ESTIMATE_ACCEPT} className="sr-only" disabled={estimating}
+          onChange={(e) => { void analyse(e.target.files?.[0]); e.target.value = ""; }} />
+      </label>
       <DeadlineField value={deadline} none={noDeadline} onValue={setDeadline} onNone={setNoDeadline} />
       <div className="text-xs text-muted">
         <span className="mb-1 block">{t("Duration")}</span>
@@ -149,6 +191,23 @@ function Form({
           onHours={(v) => { setHours(v); setMins(shownMins); setDurationTouched(true); }}
           onMinutes={(v) => { setMins(v); setHours(shownHours); setDurationTouched(true); }}
         />
+        {estimate && (
+          <div className="glass mt-2 flex flex-wrap items-center gap-2 rounded-2xl px-3 py-2 text-[11px] text-foreground">
+            <span className="min-w-0 flex-1">✨ {estimate.reasoning}</span>
+            {estimate.shouldSplit && estimate.suggestedParts && (
+              <button
+                type="button"
+                onClick={() => setPartsPick(partsPick ? null : estimate.suggestedParts)}
+                aria-pressed={!!partsPick}
+                className={`flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 transition ${
+                  partsPick ? "bg-foreground text-background" : "border border-line text-muted hover:text-foreground"
+                }`}
+              >
+                <Scissors className="h-3 w-3" /> {t("Split into {n} parts", { n: estimate.suggestedParts })}
+              </button>
+            )}
+          </div>
+        )}
         {hint && <p className="mt-1 text-[11px]">{hint}</p>}
         {suggestion && !durationTouched && <p className="mt-1 text-[11px]">{t("From {n} similar tasks", { n: suggestion.samples })}</p>}
       </div>

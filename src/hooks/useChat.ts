@@ -6,6 +6,7 @@ import { db } from "@/lib/firebase/client";
 import { messageConverter } from "@/lib/firebase/converters";
 import type { NewTaskInput } from "@/hooks/useTasks";
 import { detectPacing, parseSplitRequest } from "@/lib/pacing";
+import { estimateFile, focusToPacing } from "@/lib/estimate";
 import type { ChatMessage, DateKey, Pacing } from "@/types";
 import type { AssistantAction, AssistantRequest, AssistantResponse, ScheduleRequest } from "@/types/api";
 
@@ -113,15 +114,35 @@ export function useChat(
    *  answer       → just show the reply
    */
   const ask = useCallback(
-    (text: string) =>
+    (text: string, file?: File) =>
       guarded(async () => {
-        const message = text.trim();
+        const message = text.trim() || (file ? (lang === "uk" ? "Оціни це завдання" : "Estimate this assignment") : "");
         if (!message) return;
-        await post("user", message, "text", "sent");
+        await post("user", file ? `📎 ${file.name}\n${message}` : message, "text", "sent");
+        // An attached assignment is read once by /api/estimate-task; its estimate rides along with the message.
+        const est = file ? await estimateFile(file, lang, message) : null;
         const result = await postJson<AssistantResponse>("/api/assistant", {
-          message,
+          message: est
+            ? `${message}\n[Attached file "${file!.name}": ${est.reasoning} Estimated ${est.estimatedMinutes} minutes.]`
+            : message,
           nowISO: new Date().toISOString(),
         } satisfies AssistantRequest);
+
+        if (est && result.intent !== "modify_tasks") {
+          // The file becomes the bubble: the assistant's reading of the message (title, deadline) plus the file's estimate.
+          const pacing = detectPacing(message) ?? focusToPacing(est.recommendedFocus);
+          const requestedParts = parseSplitRequest(message) ?? (est.shouldSplit ? (est.suggestedParts ?? undefined) : undefined);
+          const first = result.intent === "create_tasks" ? result.tasks[0] : undefined;
+          await addTask({
+            title: first?.title || est.suggestedTitle,
+            deadline: first?.deadline,
+            durationMin: est.estimatedMinutes,
+            pacing,
+            requestedParts,
+          });
+          await post("assistant", `${result.reply}\n✨ ${est.reasoning}`, "text", "sent");
+          return;
+        }
 
         if (result.intent === "schedule") {
           await runSchedule("user-message", message); // writes its own assistant reply
@@ -141,7 +162,7 @@ export function useChat(
         }
         await post("assistant", result.reply, "text", "sent"); // new tasks are folded into the plan by the auto re-plan
       }),
-    [guarded, post, runSchedule, addTask, defaultPacing, applyActions],
+    [guarded, post, runSchedule, addTask, defaultPacing, applyActions, lang],
   );
 
   return { messages, pending, send, ask };

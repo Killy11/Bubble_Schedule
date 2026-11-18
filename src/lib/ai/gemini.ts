@@ -23,6 +23,8 @@ export const hasGeminiKey = (): boolean => !!process.env.GEMINI_API_KEY;
 export interface Turn {
   role: "user" | "model";
   text: string;
+  /** Files sent inline with this turn (PDFs, images), base64-encoded. */
+  files?: Array<{ mimeType: string; data: string }>;
 }
 
 export class AiError extends Error {
@@ -35,7 +37,7 @@ export class AiError extends Error {
 
 let client: GoogleGenAI | null = null;
 // A request that hangs (overloaded model) must not hang the API route: time out and move on.
-const REQUEST_TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 25_000;
 const getClient = () =>
   (client ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY, httpOptions: { timeout: REQUEST_TIMEOUT_MS } }));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -58,7 +60,10 @@ function thinkingFor(model: string, effort: Effort) {
 async function callOnce<T>(model: string, o: { system: string; turns: Turn[]; schema: unknown; temperature: number; effort: Effort }): Promise<T> {
   const res = await getClient().models.generateContent({
     model,
-    contents: o.turns.map((t) => ({ role: t.role, parts: [{ text: t.text }] })),
+    contents: o.turns.map((t) => ({
+      role: t.role,
+      parts: [{ text: t.text }, ...(t.files ?? []).map((f) => ({ inlineData: { mimeType: f.mimeType, data: f.data } }))],
+    })),
     config: {
       systemInstruction: o.system,
       responseMimeType: "application/json",

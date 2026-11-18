@@ -1,7 +1,8 @@
 "use client";
 
 import { memo, useEffect, useRef, useState } from "react";
-import { Loader2, SendHorizontal, Sparkles } from "lucide-react";
+import { Loader2, Paperclip, SendHorizontal, Sparkles, X } from "lucide-react";
+import { ESTIMATE_ACCEPT } from "@/lib/estimate";
 import { MicButton } from "@/components/MicButton";
 import { useLang } from "@/context/LanguageProvider";
 import type { ChatMessage } from "@/types";
@@ -47,11 +48,12 @@ export function ChatPanel({
   /** Direct scheduling (Auto-schedule button, preset chips). */
   onSend: (trigger: ScheduleRequest["trigger"], text?: string) => void;
   /** Free text: the assistant decides whether to add, change or re-plan tasks, or just answer. */
-  onAsk: (text: string) => void;
+  onAsk: (text: string, file?: File) => void;
 }) {
   const { t } = useLang();
   // The draft lives here, in this component only: a keystroke re-renders this input and nothing above it.
   const [text, setText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const suggestions = [t("I overslept, shift my morning tasks"), t("Make my day lighter")];
 
@@ -61,9 +63,10 @@ export function ChatPanel({
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!text.trim() || pending) return;
-    onAsk(text);
+    if ((!text.trim() && !file) || pending) return;
+    onAsk(text, file ?? undefined);
     setText("");
+    setFile(null);
   }
 
   return (
@@ -99,7 +102,24 @@ export function ChatPanel({
             </button>
           ))}
         </div>
+        {file && (
+          <div className="glass flex items-center gap-2 rounded-full py-1 pl-3 pr-1 text-xs">
+            <Paperclip className="h-3.5 w-3.5 shrink-0 text-muted" />
+            <span className="min-w-0 flex-1 truncate">{file.name}</span>
+            <button type="button" onClick={() => setFile(null)} aria-label={t("Remove file")}
+              className="rounded-full p-1 text-muted transition hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
+          </div>
+        )}
         <form onSubmit={submit} className="flex gap-2">
+          <label
+            title={t("Attach a file")}
+            aria-label={t("Attach a file")}
+            className="glass flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted transition hover:text-foreground"
+          >
+            <Paperclip className="h-4 w-4" />
+            <input type="file" accept={ESTIMATE_ACCEPT} className="sr-only"
+              onChange={(e) => { setFile(e.target.files?.[0] ?? null); e.target.value = ""; }} />
+          </label>
           <input
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -113,7 +133,7 @@ export function ChatPanel({
           <MicButton value={text} onChange={(v) => setText(v.slice(0, 1000))} />
           <button
             type="submit"
-            disabled={pending || !text.trim()}
+            disabled={pending || (!text.trim() && !file)}
             aria-label={t("Send")}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background transition hover:opacity-90 disabled:opacity-40"
           >

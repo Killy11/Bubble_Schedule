@@ -299,4 +299,20 @@ export const UK: Record<string, string> = {
   On: "Увімк.",
   Off: "Вимк.",
   "iPhone/iPad: Share → Add to Home Screen to get notifications": "iPhone/iPad: «Поділитися» → «На екран Додому», щоб отримувати сповіщення",
+
+  // File analysis
+  "📎 Attach assignment file (PDF, DOCX, photo)": "📎 Прикріпити файл завдання (PDF, DOCX, фото)",
+  "Analysing the file…": "Аналізую файл…",
+  "Split into {n} parts": "Розбити на {n} частин",
+  "Couldn't analyse that file.": "Не вдалося проаналізувати файл.",
+  "The file is larger than 4 MB.": "Файл більший за 4 МБ.",
+  "Unsupported file type. Use PDF, DOCX, TXT, MD or an image (PNG, JPG, WEBP).": "Непідтримуваний тип файлу. Використайте PDF, DOCX, TXT, MD або зображення (PNG, JPG, WEBP).",
+  "Couldn't read that Word document.": "Не вдалося прочитати документ Word.",
+  "No readable text in that file.": "У файлі немає тексту, який можна прочитати.",
+  "Too many file analyses. Please try again later.": "Забагато аналізів файлів. Спробуйте пізніше.",
+  "AI file analysis isn't set up yet (GEMINI_API_KEY is missing).": "Аналіз файлів ШІ ще не налаштовано (немає GEMINI_API_KEY).",
+  "The AI is busy right now. Please try again in a moment.": "ШІ зараз зайнятий. Спробуйте за хвилину.",
+  "Attach a file": "Прикріпити файл",
+  "Remove file": "Прибрати файл",
+  "Estimate this file": "Оціни цей файл",
 };
