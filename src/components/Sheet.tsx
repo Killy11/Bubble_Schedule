@@ -60,7 +60,7 @@ export function Sheet({
                 onClick={onClose}
                 data-tour={closeTourId}
                 aria-label={t("Close")}
-                className="shrink-0 rounded-full p-1.5 text-muted transition hover:text-foreground"
+                className="-mr-2 -mt-2 flex min-h-[44px] min-w-[44px] shrink-0 touch-manipulation items-center justify-center rounded-full text-muted transition hover:text-foreground"
               >
                 <X className="h-4 w-4" />
               </button>

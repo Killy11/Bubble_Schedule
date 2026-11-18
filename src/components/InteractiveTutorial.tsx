@@ -337,34 +337,45 @@ function Tour({ onClose, onSelectTab, bubbleCount, onSyncDialogs, createdTaskId,
   }, []);
   const next = () => (last ? onClose() : setI((n) => n + 1));
 
-  // Card position: below the target if it fits, else above, else inside the target's bottom edge; always on screen.
+  // Card position. Rule: the card docks on the edge OPPOSITE the target. A target in the upper half of the screen (the ✕ of
+  // the task window, the header buttons) puts the card at the bottom; a target in the lower half puts it at the top. A final
+  // collision guard flips the edge if the card would still touch the target (plus 16 px), so the target is always uncovered.
   const M = 12;
-  const cardW = Math.min(360, view.w - M * 2);
-  let top = Math.max(M, (view.h - cardH) / 2);
+  const EDGE = 16;
+  const phone = view.w < 768;
+  const cardW = phone ? view.w - M * 2 : Math.min(360, view.w - M * 2);
+  let dock: "top" | "bottom" | "free" = "free";
   let left = (view.w - cardW) / 2;
+  let top = Math.max(M, (view.h - cardH) / 2); // no target: centred
+  const wide = view.w >= 900;
+  const besideModal = !!(step.insideModal && modalBox && wide && (modalBox.x + modalBox.w + M + cardW <= view.w || modalBox.x - M - cardW >= 0));
   if (box) {
-    const below = view.h - (box.y + box.h) - M;
-    const above = box.y - M;
-    if (below >= cardH) top = box.y + box.h + M;
-    else if (above >= cardH) top = box.y - cardH - M;
-    else top = Math.max(M, Math.min(box.y + box.h, view.h) - cardH - M * 4);
-    left = Math.min(Math.max(M, box.x + box.w / 2 - cardW / 2), view.w - cardW - M);
+    left = phone ? M : Math.min(Math.max(M, box.x + box.w / 2 - cardW / 2), view.w - cardW - M);
+    dock = box.y + box.h / 2 < view.h * 0.5 ? "bottom" : "top";
   }
-  // The chat step: the card hugs the top edge so the whole chat (messages, input, mic, send) stays visible and usable.
-  if (step.pinTop) top = M;
-  // A step inside an app dialog: put the card beside the dialog on wide screens, or at the very top on a phone.
-  if (step.insideModal && modalBox) {
-    if (view.w >= 900 && modalBox.x + modalBox.w + M + cardW <= view.w) {
-      left = modalBox.x + modalBox.w + M;
-      top = box ? box.y : modalBox.y;
-    } else if (view.w >= 900 && modalBox.x - M - cardW >= 0) {
-      left = modalBox.x - M - cardW;
-      top = box ? box.y : modalBox.y;
-    } else {
-      top = M;
+  if (step.pinTop) dock = "top"; // the chat step: the whole chat (messages, input, mic, send) stays visible and usable
+  if (besideModal && modalBox && box) {
+    // wide screens: next to the dialog, level with the target
+    dock = "free";
+    left = modalBox.x + modalBox.w + M + cardW <= view.w ? modalBox.x + modalBox.w + M : modalBox.x - M - cardW;
+    top = Math.min(Math.max(M, box.y), Math.max(M, view.h - cardH - M));
+  }
+  const dockedTop = (d: "top" | "bottom") => (d === "top" ? EDGE : view.h - cardH - EDGE);
+  if (dock !== "free" && box) {
+    top = dockedTop(dock);
+    const hits = (t0: number) =>
+      left < box.x + box.w + EDGE && left + cardW > box.x - EDGE && t0 < box.y + box.h + EDGE && t0 + cardH > box.y - EDGE;
+    if (hits(top) && !step.pinTop) {
+      dock = dock === "top" ? "bottom" : "top"; // still touching: use the opposite edge
+      top = dockedTop(dock);
     }
   }
-  top = Math.min(Math.max(M, top), Math.max(M, view.h - cardH - M));
+  const cardStyle: React.CSSProperties =
+    dock === "bottom"
+      ? { bottom: `calc(${EDGE}px + env(safe-area-inset-bottom, 0px))`, left, width: cardW }
+      : dock === "top"
+        ? { top: `calc(${EDGE}px + env(safe-area-inset-top, 0px))`, left, width: cardW }
+        : { top, left, width: cardW };
 
   return (
     <motion.div data-tour-card className="pointer-events-none fixed inset-0 z-[9999]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="dialog" aria-modal="true" aria-label={t("Help")}>
@@ -413,7 +424,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onSyncDialogs, createdTaskId,
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2 }}
         className="pointer-events-auto fixed max-h-[calc(100dvh-24px)] overflow-y-auto overscroll-contain rounded-3xl border border-white/12 bg-[#111116]/95 p-5 text-zinc-100 shadow-[0_24px_80px_rgba(0,0,0,0.75)] backdrop-blur-xl"
-        style={{ top, left, width: cardW }}
+        style={cardStyle}
       >
         <div className="mb-2 flex items-center justify-between text-xs text-zinc-400">
           <span>{t("Step {a} of {b}", { a: i + 1, b: list.length })}</span>
