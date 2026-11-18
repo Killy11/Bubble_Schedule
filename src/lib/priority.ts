@@ -20,8 +20,10 @@ export function toMillis(v: unknown): number | null {
   return null;
 }
 
+export type Tier = 0 | 1 | 2 | 3;
+
 /** 0 = red (≤24h, incl. already due), 1 = yellow (≤120h), 2 = green (>120h), 3 = no deadline. */
-export function urgencyTier(dueMs: number | null, nowMs: number): 0 | 1 | 2 | 3 {
+export function urgencyTier(dueMs: number | null, nowMs: number): Tier {
   if (dueMs === null) return 3;
   const hours = (dueMs - nowMs) / HOUR;
   return hours <= 24 ? 0 : hours <= 120 ? 1 : 2;

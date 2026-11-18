@@ -63,11 +63,13 @@ export function checkBlocks(c: Ctx): { ok: CheckedBlock[]; rejected: Rejected[] 
     const day = sNaive.slice(0, 10);
     if (day !== eNaive.slice(0, 10)) { bad("must start and end on the same day"); continue; }
     if (!days.includes(day)) { bad(`must be on one of the available days: ${days.join(", ")}`); continue; }
-    if (minutesOfDay(sNaive) < minutesOfDay(ws) || minutesOfDay(eNaive) > minutesOfDay(we))
+    // A Red task (due within 24 h) may run past working hours, up to its real deadline.
+    const redTask = !!task.deadline && Date.parse(task.deadline) - c.now.getTime() <= 24 * 3_600_000;
+    if (!redTask && (minutesOfDay(sNaive) < minutesOfDay(ws) || minutesOfDay(eNaive) > minutesOfDay(we)))
       { bad(`must be within working hours ${ws}–${we}`); continue; }
     if (start.getTime() < c.now.getTime() - 60_000)
       { bad("starts before the current time"); continue; }
-    const mustEnd = !task.deadline ? Infinity : latestEndMs(new Date(task.deadline).getTime(), c.now.getTime(), (end.getTime() - start.getTime()) / 60_000);
+    const mustEnd = !task.deadline ? Infinity : redTask ? new Date(task.deadline).getTime() : latestEndMs(new Date(task.deadline).getTime(), c.now.getTime(), (end.getTime() - start.getTime()) / 60_000);
     if (end.getTime() > mustEnd)
       { bad(`must end by ${toLocalNaive(new Date(mustEnd), c.tz)} (deadline minus a safety margin)`); continue; }
     if ((c.busy ?? []).some((x) => start < x.end && end > x.start))

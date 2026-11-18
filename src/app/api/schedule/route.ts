@@ -189,7 +189,7 @@ export async function POST(request: Request) {
         tz, targetDate: body.targetDate, nowISO: body.nowISO, settings, mode,
         tasks: toPlace, newTaskIds: new Set(newTasks.map((t) => t.id)), weights, locked,
         blocks: livePlanned.filter((b) => placeIds.has(b.taskId)),
-        history, message, trigger: body.trigger, minBreakMin,
+        history, message, trigger: body.trigger, minBreakMin, lang: body.lang === "uk" ? "uk" : "en",
         durationHints: new Map(
           toPlace.flatMap((t) => {
             const h = suggestDuration(t.title, pastWork);

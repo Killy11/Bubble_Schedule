@@ -99,6 +99,8 @@ export async function rebalanceAll(uid: string, now: Date): Promise<RebalanceRes
     version: (today?.version ?? 0) + 1,
     consideredTaskIds: tasks.map((t) => t.id),
     lastChange: {
+      code: plan.unplaced.length ? "replanned_unplaced" : "replanned",
+      count: plan.unplaced.length,
       summary: plan.unplaced.length
         ? `Re-planned by deadline. ${plan.unplaced.length} task${plan.unplaced.length > 1 ? "s" : ""} can't fully fit before ${plan.unplaced.length > 1 ? "their deadlines" : "its deadline"}.`
         : "Re-planned by earliest deadline.",

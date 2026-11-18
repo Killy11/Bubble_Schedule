@@ -136,6 +136,9 @@ export interface ScheduleBlock {
 
 export interface ChangeSummary {
   summary: string;
+  /** Machine-readable form of `summary` for server-written messages, so the UI can show it in its own language. */
+  code?: "replanned" | "replanned_unplaced";
+  count?: number;
   changes: Array<{
     type: "added" | "moved" | "removed" | "resized";
     taskId: string;

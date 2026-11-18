@@ -115,14 +115,22 @@ export function SchedulePanel({
           <div className="mb-1 flex items-center gap-2 text-xs font-medium text-[rgb(var(--glow-a))]">
             <Sparkles className="h-3.5 w-3.5" /> {t("Latest AI changes")}
           </div>
-          <p className="text-sm">{change.summary}</p>
+          <p className="text-sm">
+            {change.code === "replanned"
+              ? t("Re-planned by earliest deadline.")
+              : change.code === "replanned_unplaced"
+                ? change.count === 1
+                  ? t("Re-planned by deadline. 1 task can't fully fit before its deadline.")
+                  : t("Re-planned by deadline. {n} tasks can't fully fit before their deadlines.", { n: change.count ?? 0 })
+                : change.summary}
+          </p>
           {change.changes.length > 0 && (
             <ul className="mt-3 space-y-1.5 text-xs text-muted">
               {change.changes.map((c, i) => (
                 <li key={i}>
                   <span className="font-medium text-foreground">{t(TYPE_LABEL[c.type])}</span> {c.title}
                   {c.to && ` → ${formatTime(c.to.start)}`}
-                  {c.why && <span> · {c.why}</span>}
+                  {c.why && <span> · {t(c.why)}</span>}
                 </li>
               ))}
             </ul>

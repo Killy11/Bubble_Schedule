@@ -281,4 +281,11 @@ export const UK: Record<string, string> = {
   "Email sign-in isn't enabled for this project yet.": "Вхід через email для цього проєкту ще не ввімкнено.",
   "This email is registered with a different sign-in method.": "Цей email зареєстровано іншим способом входу.",
   "Could not restore your session. Please sign in again.": "Не вдалося відновити сеанс. Увійдіть знову.",
+
+  // Schedule banner
+  "Re-planned by earliest deadline.": "Перепланувано за найближчими дедлайнами.",
+  "Re-planned by deadline. 1 task can't fully fit before its deadline.": "Перепланувано за дедлайнами. 1 завдання не вміщається повністю до дедлайну.",
+  "Re-planned by deadline. {n} tasks can't fully fit before their deadlines.": "Перепланувано за дедлайнами. Завдань, що не вміщаються повністю до дедлайнів: {n}.",
+  "Planned by earliest deadline": "Заплановано за найближчим дедлайном",
+  "No longer part of the plan.": "Більше не входить до плану.",
 };

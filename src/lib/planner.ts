@@ -1,4 +1,5 @@
 import type { Pacing, UserSettings } from "@/types";
+import type { Tier } from "@/lib/priority";
 import { addDays, dateKeyInTz, localNaiveToUtc, weekdayOf } from "@/lib/time";
 import { latestEndMs } from "@/lib/ai/horizon";
 import type { Interval } from "@/lib/decompose";
@@ -20,6 +21,8 @@ export interface PlanUnit {
   durationMin: number;
   deadlineMs: number;
   pacing: Pacing;
+  /** Urgency tier: 0 red, 1 yellow, 2 green, 3 no deadline. */
+  tier: Tier;
   /** Position in the planning order (earliest deadline first). */
   orderIdx: number;
   /** Order among the parts of one task, and how many parts it has. */
@@ -61,8 +64,15 @@ export function restAfter(pacing: Pacing, durationMin: number, cum: number): { r
 
 interface Day {
   start: number;
+  /** End of normal working hours (== start when none are left). */
   end: number;
+  /** End of the local day: the only place Red tasks may run past working hours. */
+  dayEnd: number;
 }
+
+/** Green / no-deadline work is kept off Today unless Today is clearly light. */
+const TODAY_LOW_PRIORITY_MAX_TASKS = 2;
+const TODAY_LOW_PRIORITY_MAX_LOAD_MIN = 150;
 
 /**
  * Chronological planner.
@@ -72,32 +82,90 @@ interface Day {
  *     of a task are spread over the days up to its deadline instead of piling on one day.
  * Returns the slot of every unit that fits (a unit that doesn't is simply missing).
  */
-export function planUnits(o: {
+interface PlanInput {
   units: PlanUnit[];
   nowMs: number;
   tz: string;
   settings: UserSettings;
   fixed: Interval[];
-}): Map<string, Interval> {
-  const { nowMs, tz, settings } = o;
-  const out = new Map<string, Interval>();
-  if (o.units.length === 0) return out;
+}
 
-  // The calendar: working windows from now until the latest deadline (at most 30 days).
+/** Latest moment a unit may end. Red units may run right up to their real deadline, other units keep a safety margin. */
+const limitFor = (u: PlanUnit, nowMs: number) =>
+  u.tier === 0 ? u.deadlineMs : Math.min(latestEndMs(u.deadlineMs, nowMs, u.durationMin), u.deadlineMs - 5 * MIN);
+
+/** The calendar: working windows from now until the latest deadline (at most 30 days). Red work may also use after-hours time. */
+function buildDays(o: PlanInput): Day[] {
+  const { nowMs, tz, settings } = o;
   const horizon = Math.min(Math.max(...o.units.map((u) => u.deadlineMs)), nowMs + MAX_DAYS * 24 * 60 * MIN);
+  const lastRedDue = Math.max(0, ...o.units.filter((u) => u.tier === 0).map((u) => u.deadlineMs));
   const days: Day[] = [];
   let key = dateKeyInTz(nowMs, tz);
   const lastKey = dateKeyInTz(horizon, tz);
   for (let i = 0; i < MAX_DAYS + 1 && key <= lastKey; i++, key = addDays(key, 1)) {
-    if (!settings.workingDays.includes(weekdayOf(key))) continue;
     const ws = localNaiveToUtc(`${key}T${settings.workingHours.start}`, tz)?.getTime();
     const we = localNaiveToUtc(`${key}T${settings.workingHours.end}`, tz)?.getTime();
-    if (ws === undefined || we === undefined) continue;
+    const dayEnd = localNaiveToUtc(`${addDays(key, 1)}T00:00`, tz)?.getTime();
+    if (ws === undefined || we === undefined || dayEnd === undefined) continue;
+    const working = settings.workingDays.includes(weekdayOf(key));
     const start = Math.max(ws, ceil5(nowMs));
-    if (we - start >= 15 * MIN) days.push({ start, end: we });
+    if (working && we - start >= 15 * MIN) {
+      days.push({ start, end: we, dayEnd });
+    } else if (start < lastRedDue && dayEnd - start >= 15 * MIN && ws < lastRedDue) {
+      // No normal hours left (evening, or a day off) but a Red task is still due: keep the day for it alone.
+      days.push({ start, end: start, dayEnd });
+    }
   }
-  const limitOf = (u: PlanUnit) =>
-    Math.min(latestEndMs(u.deadlineMs, nowMs, u.durationMin), u.deadlineMs - 5 * MIN);
+  return days;
+}
+
+/**
+ * Plans every unit. A Red unit that cannot be placed whole before its deadline gets the largest free
+ * stretch left before it, reserved up front, so Yellow / Green / no-deadline work can never take that time.
+ * `partial` receives the keys of units that only got part of their time.
+ */
+export function planUnits(o: PlanInput & { partial?: Set<string> }): Map<string, Interval> {
+  const first = planCore(o);
+  const missing = o.units.filter((u) => u.tier === 0 && !first.has(u.key));
+  if (missing.length === 0) return first;
+
+  const days = buildDays(o);
+  const reserved: Interval[] = [];
+  const partial = new Map<string, Interval>();
+  for (const u of [...missing].sort((a, b) => a.orderIdx - b.orderIdx)) {
+    const lim = limitFor(u, o.nowMs);
+    const higher = o.units.filter((x) => x.orderIdx < u.orderIdx).map((x) => first.get(x.key)).filter((x): x is Interval => !!x);
+    const obstacles = [...o.fixed, ...higher, ...reserved].map((f) => pad(f, PAD_FIXED_MIN));
+    let best: Interval | null = null;
+    for (const d of days) {
+      for (const w of subtract([{ start: d.start, end: Math.min(d.dayEnd, lim) }], obstacles)) {
+        const start = ceil5(w.start);
+        const end = Math.min(w.end, start + u.durationMin * MIN);
+        if (end - start >= 15 * MIN && (!best || end - start > best.end - best.start)) best = { start, end };
+      }
+    }
+    if (best) {
+      partial.set(u.key, best);
+      reserved.push(best);
+    }
+  }
+  if (partial.size === 0) return first;
+  const rest = planCore({ ...o, units: o.units.filter((u) => !partial.has(u.key)), fixed: [...o.fixed, ...reserved] });
+  for (const [k, v] of partial) {
+    rest.set(k, v);
+    o.partial?.add(k);
+  }
+  return rest;
+}
+
+function planCore(o: PlanInput): Map<string, Interval> {
+  const { nowMs } = o;
+  const out = new Map<string, Interval>();
+  if (o.units.length === 0) return out;
+
+  const days = buildDays(o);
+  const hasRed = o.units.some((u) => u.tier === 0);
+  const limitOf = (u: PlanUnit) => limitFor(u, nowMs);
 
   const load = days.map((d) => o.fixed.reduce((s, f) => s + overlap(f, d) / MIN, 0)); // booked minutes per day
   // Locked-in tasks take part in the same priority-ordered sweep as everyone else (focus intensity never
@@ -112,9 +180,49 @@ export function planUnits(o: {
   const earliestDay = new Map<string, number>();
   const byTask = new Map<string, PlanUnit[]>();
   for (const u of rest) byTask.set(u.taskId, [...(byTask.get(u.taskId) ?? []), u].sort((a, b) => a.seq - b.seq));
+  // Projected minutes per day, built up in priority order, so Green / no-deadline work can be
+  // pushed to the lightest upcoming day instead of being crammed into Today.
+  const proj = load.slice();
+  const fill = (mins: number, cap: number) => {
+    for (let i = 0; i < days.length && mins > 0; i++) {
+      const take = Math.min(Math.max(0, cap - proj[i]), mins);
+      proj[i] += take;
+      mins -= take;
+    }
+  };
+  const todayLow = new Set<string>();
   for (const parts of byTask.values()) {
     const first = parts[0];
-    if (first.pacing === "locked") continue; // locked chains are never spread over days
+    const isLocked = first.pacing === "locked";
+    const totalMin = parts.reduce((sum, p) => sum + p.durationMin, 0);
+    const cap = isLocked ? Infinity : DAY_CAP_MIN[first.pacing];
+
+    if (first.tier >= 2) {
+      // Green (5+ days) and no-deadline: spread over the upcoming days, lightest day first.
+      const lim = limitOf(first);
+      const items = isLocked ? [{ key: first.key, dur: totalMin }] : parts.map((p) => ({ key: p.key, dur: p.durationMin }));
+      let prevDay = 0;
+      for (const it of items) {
+        let best = -1;
+        for (let i = prevDay; i < days.length; i++) {
+          if (days[i].start >= lim) break;
+          if (days[i].end - days[i].start < 15 * MIN) continue; // no normal hours left that day
+          if (!isLocked && proj[i] + it.dur > cap) continue;
+          if (i === 0 && (todayLow.size >= TODAY_LOW_PRIORITY_MAX_TASKS && !todayLow.has(first.taskId) || proj[0] + it.dur > TODAY_LOW_PRIORITY_MAX_LOAD_MIN)) continue;
+          if (best < 0 || proj[i] < proj[best]) best = i;
+        }
+        if (best < 0) best = Math.max(0, days.findIndex((d, i) => i >= prevDay && d.end - d.start >= 15 * MIN));
+        earliestDay.set(it.key, best);
+        proj[best] += it.dur;
+        if (best === 0) todayLow.add(first.taskId);
+        prevDay = best;
+      }
+      continue;
+    }
+    if (first.tier === 0 || isLocked) {
+      fill(totalMin, cap === Infinity ? 480 : cap); // urgent: as early as possible, no spreading
+      continue;
+    }
     const shortest = Math.min(...parts.map((p) => p.durationMin));
     const lim = limitOf(first);
     const usable = days
@@ -138,6 +246,7 @@ export function planUnits(o: {
       earliestDay.set(p.key, usable[wanted] ?? usable[usable.length - 1] ?? 0);
       before += p.durationMin;
     });
+    fill(totalMin, cap);
   }
 
   const prevKey = new Map<string, string>();
@@ -154,20 +263,26 @@ export function planUnits(o: {
   const sweep = (capped: boolean) => {
     for (let d = 0; d < days.length && done.size < pending.length; d++) {
       const obstacles = [...o.fixed, ...placedRest].map((f) => pad(f, PAD_FIXED_MIN));
-      const windows = subtract([{ ...days[d] }], capped ? obstacles.slice(0, o.fixed.length) : obstacles)
-        .filter((w) => w.end - w.start >= 15 * MIN);
+      const blocking = capped ? obstacles.slice(0, o.fixed.length) : obstacles;
+      const windows = subtract([{ start: days[d].start, end: days[d].end }], blocking).filter((w) => w.end - w.start >= 15 * MIN);
+      // Red units may also use the evening, up to their real deadline.
+      const redWindows = hasRed
+        ? subtract([{ start: days[d].start, end: days[d].dayEnd }], blocking).filter((w) => w.end - w.start >= 15 * MIN)
+        : windows;
       let cursor = 0;
       let cum = 0;
       for (;;) {
         let placed = false;
         for (const u of pending) {
           if (done.has(u.key)) continue;
+          if ((capped || u.tier >= 2) && (earliestDay.get(u.key) ?? 0) > d) continue;
+          const usable = u.tier === 0 ? redWindows : windows;
           if (u.pacing === "locked") {
             const chain = lockedByTask.get(u.taskId)!;
             if (chain[0] !== u) continue; // placed together with its first part
             const need = chain.reduce((sum, c) => sum + c.durationMin, 0) + (chain.length - 1) * LOCKED_GAP_MIN;
             const cl = Math.min(...chain.map(limitOf));
-            for (const w of windows) {
+            for (const w of usable) {
               let at = ceil5(Math.max(w.start, cursor));
               if (at + need * MIN > Math.min(w.end, cl)) continue;
               for (const c of chain) {
@@ -186,12 +301,11 @@ export function planUnits(o: {
             if (placed) break;
             continue;
           }
-          if (capped && (earliestDay.get(u.key) ?? 0) > d) continue;
           const before = prevKey.get(u.key); // parts of one task go in order
           if (before && !done.has(before)) continue;
-          if (capped && load[d] + u.durationMin > DAY_CAP_MIN[u.pacing]) continue;
+          if (capped && u.tier !== 0 && load[d] + u.durationMin > DAY_CAP_MIN[u.pacing]) continue; // a Red deadline beats the cap
           const lim = limitOf(u);
-          for (const w of windows) {
+          for (const w of usable) {
             const start = ceil5(Math.max(w.start, cursor));
             const end = start + u.durationMin * MIN;
             if (end > Math.min(w.end, lim)) continue;

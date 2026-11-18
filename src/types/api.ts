@@ -12,6 +12,8 @@ export interface ScheduleRequest {
   trigger: "auto-schedule" | "user-message";
   targetDate: DateKey;
   nowISO: ISODateTime; // client clock, for "I overslept"
+  /** UI language: the AI writes its summary and replies in it. */
+  lang?: "en" | "uk";
 }
 
 /** Structured output from gpt-4o-mini (response_format: json_schema, strict) */

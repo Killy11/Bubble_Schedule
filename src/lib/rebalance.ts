@@ -1,6 +1,6 @@
 import type { Pacing, Subtask, Task, UserSettings } from "@/types";
 import { effectiveDuration } from "@/lib/bubbles/effective";
-import { comparePriority } from "@/lib/priority";
+import { comparePriority, toMillis, urgencyTier } from "@/lib/priority";
 import { pacingOf } from "@/lib/pacing";
 import { needsDecomposition } from "@/lib/subtasks";
 import { planUnits, DAY_CAP_MIN, type PlanUnit } from "@/lib/planner";
@@ -60,7 +60,7 @@ export function planAll(o: {
     const dueMs = t.deadline ? Date.parse(t.deadline) : o.nowMs + NO_DEADLINE_PLAN_DAYS * 86_400_000;
     if (dueMs <= o.nowMs + 30 * 60_000) return; // about to expire: nothing useful to plan
     const pacing: Pacing = pacingOf(t);
-    const base = { taskId: t.id, deadlineMs: dueMs, pacing, orderIdx };
+    const base = { taskId: t.id, deadlineMs: dueMs, pacing, orderIdx, tier: urgencyTier(toMillis(t.deadline), o.nowMs) };
 
     if (t.subtasks?.length) {
       const parts = t.subtasks
@@ -85,13 +85,14 @@ export function planAll(o: {
     units.push({ ...base, key: t.id, durationMin, seq: 0, count: 1 });
   });
 
-  const placed = planUnits({ units, nowMs: o.nowMs, tz: o.tz, settings: o.settings, fixed });
+  const partial = new Set<string>();
+  const placed = planUnits({ units, nowMs: o.nowMs, tz: o.tz, settings: o.settings, fixed, partial });
 
   const taskById = new Map(o.tasks.map((t) => [t.id, t]));
   const failed = new Set<string>();
   for (const u of units) {
     const slot = placed.get(u.key) ?? null;
-    if (!slot) failed.add(u.taskId);
+    if (!slot || partial.has(u.key)) failed.add(u.taskId); // partial = only part of its time fit before the deadline
     if (u.subId) {
       const m = result.partSlots.get(u.taskId) ?? new Map<string, Interval | null>();
       m.set(u.subId, slot);

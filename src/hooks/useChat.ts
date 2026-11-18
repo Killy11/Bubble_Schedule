@@ -22,6 +22,8 @@ async function postJson<T>(url: string, body: unknown): Promise<T> {
   return (await res.json()) as T;
 }
 
+import { useLang } from "@/context/LanguageProvider";
+
 export function useChat(
   uid: string | undefined,
   targetDate: DateKey,
@@ -31,6 +33,7 @@ export function useChat(
   /** Apply AI edits (reschedule, change duration, complete, delete) to the shared task state. */
   applyActions: (actions: AssistantAction[]) => Promise<void>,
 ) {
+  const { lang } = useLang();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
 
@@ -65,10 +68,10 @@ export function useChat(
   /** Ask /api/schedule to (re)build the day. The server writes the assistant reply to Firestore. */
   const runSchedule = useCallback(
     async (trigger: ScheduleRequest["trigger"], message?: string) => {
-      const body: ScheduleRequest = { trigger, message, targetDate, nowISO: new Date().toISOString() };
+      const body: ScheduleRequest = { trigger, message, targetDate, nowISO: new Date().toISOString(), lang };
       await postJson("/api/schedule", body);
     },
-    [targetDate],
+    [targetDate, lang],
   );
 
   /** Wrap an action: pending flag + a visible error message in the chat if anything throws. */
