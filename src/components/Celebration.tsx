@@ -7,25 +7,25 @@ import { useLang } from "@/context/LanguageProvider";
 const DURATION_MS = 3800;
 const FIRE_AT = 0.45; // seconds after mount: the poppers go off
 const FLOAT_S = 3.0; // how long the bubbles live after the bang
-const LEAN_DEG = 38; // poppers point diagonally inward
 const POPPER_MS = 2200; // slide in, fire, slide back out
 
 const NEON = ["#22d3ee", "#a78bfa", "#f472b6", "#4ade80", "#facc15", "#38bdf8", "#fb7185"];
 const CONFETTI_COLORS = ["#f43f5e", "#f59e0b", "#facc15", "#22c55e", "#38bdf8", "#8b5cf6", "#ec4899", "#ffffff"];
 
-/**
- * Popper size and how far it is tucked behind its corner. The offset hangs the base so far outside the
- * canvas that only the upper ~45–50% (cone and nozzle) peeks in at full extension; the base stays hidden.
- */
-function popperLayout() {
-  const phone = typeof window !== "undefined" && window.innerWidth < 640;
-  const w = phone ? 96 : 144;
-  const h = Math.round(w * 1.3);
-  // Raised ~50px (desktop) / ~38px (phone) from before: the whole upper cone and nozzle now stand in the corner,
-  // while the tip (the pivot, `off` px past both edges) stays hidden. Spawn points are derived from this same value.
-  const off = Math.max(8, Math.round(h * 0.42) - (phone ? 38 : 50));
-  return { w, h, off };
+// ── Popper geometry ─────────────────────────────────────────────────────────────────────────────
+// The SVG is drawn pointing straight UP: pointed tip at the bottom, open mouth at the top. Its box is square
+// (viewBox -20 -14 140 144), with the tip at 50% / 97.9% of the box and the mouth centre at 50% / 31.9%.
+const TIP = { x: 0.5, y: 0.979 };
+const TIP_TO_MOUTH = 0.66; // × box size
+const HIDE = 0.26; // the tip is tucked 26% of the box out past the bottom corner (translate ∓26%, +26%)
+const MIN_LEAN_DEG = 38;
+const MAX_LEAN_DEG = 42;
+
+/** Popper box size: ~92px on phones, ~128px from 640px up. */
+function popperSize() {
+  return typeof window !== "undefined" && window.innerWidth < 640 ? 92 : 128;
 }
+
 
 /** Rotating encouragement (keys are translated by the language provider). */
 const MESSAGES = [
@@ -39,24 +39,29 @@ const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 interface Popper {
   side: "left" | "right";
-  w: number;
-  h: number;
-  off: number;
-  /** Lean from vertical in degrees (CSS rotation: + clockwise). */
+  /** Box size in px (square). */
+  size: number;
+  /** Lean from vertical in degrees (CSS rotation: + clockwise). Exact mirror images. */
   theta: number;
-  /** Where the bang comes out, in viewport pixels. */
+  /** Where the bang comes out (the mouth), in canvas pixels. */
   nozzle: { x: number; y: number };
 }
 
+/**
+ * Left popper in the exact bottom-left corner, right popper in the exact bottom-right, mirror images, both aimed
+ * at the middle of the canvas (clamped to 38–42°). The nozzle is derived from the same numbers the CSS uses.
+ */
 function makePoppers(vw: number, vh: number): Popper[] {
-  const { w, h, off } = popperLayout();
-  const reach = h * 0.77; // pivot (the tip, hidden off-screen) → open mouth
-  return ([["left", LEAN_DEG], ["right", -LEAN_DEG]] as const).map(([side, theta]) => {
-    // The box hangs `off` px past the corner, so its base stays hidden and only the upper cone peeks in.
-    const px = side === "left" ? -off + w / 2 : vw + off - w / 2;
-    const py = vh + off;
+  const size = popperSize();
+  return ([["left", 1], ["right", -1]] as const).map(([side, dir]) => {
+    // Tip position after the tuck: box corner + tip offset + (∓26%, +26%).
+    const tipX = side === "left" ? (TIP.x - HIDE) * size : vw - size + (TIP.x + HIDE) * size;
+    const tipY = vh - size + TIP.y * size + HIDE * size;
+    const aim = (Math.atan2(Math.abs(vw * 0.5 - tipX), Math.max(1, tipY - vh * 0.4)) * 180) / Math.PI;
+    const theta = dir * Math.min(MAX_LEAN_DEG, Math.max(MIN_LEAN_DEG, aim));
     const rad = (theta * Math.PI) / 180;
-    return { side, w, h, off, theta, nozzle: { x: px + reach * Math.sin(rad), y: py - reach * Math.cos(rad) } };
+    const reach = TIP_TO_MOUTH * size;
+    return { side, size, theta, nozzle: { x: tipX + reach * Math.sin(rad), y: tipY - reach * Math.cos(rad) } };
   });
 }
 
@@ -139,9 +144,9 @@ function Bubble3D({ f }: { f: Flight }) {
 }
 
 /** A crisp party popper: striped cone, open mouth at the top, streamers and a star poking out. */
-function PartyPopper({ uid, w, h }: { uid: string; w: number; h: number }) {
+function PartyPopper({ uid, size }: { uid: string; size: number }) {
   return (
-    <svg viewBox="0 0 100 130" width={w} height={h} aria-hidden>
+    <svg viewBox="-20 -14 140 144" width={size} height={size} aria-hidden>
       <defs>
         <linearGradient id={`${uid}-body`} x1="0" x2="1" y1="0" y2="0">
           <stop offset="0" stopColor="#be123c" />
@@ -177,34 +182,29 @@ function PartyPopper({ uid, w, h }: { uid: string; w: number; h: number }) {
 
 function PopperView({ p, uid }: { p: Popper; uid: string }) {
   const left = p.side === "left";
-  // Tucked behind its corner, it slides diagonally in, recoils as it fires, then slides back out.
-  const hidden = { x: left ? -p.w : p.w, y: p.h };
+  const origin = `${TIP.x * 100}% ${TIP.y * 100}%`; // everything pivots on the pointed tip
+  // Rest position: tip tucked 26% out past the corner. Hidden position: further out, so it slides in diagonally.
+  const rest = { x: (left ? -HIDE : HIDE) * p.size, y: HIDE * p.size };
+  const hidden = { x: (left ? -1 : 1) * p.size, y: p.size };
   return (
     <motion.div
-      className="absolute"
-      style={{
-        [left ? "left" : "right"]: -p.off,
-        bottom: -p.off,
-        width: p.w,
-        height: p.h,
-        transformOrigin: "50% 100%",
-        rotate: p.theta,
-      }}
+      className="absolute bottom-0"
+      style={{ [left ? "left" : "right"]: 0, width: p.size, height: p.size, transformOrigin: origin, rotate: p.theta }}
       initial={hidden}
-      animate={{ x: [hidden.x, 0, 0, hidden.x], y: [hidden.y, 0, 0, hidden.y] }}
+      animate={{ x: [hidden.x, rest.x, rest.x, hidden.x], y: [hidden.y, rest.y, rest.y, hidden.y] }}
       transition={{ duration: POPPER_MS / 1000, times: [0, 0.14, 0.82, 1], ease: ["backOut", "linear", "easeIn"] }}
     >
       {/* crisp kickback at the bang */}
       <motion.div
-        style={{ transformOrigin: "50% 100%" }}
+        style={{ transformOrigin: origin }}
         animate={{
-          scale: [1, 1, 0.86, 1.07, 1, 1],
-          rotate: [0, 0, left ? -9 : 9, left ? 3 : -3, 0, 0],
-          y: [0, 0, 12, -4, 0, 0], // backward nudge along the barrel
+          scale: [1, 1, 0.9, 1.06, 1, 1],
+          rotate: [0, 0, left ? -7 : 7, left ? 2 : -2, 0, 0],
+          y: [0, 0, 8, -3, 0, 0], // backward nudge along the barrel
         }}
         transition={{ duration: 1.4, times: [0, FIRE_AT / 1.4, (FIRE_AT + 0.08) / 1.4, (FIRE_AT + 0.3) / 1.4, 0.8, 1], ease: "easeOut" }}
       >
-        <PartyPopper uid={uid} w={p.w} h={p.h} />
+        <PartyPopper uid={uid} size={p.size} />
       </motion.div>
     </motion.div>
   );
