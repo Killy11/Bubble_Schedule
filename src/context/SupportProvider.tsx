@@ -92,11 +92,8 @@ function SupportModal({ open, onClose }: { open: boolean; onClose: () => void })
                 onClick={onClose}
                 className="w-full rounded-full border border-rose-400/45 bg-gradient-to-r from-rose-500/30 via-pink-500/25 to-amber-500/20 px-5 py-3 text-sm font-medium text-rose-50 shadow-[0_0_24px_-4px_rgba(244,63,94,0.45)] transition-all duration-200 hover:from-rose-500/40 hover:via-pink-500/35 hover:to-amber-500/30 hover:shadow-[0_0_30px_-2px_rgba(244,63,94,0.65)] focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400/50 active:scale-[0.98]"
               >
-                {t("❤️ Support via Monobank (UAH)")}
+                {t("❤️ Support via Monobank")}
               </a>
-              <p className="mt-4 text-center text-xs leading-relaxed text-zinc-400/85">
-                {t("Donations go to our Ukrainian Monobank jar in UAH (₴). International cards, Apple Pay, and Google Pay are fully supported — your bank automatically converts USD, EUR, or any local currency into UAH at its standard exchange rate.")}
-              </p>
             </div>
           </motion.div>
         </motion.div>

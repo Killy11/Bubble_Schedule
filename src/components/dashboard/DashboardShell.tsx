@@ -11,6 +11,7 @@ import { useLang } from "@/context/LanguageProvider";
 import { Celebrations, type BurstSpec } from "@/components/Celebration";
 import { FeedbackSheet } from "@/components/FeedbackSheet";
 import { SupportPrompt } from "@/components/SupportPrompt";
+import { playBubblePop, preloadBubblePop } from "@/lib/bubblePopSound";
 import { useSupport } from "@/context/SupportProvider";
 import { OverdueSheet } from "@/components/bubbles/OverdueSheet";
 import { deadlineMs, isLiveTask, isOverdueTask } from "@/lib/deadline";
@@ -90,6 +91,11 @@ export function DashboardShell() {
   // New tasks (form, chat) default to Balanced; the form's Focus intensity picks per task.
   const defaultPacing = "balanced" as const;
   const [tourDismissed, setTourDismissed] = useState(() => readLocal(ONBOARDED_KEY) === "1");
+
+  // Look for a custom /sounds/bubble-pop.* once, so the first pop has no delay.
+  useEffect(() => {
+    void preloadBubblePop();
+  }, []);
 
   // The language saved in the account is adopted on a device that has no choice of its own yet.
   const savedLang = profile?.settings?.language;
@@ -344,6 +350,7 @@ export function DashboardShell() {
 
   /** Pop the bubble first, then write the completion (so the canvas and Firestore change together). */
   async function completeTask(task: Task, actualMin?: number) {
+    playBubblePop(); // at the moment the bubble pops
     setPopping((p) => new Set(p).add(task.id));
     try {
       await sleep(reducedMotion ? 120 : POP_MS);
@@ -362,6 +369,7 @@ export function DashboardShell() {
 
   /** "I already did this" on an overdue task: straight to Completed (it isn't on the canvas, so no pop). */
   async function markOverdueDone(task: Task) {
+    playBubblePop();
     await finish(task);
   }
 
@@ -383,6 +391,7 @@ export function DashboardShell() {
         if (a.type === "delete") {
           await removeTask(task);
         } else if (a.type === "complete") {
+          playBubblePop();
           await finish(task, undefined, true);
         } else {
           const deadline = a.removeDeadline ? null : (a.deadline ?? task.deadline ?? null);

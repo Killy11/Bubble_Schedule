@@ -329,7 +329,7 @@ export const UK: Record<string, string> = {
   "Active task limit (100) reached. Complete or remove some current tasks before adding more.": "Досягнуто ліміт у 100 активних завдань. Виконайте або видаліть частину поточних, щоб додати нові.",
 
   // Support modal
-  "❤️ Support via Monobank (UAH)": "❤️ Підтримати на Monobank (UAH)",
+  "❤️ Support via Monobank": "❤️ Підтримати на Monobank",
   "Donations go to our Ukrainian Monobank jar in UAH (₴). International cards, Apple Pay, and Google Pay are fully supported — your bank automatically converts USD, EUR, or any local currency into UAH at its standard exchange rate.": "Підтримка приймається на українську Монобанку в гривні (UAH). Якщо ви платите з іноземної картки або у валюті (USD/EUR), сума автоматично конвертується в гривню за курсом вашого банку. Підтримуються Apple Pay, Google Pay та будь-які картки.",
 
   // Feedback attachments
