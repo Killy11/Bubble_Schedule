@@ -27,7 +27,7 @@ import { useNow } from "@/hooks/useNow";
 import { useSchedule } from "@/hooks/useSchedule";
 import { useTasks } from "@/hooks/useTasks";
 import { useUserProfile } from "@/hooks/useUserProfile";
-import { dateKeyInTz, formatTime } from "@/lib/time";
+import { dateKeyInTz } from "@/lib/time";
 import { describeSuggestion, suggestDuration } from "@/lib/history";
 import { markOnboardingComplete } from "@/lib/firebase/users";
 import { BubbleCanvas } from "@/components/bubbles/BubbleCanvas";
@@ -347,20 +347,6 @@ export function DashboardShell() {
   const runningTasks = active.filter((x) => !!x.startedAt);
   const timerTick = useSecondTick(runningTasks.length > 0);
   const openTask = active.find((t) => t.id === openId) ?? null;
-  const doneToday = tasks.filter(
-    (t) => t.status === "completed" && t.completedAt && dateKeyInTz(t.completedAt, timezone) === today,
-  ).length;
-
-  const summary = useMemo(() => {
-    if (tasksLoading) return "";
-    if (active.length === 0) return doneToday ? t("{n} done today", { n: doneToday }) : "";
-    const planned = (schedule?.blocks ?? []).filter((b) => b.status === "planned");
-    const next = planned.find((b) => new Date(b.end).getTime() > now);
-    const parts = [t("{n} active", { n: active.length })];
-    if (doneToday) parts.push(t("{n} done", { n: doneToday }));
-    if (next) parts.push(`${t("Next")}: ${next.title} ${formatTime(next.start)}`);
-    return parts.join(" · ");
-  }, [tasksLoading, active.length, schedule, doneToday, now, t]);
 
   /** Delete a bubble (and its slot in today's plan), with a 6 s way back. */
   async function removeTask(task: Task) {
@@ -538,7 +524,6 @@ export function DashboardShell() {
   return (
     <div className="ambient relative flex h-dvh w-full max-w-full flex-col overflow-hidden">
       <Header
-        summary={summary}
         name={user.displayName || user.email || "You"}
         photoURL={user.photoURL}
         onOpenProfile={() => setProfileOpen(true)}

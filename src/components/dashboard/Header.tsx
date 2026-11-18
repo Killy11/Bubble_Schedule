@@ -7,14 +7,12 @@ import { SupportButton } from "@/components/SupportButton";
 import { useLang } from "@/context/LanguageProvider";
 
 export function Header({
-  summary,
   name,
   photoURL,
   onOpenProfile,
   onOpenHelp,
   onOpenFeedback,
 }: {
-  summary: string;
   name: string;
   photoURL?: string | null;
   onOpenProfile: () => void;
@@ -32,10 +30,6 @@ export function Header({
           <Logo size={30} />
           <span className="hidden text-base font-semibold tracking-tight md:inline">BubbleSchedule</span>
         </div>
-
-        <p className="min-w-0 flex-1 truncate text-center text-xs text-muted sm:text-sm" aria-live="polite">
-          {summary}
-        </p>
 
         <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
           <SupportButton />
