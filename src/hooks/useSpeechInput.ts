@@ -71,6 +71,9 @@ const ERRORS: Record<string, string> = {
   "language-not-supported": "That language isn't supported for voice input in this browser.",
 };
 
+/** Dictation ends after this long without any speech. */
+export const SILENCE_MS = 5000;
+
 /** One-tap dictation. `start(base)` keeps `base` and appends what is said, live, via `onTranscript`. */
 export function useSpeechInput(opts: {
   lang: SpeechLang;
@@ -80,11 +83,22 @@ export function useSpeechInput(opts: {
   const supported = useSyncExternalStore(noopSubscribe, () => getCtor() !== null, () => false);
   const [listening, setListening] = useState(false);
   const recRef = useRef<RecognitionLike | null>(null);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearSilence = () => {
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    silenceTimerRef.current = null;
+  };
   const cb = useRef(opts);
   useEffect(() => {
     cb.current = opts;
   });
-  useEffect(() => () => recRef.current?.abort(), []);
+  useEffect(
+    () => () => {
+      clearSilence(); // no stale timer after unmount
+      recRef.current?.abort();
+    },
+    [],
+  );
 
   const start = useCallback(
     (base: string) => {
@@ -93,9 +107,15 @@ export function useSpeechInput(opts: {
       const rec = new Ctor();
       rec.lang = opts.lang;
       rec.interimResults = true;
-      rec.continuous = false;
+      rec.continuous = true; // short pauses between words and sentences don't end the recording
+      // Stop by ourselves only after 5 full seconds with no speech; any result (interim or final) restarts the count.
+      const armSilence = () => {
+        clearSilence();
+        silenceTimerRef.current = setTimeout(() => recRef.current?.stop(), SILENCE_MS);
+      };
       const prefix = base && !/\s$/.test(base) ? `${base} ` : base;
       rec.onresult = (e) => {
+        armSilence();
         let text = "";
         for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
         cb.current.onTranscript(prefix + text.trim());
@@ -105,6 +125,7 @@ export function useSpeechInput(opts: {
         cb.current.onError(ERRORS[e.error] ?? "Voice input stopped unexpectedly. Please try again.");
       };
       rec.onend = () => {
+        clearSilence();
         setListening(false);
         recRef.current = null;
       };
@@ -112,6 +133,7 @@ export function useSpeechInput(opts: {
         rec.start();
         recRef.current = rec;
         setListening(true);
+        armSilence(); // also counts from the moment listening begins
       } catch {
         cb.current.onError("Couldn't start the microphone. Please try again.");
       }
@@ -119,6 +141,9 @@ export function useSpeechInput(opts: {
     [opts.lang],
   );
 
-  const stop = useCallback(() => recRef.current?.stop(), []);
+  const stop = useCallback(() => {
+    clearSilence();
+    recRef.current?.stop();
+  }, []);
   return { supported, listening, start, stop };
 }

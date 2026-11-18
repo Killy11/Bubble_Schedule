@@ -12,12 +12,17 @@ import {
   normalizeTasks,
   type RawAssistantResult,
 } from "@/lib/ai/assistant";
+import { FileError, readFile, type ReadFile } from "@/lib/server/files";
+import { takeHourlySlot } from "@/lib/server/rateLimit";
 import { weekdayOf, dateKeyInTz, toLocalNaive } from "@/lib/time";
 import type { ChatMessage, Task, User } from "@/types";
 import type { AssistantRequest, AssistantResponse } from "@/types/api";
 
-export const maxDuration = 30;
+export const maxDuration = 60; // attachments take longer to read
 const MAX_MESSAGE = 1000;
+const MAX_FILES = 3;
+const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
+const MAX_FILE_REQUESTS_PER_HOUR = 30;
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 const err = (error: string, status: number) => NextResponse.json({ error }, { status });
@@ -26,10 +31,25 @@ export async function POST(request: Request) {
   const uid = await getSessionUid();
   if (!uid) return err("Not signed in", 401);
 
+  // JSON for plain messages; multipart/form-data when files are attached (message, nowISO, files[]).
   let body: AssistantRequest;
+  const attached: ReadFile[] = [];
   try {
-    body = (await request.json()) as AssistantRequest;
-  } catch {
+    if ((request.headers.get("content-type") ?? "").includes("multipart/form-data")) {
+      const form = await request.formData();
+      body = { message: String(form.get("message") ?? ""), nowISO: String(form.get("nowISO") ?? "") };
+      const files = form.getAll("files").filter((f): f is File => f instanceof File);
+      if (files.length > MAX_FILES) return err("Up to 3 files at a time.", 400);
+      if (files.reduce((n, f) => n + f.size, 0) > MAX_TOTAL_BYTES) return err("The file is larger than 4 MB.", 413);
+      if (files.length && !(await takeHourlySlot(uid, "chatfile", MAX_FILE_REQUESTS_PER_HOUR))) {
+        return err("Too many file analyses. Please try again later.", 429);
+      }
+      for (const f of files) attached.push(await readFile(f.name, f.type, Buffer.from(await f.arrayBuffer())));
+    } else {
+      body = (await request.json()) as AssistantRequest;
+    }
+  } catch (e) {
+    if (e instanceof FileError) return err(e.message, 422);
     return err("Invalid request body", 400);
   }
   const message = body.message?.trim().slice(0, MAX_MESSAGE);
@@ -77,11 +97,13 @@ export async function POST(request: Request) {
       })),
       recentChat: history,
       userMessage: message,
+      // Files the user attached: PDFs / images ride along inline in this same request; documents arrive as text.
+      attachments: attached.map((f) => ({ name: f.name, type: f.mimeType, how: f.kind === "inline" ? "attached inline (read it directly)" : "text extracted", text: f.text })),
     };
     try {
       raw = await generateJson<RawAssistantResult>({
         system: ASSISTANT_SYSTEM_PROMPT,
-        turns: [{ role: "user", text: JSON.stringify(context) }],
+        turns: [{ role: "user", text: JSON.stringify(context), files: attached.filter((f) => f.kind === "inline").map((f) => ({ mimeType: f.mimeType, data: f.data! })) }],
         schema: ASSISTANT_JSON_SCHEMA,
         temperature: 0.2,
         effort: "none", // plain extraction: no reasoning needed, so it answers fast

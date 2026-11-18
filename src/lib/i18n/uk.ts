@@ -337,4 +337,8 @@ export const UK: Record<string, string> = {
   "Remove photo": "Прибрати фото",
   "Up to 3 photos.": "До 3 фото.",
   "Couldn't read that image.": "Не вдалося прочитати зображення.",
+
+  // Chat attachments
+  "Unsupported file type. Use PDF, DOCX, TXT, MD, CSV, JSON or an image (PNG, JPG, WEBP).": "Непідтримуваний тип файлу. Використайте PDF, DOCX, TXT, MD, CSV, JSON або зображення (PNG, JPG, WEBP).",
+  "Up to 3 files at a time.": "До 3 файлів одночасно.",
 };

@@ -6,16 +6,17 @@ import { db } from "@/lib/firebase/client";
 import { messageConverter } from "@/lib/firebase/converters";
 import { TaskLimitError, type NewTaskInput } from "@/hooks/useTasks";
 import { detectPacing, parseSplitRequest } from "@/lib/pacing";
-import { estimateFile, focusToPacing } from "@/lib/estimate";
+import { extOf, prepareAttachment, thumbnailOf } from "@/lib/attachments";
 import type { ChatMessage, DateKey, Pacing } from "@/types";
 import type { AssistantAction, AssistantRequest, AssistantResponse, ScheduleRequest } from "@/types/api";
 
 async function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const isForm = body instanceof FormData; // multipart: the browser sets the boundary header itself
   const res = await fetch(url, {
     signal,
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    headers: isForm ? undefined : { "Content-Type": "application/json" },
+    body: isForm ? body : JSON.stringify(body),
   });
   if (!res.ok) {
     const err = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -62,10 +63,10 @@ export function useChat(
   }, [uid]);
 
   const post = useCallback(
-    async (role: ChatMessage["role"], content: string, kind: ChatMessage["kind"], status: ChatMessage["status"]) => {
+    async (role: ChatMessage["role"], content: string, kind: ChatMessage["kind"], status: ChatMessage["status"], attachments?: ChatMessage["attachments"]) => {
       if (!uid) return;
       const ref = doc(collection(db, "users", uid, "messages")).withConverter(messageConverter);
-      await setDoc(ref, { id: ref.id, role, content, kind, status, createdAt: new Date().toISOString() });
+      await setDoc(ref, { id: ref.id, role, content, kind, status, ...(attachments?.length ? { attachments } : {}), createdAt: new Date().toISOString() });
     },
     [uid],
   );
@@ -137,35 +138,24 @@ export function useChat(
    *  answer       → just show the reply
    */
   const ask = useCallback(
-    (text: string, file?: File) =>
+    (text: string, files: File[] = []) =>
       guarded(async () => {
-        const message = text.trim() || (file ? (lang === "uk" ? "Оціни це завдання" : "Estimate this assignment") : "");
+        const message = text.trim() || (files.length ? (lang === "uk" ? "Проаналізуй і підсумуй цей файл." : "Analyze and summarize this file.") : "");
         if (!message) return;
-        await post("user", file ? `📎 ${file.name}\n${message}` : message, "text", "sent");
-        // An attached assignment is read once by /api/estimate-task; its estimate rides along with the message.
-        const est = file ? await estimateFile(file, lang, message, abortRef.current?.signal) : null;
-        const result = await postJson<AssistantResponse>("/api/assistant", {
-          message: est
-            ? `${message}\n[Attached file "${file!.name}": ${est.reasoning} Estimated ${est.estimatedMinutes} minutes.]`
-            : message,
-          nowISO: new Date().toISOString(),
-        } satisfies AssistantRequest, abortRef.current?.signal);
-
-        if (est && result.intent !== "modify_tasks") {
-          // The file becomes the bubble: the assistant's reading of the message (title, deadline) plus the file's estimate.
-          const pacing = detectPacing(message) ?? focusToPacing(est.recommendedFocus);
-          const requestedParts = parseSplitRequest(message) ?? (est.shouldSplit ? (est.suggestedParts ?? undefined) : undefined);
-          const first = result.intent === "create_tasks" ? result.tasks[0] : undefined;
-          await addTasks([{
-            title: first?.title || est.suggestedTitle,
-            deadline: first?.deadline,
-            durationMin: est.estimatedMinutes,
-            pacing,
-            requestedParts,
-          }]);
-          await post("assistant", `${result.reply}\n✨ ${est.reasoning}`, "text", "sent");
-          return;
+        const meta = await Promise.all(files.map(async (f) => ({ name: f.name, type: f.type || extOf(f.name), size: f.size, thumb: await thumbnailOf(f) })));
+        await post("user", message, "text", "sent", meta);
+        // With files, the request is multipart: Gemini receives the PDFs / images inline and the other documents as text.
+        let payload: FormData | AssistantRequest;
+        if (files.length) {
+          const form = new FormData();
+          form.set("message", message);
+          form.set("nowISO", new Date().toISOString());
+          for (const f of await Promise.all(files.map(prepareAttachment))) form.append("files", f, f.name);
+          payload = form;
+        } else {
+          payload = { message, nowISO: new Date().toISOString() } satisfies AssistantRequest;
         }
+        const result = await postJson<AssistantResponse>("/api/assistant", payload, abortRef.current?.signal);
 
         if (result.intent === "schedule") {
           await runSchedule("user-message", message); // writes its own assistant reply

@@ -19,6 +19,8 @@ interface Ctx {
   targetDate: string;
   now: Date;
   settings: UserSettings;
+  /** How many days ahead the planner was offered (7 by default, up to 90). */
+  horizonDays?: number;
   /** Tasks the model was asked to place. */
   tasks: Task[];
   /** Locked blocks: immovable, nothing may overlap them. */
@@ -34,7 +36,7 @@ interface Ctx {
 export function checkBlocks(c: Ctx): { ok: CheckedBlock[]; rejected: Rejected[] } {
   const byId = new Map(c.tasks.map((t) => [t.id, t]));
   const estimate = new Map(c.raw.taskEstimates.map((e) => [e.taskId, e.durationMin]));
-  const days = planningDays(c.targetDate, c.settings.workingDays);
+  const days = planningDays(c.targetDate, c.settings.workingDays, c.horizonDays);
   const { start: ws, end: we } = c.settings.workingHours;
   const gap = c.strictBreaks ? (c.minBreakMin ?? 0) * 60_000 : 0;
   const rejected: Rejected[] = [];

@@ -175,6 +175,8 @@ export interface ChatMessage {
   scheduleVersion?: number;
   changeSummary?: ChangeSummary;
   status: "sent" | "pending" | "error";
+  /** Files attached to this message (names and a tiny preview only; the files themselves are not stored). */
+  attachments?: Array<{ name: string; type: string; size: number; thumb?: string }>;
   createdAt: ISODateTime;
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Mic, Square } from "lucide-react";
 import { useLang } from "@/context/LanguageProvider";
 import { useToast } from "@/context/ToastProvider";
@@ -11,12 +12,15 @@ export function MicButton({
   onChange,
   size = "md",
   fixedLang,
+  stopKey,
 }: {
   value: string;
   onChange: (text: string) => void;
   size?: "sm" | "md";
   /** Use this language and hide the UA / EN switch (e.g. follow the UI language). */
   fixedLang?: SpeechLang;
+  /** Change this value (e.g. when the message is submitted) to stop listening right away. */
+  stopKey?: unknown;
 }) {
   const { toast } = useToast();
   const { t } = useLang();
@@ -27,6 +31,10 @@ export function MicButton({
     onTranscript: onChange,
     onError: (message) => toast({ title: t("Voice input"), body: t(message) }),
   });
+  useEffect(() => {
+    stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopKey]);
   const dim = size === "sm" ? "h-9 w-9" : "h-10 w-10";
 
   return (

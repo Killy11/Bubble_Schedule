@@ -9,7 +9,7 @@ import { checkBlocks, type CheckedBlock, type Rejected } from "@/lib/ai/validate
 import { comparePriority } from "@/lib/priority";
 import { taskWeight } from "@/lib/bubbles/weight";
 import { DEFAULT_SETTINGS } from "@/lib/firebase/users";
-import { sanitizeSettings } from "@/lib/ai/horizon";
+import { horizonFor, sanitizeSettings } from "@/lib/ai/horizon";
 import { minutesOfDay, toLocalNaive, weekdayOf } from "@/lib/time";
 import { suggestDuration } from "@/lib/history";
 import type { ChangeSummary, ChatMessage, HistoryRecord, Schedule, ScheduleBlock, Task, User } from "@/types";
@@ -151,6 +151,7 @@ export async function POST(request: Request) {
 
   // Smallest rest any block needs: 5 with a locked-in task (or "no breaks" wording), 15 for the balanced
   // wave, 30 when everything is chill. The prompt spells out the full per-pacing rhythm.
+  const horizonDays = horizonFor(toPlace, nowMs); // 7 days, or up to 90 for undated / far-off tasks
   const pacings = toPlace.map((t) => t.pacing ?? "balanced");
   const minBreakMin =
     pacings.includes("locked") || (message && SHORT_BREAK_RE.test(message)) ? 5 : pacings.every((p) => p === "chill") ? 30 : 15;
@@ -186,7 +187,7 @@ export async function POST(request: Request) {
     {
       role: "user",
       text: buildUserPrompt({
-        tz, targetDate: body.targetDate, nowISO: body.nowISO, settings, mode,
+        tz, targetDate: body.targetDate, nowISO: body.nowISO, settings, mode, horizonDays,
         tasks: toPlace, newTaskIds: new Set(newTasks.map((t) => t.id)), weights, locked,
         blocks: livePlanned.filter((b) => placeIds.has(b.taskId)),
         history, message, trigger: body.trigger, minBreakMin, lang: body.lang === "uk" ? "uk" : "en",
@@ -213,7 +214,7 @@ export async function POST(request: Request) {
         effort: "low", // a little reasoning helps fit blocks without overlaps
       });
       ({ ok, rejected } = checkBlocks({
-        tz, targetDate: body.targetDate, now, settings, tasks: toPlace, busy, raw,
+        tz, targetDate: body.targetDate, now, settings, tasks: toPlace, busy, raw, horizonDays,
         minBreakMin, strictBreaks: attempt === 0, // the retry only insists on no overlaps, so a task is never dropped just for a short break
       }));
       if (rejected.length === 0) break;

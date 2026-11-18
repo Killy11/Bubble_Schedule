@@ -4,6 +4,15 @@ import { upgradeWorkingHours } from "@/lib/settings";
 
 /** How many calendar days ahead (including the target day) the planner may use. */
 export const HORIZON_DAYS = 7;
+/** Undated tasks may be planned this far ahead: a rolling 3-month window. */
+export const MAX_HORIZON_DAYS = 90;
+
+/** Days to offer the planner: a week normally, up to 90 when a task has no deadline (or a far one). */
+export function horizonFor(tasks: ReadonlyArray<{ deadline?: string }>, nowMs: number): number {
+  if (tasks.some((t) => !t.deadline)) return MAX_HORIZON_DAYS;
+  const far = Math.max(0, ...tasks.map((t) => (Date.parse(t.deadline!) - nowMs) / 86_400_000));
+  return Math.min(MAX_HORIZON_DAYS, Math.max(HORIZON_DAYS, Math.ceil(far) + 1));
+}
 const MAX_BUFFER_MIN = 180;
 
 /** Working hours / days from the user's doc, repaired if they are missing or nonsensical. */
@@ -20,9 +29,9 @@ export function sanitizeSettings(s: UserSettings): UserSettings {
 }
 
 /** Days the planner may schedule on: working weekdays within the horizon, starting at `target`. */
-export function planningDays(target: DateKey, workingDays: number[]): DateKey[] {
+export function planningDays(target: DateKey, workingDays: number[], horizonDays: number = HORIZON_DAYS): DateKey[] {
   const out: DateKey[] = [];
-  for (let i = 0; i < HORIZON_DAYS; i++) {
+  for (let i = 0; i < horizonDays; i++) {
     const k = addDays(target, i);
     if (workingDays.includes(weekdayOf(k))) out.push(k);
   }
