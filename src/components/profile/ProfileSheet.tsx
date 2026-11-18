@@ -65,6 +65,9 @@ function QuietHours({ uid, settings }: { uid: string; settings: UserSettings }) 
         on={q.enabled}
         onChange={(next) => void save({ quietHoursEnabled: next, quietHoursStart: q.start, quietHoursEnd: q.end })}
       />
+      <p className="mb-2.5 mt-1 px-1 text-xs leading-relaxed text-zinc-400">
+        {t("Quiet window: the 1-day deadline reminder waits until it ends. Task start alerts still come through, and scheduling isn't affected.")}
+      </p>
       {q.enabled && (
         <div className="space-y-1.5 px-1">
           <div className="flex items-center gap-2">

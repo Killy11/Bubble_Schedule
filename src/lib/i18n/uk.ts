@@ -341,4 +341,6 @@ export const UK: Record<string, string> = {
   // Chat attachments
   "Unsupported file type. Use PDF, DOCX, TXT, MD, CSV, JSON or an image (PNG, JPG, WEBP).": "Непідтримуваний тип файлу. Використайте PDF, DOCX, TXT, MD, CSV, JSON або зображення (PNG, JPG, WEBP).",
   "Up to 3 files at a time.": "До 3 файлів одночасно.",
+
+  "Quiet window: the 1-day deadline reminder waits until it ends. Task start alerts still come through, and scheduling isn't affected.": "Тихий період: нагадування «залишилась 1 доба» чекає на його завершення. Сповіщення про початок завдань усе одно надходять, а розклад не змінюється.",
 };
