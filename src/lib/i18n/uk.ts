@@ -407,7 +407,6 @@ export const UK: Record<string, string> = {
   "That's all. You can replay this guide any time from the ? button or your profile.": "Це все. Гід можна переглянути знову кнопкою ? або в профілі.",
   "Step {a} of {b}": "Крок {a} з {b}",
   "🚀 Get started": "🚀 Почати роботу",
-  "🎓 Show the interactive guide": "🎓 Показати інтерактивний гід",
 
   // Hands-on tutorial
   "Create your first bubble": "Створіть першу бульбашку",

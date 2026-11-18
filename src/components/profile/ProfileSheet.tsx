@@ -181,7 +181,7 @@ function WorkingHours({ uid, start: s0, end: e0, quietCustom }: { uid: string; s
   );
 }
 
-export function ProfileSheet({ open, onClose, onShowTutorial, onSignOut }: { open: boolean; onClose: () => void; onShowTutorial: () => void; onSignOut: () => Promise<void> }) {
+export function ProfileSheet({ open, onClose, onSignOut }: { open: boolean; onClose: () => void; onSignOut: () => Promise<void> }) {
   const [signingOut, setSigningOut] = useState(false);
   const { t, lang, setLang } = useLang();
   const { user } = useAuth();
@@ -289,9 +289,6 @@ export function ProfileSheet({ open, onClose, onShowTutorial, onSignOut }: { ope
             />
           )}
 
-          <button type="button" data-tour="replay-tutorial-btn" onClick={onShowTutorial} className={`${primaryBtn} glass hover:brightness-125`}>
-            {t("🎓 Show the interactive guide")}
-          </button>
           <SupportButton variant="block" />
           <button
             type="button"

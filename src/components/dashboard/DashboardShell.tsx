@@ -654,8 +654,7 @@ export function DashboardShell() {
         ))}
       </nav>
 
-      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onShowTutorial={startTutorial}
-        onSignOut={async () => {
+      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onSignOut={async () => {
           await signOut();
           router.replace("/login");
         }} />
