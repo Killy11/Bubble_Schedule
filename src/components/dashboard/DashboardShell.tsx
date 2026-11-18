@@ -8,7 +8,7 @@ import { Orb } from "@/components/Orb";
 import { useAuth } from "@/context/AuthProvider";
 import { useToast } from "@/context/ToastProvider";
 import { useLang } from "@/context/LanguageProvider";
-import { Celebrations } from "@/components/Celebration";
+import { Celebrations, type BurstSpec } from "@/components/Celebration";
 import { FeedbackSheet } from "@/components/FeedbackSheet";
 import { OverdueSheet } from "@/components/bubbles/OverdueSheet";
 import { deadlineMs, isLiveTask, isOverdueTask } from "@/lib/deadline";
@@ -79,7 +79,8 @@ export function DashboardShell() {
   const [overdueOpen, setOverdueOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [popping, setPopping] = useState<ReadonlySet<string>>(new Set());
-  const [bursts, setBursts] = useState<number[]>([]);
+  const [bursts, setBursts] = useState<BurstSpec[]>([]);
+  const canvasHost = useRef<HTMLDivElement>(null);
   const [tourOpen, setTourOpen] = useState(false);
   // New tasks (form, chat) default to Balanced; the form's Focus intensity picks per task.
   const defaultPacing = "balanced" as const;
@@ -284,7 +285,12 @@ export function DashboardShell() {
   /** Write a completion and offer the 6 s Undo. */
   async function finish(task: Task, actualMin?: number, celebrate = true) {
     const [undo] = await Promise.all([complete(task, { actualMin }), markTaskBlocksDone(task.id)]);
-    if (celebrate) setBursts((b) => [...b, Date.now()]); // the overlay itself respects reduced motion
+    // Plays inside the bubble canvas only. On a phone that canvas is hidden while Schedule / Chat is open
+    // (its box is 0×0 then), so nothing plays there.
+    const box = canvasHost.current?.getBoundingClientRect();
+    if (celebrate && box && box.width > 0 && box.height > 0) {
+      setBursts((b) => [...b, { id: Date.now() + Math.random(), w: Math.round(box.width), h: Math.round(box.height) }]);
+    }
     if (undo) {
       toast({
         title: t("Task completed"),
@@ -413,7 +419,8 @@ export function DashboardShell() {
               </button>
             </div>
           </div>
-          <div className="relative min-h-[360px] flex-1">
+          <div ref={canvasHost} className="relative min-h-[360px] flex-1">
+            <Celebrations bursts={bursts} onDone={(id) => setBursts((b) => b.filter((x) => x.id !== id))} />
             {error ? (
               <p className="absolute inset-0 flex items-center justify-center text-sm text-red-500">{t("Couldn't load your tasks.")}</p>
             ) : (
@@ -497,7 +504,6 @@ export function DashboardShell() {
         ))}
       </nav>
 
-      <Celebrations ids={bursts} onDone={(id) => setBursts((b) => b.filter((x) => x !== id))} />
       <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onOpenFeedback={() => setFeedbackOpen(true)} />
       <FeedbackSheet open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
       <TaskFormSheet open={formOpen} onClose={() => setFormOpen(false)} onSubmit={addTask} history={history} defaultPacing={defaultPacing} />

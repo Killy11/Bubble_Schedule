@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useLang } from "@/context/LanguageProvider";
 
@@ -10,14 +10,19 @@ const FLOAT_S = 3.0; // how long the bubbles live after the bang
 const LEAN_DEG = 38; // poppers point diagonally inward
 const POPPER_MS = 2200; // slide in, fire, slide back out
 
-/** Popper size and how far its base hangs off the corner, by screen width (phones: ~96px, larger: ~144px). */
-function popperLayout(vw: number) {
-  const phone = vw < 640;
-  const w = phone ? 96 : 144;
-  return { w, h: Math.round(w * 1.3), off: phone ? 24 : 32 };
-}
 const NEON = ["#22d3ee", "#a78bfa", "#f472b6", "#4ade80", "#facc15", "#38bdf8", "#fb7185"];
 const CONFETTI_COLORS = ["#f43f5e", "#f59e0b", "#facc15", "#22c55e", "#38bdf8", "#8b5cf6", "#ec4899", "#ffffff"];
+
+/**
+ * Popper size and how far it is tucked behind its corner. The offset hangs the base so far outside the
+ * canvas that only the top third (nozzle and rim) peeks in at full extension.
+ */
+function popperLayout() {
+  const phone = typeof window !== "undefined" && window.innerWidth < 640;
+  const w = phone ? 96 : 144;
+  const h = Math.round(w * 1.3);
+  return { w, h, off: Math.round(h * 0.53) }; // ≈ -bottom-14 / -left-14 on phones, ≈ -bottom-24 on desktop
+}
 
 /** Rotating encouragement (keys are translated by the language provider). */
 const MESSAGES = [
@@ -41,7 +46,7 @@ interface Popper {
 }
 
 function makePoppers(vw: number, vh: number): Popper[] {
-  const { w, h, off } = popperLayout(vw);
+  const { w, h, off } = popperLayout();
   const reach = h * 0.77; // pivot (the tip, hidden off-screen) → open mouth
   return ([["left", LEAN_DEG], ["right", -LEAN_DEG]] as const).map(([side, theta]) => {
     // The box hangs `off` px past the corner, so its base stays hidden and only the upper cone peeks in.
@@ -202,17 +207,16 @@ function PopperView({ p, uid }: { p: Popper; uid: string }) {
   );
 }
 
-/** Full-screen celebration: two large poppers, glossy bubbles erupting from them, confetti, and a cheer badge. */
-function Burst({ id, onDone }: { id: number; onDone: () => void }) {
+/** Celebration inside the bubble canvas: poppers tucked in its bottom corners, glossy bubbles, confetti, and a cheer badge. */
+function Burst({ id, w, h, onDone }: { id: number; w: number; h: number; onDone: () => void }) {
   const { t } = useLang();
   const reduced = useReducedMotion();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [setup] = useState(() => {
-    const vw = typeof window === "undefined" ? 1200 : window.innerWidth;
-    const vh = typeof window === "undefined" ? 800 : window.innerHeight;
-    const poppers = makePoppers(vw, vh);
+    const poppers = makePoppers(w, h);
     return {
-      vw,
-      vh,
+      vw: w,
+      vh: h,
       poppers,
       flights: poppers.flatMap((p) => Array.from({ length: 16 }, () => flight(p))), // 32 bubbles
       message: MESSAGES[Math.floor(Math.random() * MESSAGES.length)],
@@ -229,9 +233,13 @@ function Burst({ id, onDone }: { id: number; onDone: () => void }) {
     if (reduced) return;
     let cancelled = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
-    void import("canvas-confetti").then(({ default: confetti }) => {
-      if (cancelled) return;
-      const base = { zIndex: 55, disableForReducedMotion: true, colors: CONFETTI_COLORS };
+    let shoot: ReturnType<typeof import("canvas-confetti").create> | null = null;
+    void import("canvas-confetti").then(({ default: lib }) => {
+      if (cancelled || !canvasRef.current) return;
+      // Our own canvas, so the confetti is clipped to the bubble canvas instead of covering the whole window.
+      const confetti = Object.assign(lib.create(canvasRef.current, { resize: true, disableForReducedMotion: true }), { shapeFromText: lib.shapeFromText });
+      shoot = confetti;
+      const base = { disableForReducedMotion: true, colors: CONFETTI_COLORS };
       const star = confetti.shapeFromText({ text: "✨", scalar: 2 });
       timers.push(
         setTimeout(() => {
@@ -255,11 +263,13 @@ function Burst({ id, onDone }: { id: number; onDone: () => void }) {
     return () => {
       cancelled = true;
       timers.forEach(clearTimeout);
+      shoot?.reset();
     };
   }, [reduced, setup]);
 
   return (
-    <div aria-hidden className="pointer-events-none fixed inset-0 z-[55] h-screen w-screen overflow-hidden" /* clips the poppers at the screen edges */>
+    <div aria-hidden className="pointer-events-none absolute inset-0 z-30 overflow-hidden">
+      <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
       {!reduced && (
         <>
           {setup.poppers.map((p) => <PopperView key={p.side} p={p} uid={`pp${id}${p.side}`} />)}
@@ -289,12 +299,19 @@ function Burst({ id, onDone }: { id: number; onDone: () => void }) {
   );
 }
 
-/** Mount one <Burst> per id; `onDone(id)` drops it when it finishes. */
-export function Celebrations({ ids, onDone }: { ids: readonly number[]; onDone: (id: number) => void }) {
+export interface BurstSpec {
+  id: number;
+  /** Size of the bubble canvas it plays in (px). */
+  w: number;
+  h: number;
+}
+
+/** Mount one <Burst> per spec. Render inside the (relative, overflow-hidden) bubble canvas container. */
+export function Celebrations({ bursts, onDone }: { bursts: readonly BurstSpec[]; onDone: (id: number) => void }) {
   return (
     <>
-      {ids.map((id) => (
-        <Burst key={id} id={id} onDone={() => onDone(id)} />
+      {bursts.map((b) => (
+        <Burst key={b.id} id={b.id} w={b.w} h={b.h} onDone={() => onDone(b.id)} />
       ))}
     </>
   );

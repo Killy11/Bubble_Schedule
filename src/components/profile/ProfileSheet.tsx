@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BellRing, Check, Clock, Download, Globe, Loader2, Mail, MessageSquarePlus, Share } from "lucide-react";
+import { BellRing, Check, Clock, Download, Globe, Loader2, Mail, MessageSquarePlus, Moon, Share } from "lucide-react";
 import { doc, updateDoc } from "firebase/firestore";
 import { Sheet } from "@/components/Sheet";
 import { db } from "@/lib/firebase/client";
@@ -14,6 +14,35 @@ import { useLang } from "@/context/LanguageProvider";
 
 const primaryBtn =
   "flex w-full items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-medium transition disabled:opacity-60";
+
+/** A labelled On / Off switch row. */
+function Switch({
+  icon, label, hint, on, disabled, onChange,
+}: {
+  icon: React.ReactNode; label: string; hint?: string; on: boolean; disabled?: boolean; onChange: (next: boolean) => void;
+}) {
+  const { t } = useLang();
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      disabled={disabled}
+      onClick={() => onChange(!on)}
+      className="glass flex w-full items-center gap-3 rounded-2xl p-3 text-left transition disabled:opacity-60"
+    >
+      <span className="text-muted">{icon}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium">{label}</span>
+        {hint && <span className="block text-xs text-muted">{hint}</span>}
+      </span>
+      <span className="text-xs text-muted">{on ? t("On") : t("Off")}</span>
+      <span className={`relative h-6 w-10 shrink-0 rounded-full transition-colors ${on ? "bg-foreground" : "bg-muted/40"}`}>
+        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-background shadow transition-all ${on ? "left-[18px]" : "left-0.5"}`} />
+      </span>
+    </button>
+  );
+}
 
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 
@@ -63,9 +92,11 @@ export function ProfileSheet({ open, onClose, onOpenFeedback }: { open: boolean;
   const { t, lang, setLang } = useLang();
   const { user } = useAuth();
   const { canInstall, installed, isIOS, install } = useInstall();
-  const { permission, enabling, error, enable } = useNotifications();
+  const { permission, enabling, error, enable, disable } = useNotifications();
   const [installing, setInstalling] = useState(false);
   const { settings } = useUserProfile(user?.uid);
+  const pushOn = settings.notificationsEnabled && permission === "granted";
+  const quiet = !!settings.quietHours?.enabled;
 
   const name = user?.displayName || null;
   const email = user?.email || "—";
@@ -151,21 +182,39 @@ export function ProfileSheet({ open, onClose, onOpenFeedback }: { open: boolean;
             </>
           )}
 
-          {/* Push notifications */}
-          {permission !== "unsupported" && (
-            <div>
-              <button
-                onClick={enable}
-                disabled={enabling || permission === "granted"}
-                className={`${primaryBtn} glass hover:brightness-125`}
-              >
-                {enabling ? <Loader2 className="h-4 w-4 animate-spin" /> : permission === "granted" ? <Check className="h-4 w-4" /> : <BellRing className="h-4 w-4" />}
-                {permission === "granted" ? t("Notifications on") : t("Enable reminders")}
-              </button>
-              {permission === "denied" && !error && (
-                <p className="mt-1.5 text-xs text-muted">{t("Notifications are blocked in browser settings")}</p>
+          {/* Push notifications: the master switch and Quiet Hours */}
+          {(permission !== "unsupported" || isIOS) && (
+            <div className="space-y-2">
+              <Switch
+                icon={enabling ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
+                label={t("Push notifications")}
+                on={pushOn}
+                disabled={enabling || permission === "unsupported" || permission === "denied"}
+                onChange={(next) => void (next ? enable() : disable())}
+              />
+              {pushOn && (
+                <Switch
+                  icon={<Moon className="h-4 w-4" />}
+                  label={t("Quiet hours")}
+                  hint="22:00 – 08:00"
+                  on={quiet}
+                  onChange={(next) => {
+                    if (user) {
+                      updateDoc(doc(db, "users", user.uid), { "settings.quietHours": { enabled: next, start: "22:00", end: "08:00" } })
+                        .catch((e) => console.warn("quiet hours save:", e));
+                    }
+                  }}
+                />
               )}
-              {error && <p role="alert" className="mt-1.5 text-xs text-red-500">{error}</p>}
+              {isIOS && !installed && (
+                <p className="flex items-start gap-1.5 text-xs text-muted">
+                  <Share className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {t("iPhone/iPad: Share → Add to Home Screen to get notifications")}
+                </p>
+              )}
+              {permission === "denied" && !error && (
+                <p className="text-xs text-muted">{t("Notifications are blocked in browser settings")}</p>
+              )}
+              {error && <p role="alert" className="text-xs text-red-500">{error}</p>}
             </div>
           )}
 

@@ -292,4 +292,11 @@ export const UK: Record<string, string> = {
   "Re-planned by deadline. {n} tasks can't fully fit before their deadlines.": "Перепланувано за дедлайнами. Завдань, що не вміщаються повністю до дедлайнів: {n}.",
   "Planned by earliest deadline": "Заплановано за найближчим дедлайном",
   "No longer part of the plan.": "Більше не входить до плану.",
+
+  // Notifications
+  "Push notifications": "Push-сповіщення",
+  "Quiet hours": "Тихі години",
+  On: "Увімк.",
+  Off: "Вимк.",
+  "iPhone/iPad: Share → Add to Home Screen to get notifications": "iPhone/iPad: «Поділитися» → «На екран Додому», щоб отримувати сповіщення",
 };

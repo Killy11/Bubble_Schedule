@@ -27,6 +27,8 @@ export interface UserSettings {
   notificationsEnabled: boolean;
   /** Interface language (default English). */
   language?: "en" | "uk";
+  /** Quiet hours: 24-hour deadline reminders wait until they end. Start-of-task alerts are still sent. */
+  quietHours?: { enabled: boolean; start: string; end: string };
 }
 
 /** users/{uid}/devices/{tokenHash} */
@@ -64,6 +66,8 @@ export interface Subtask {
   completed: boolean;
   /** The user set this time by hand: automatic re-planning works around it instead of moving it. */
   pinned?: boolean;
+  /** The start time the "starting in 5 min" push was sent for. A different start (moved / snoozed) re-arms it. */
+  notified5mStart?: string;
 }
 
 /** users/{uid}/tasks/{taskId} */
@@ -103,6 +107,8 @@ export interface Task {
   notifiedOverdue?: boolean;
   /** The "1 day left" warning has been shown / pushed (once per task). */
   oneDayNotified?: boolean;
+  /** The background "1 day left" push has been claimed (the server also honours `oneDayNotified`). */
+  notified24hDue?: boolean;
   completedAt?: ISODateTime;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
@@ -132,6 +138,8 @@ export interface ScheduleBlock {
   status: "planned" | "done" | "skipped";
   /** User set this time by hand. The AI treats it as immovable and plans around it. */
   isPinned?: boolean;
+  /** The start time the "starting in 5 min" push was sent for (see Subtask.notified5mStart). */
+  notified5mStart?: string;
 }
 
 export interface ChangeSummary {

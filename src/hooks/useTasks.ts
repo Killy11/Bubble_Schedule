@@ -377,7 +377,7 @@ export function useTasks(
         pacing: patch.pacing,
         // A new deadline deserves fresh "due soon" / "expired" alerts.
         ...(deadlineChanged
-          ? { notified: false, notifiedOverdue: false, oneDayNotified: patch.deadline ? oneDayFlagFor(patch.deadline, Date.now()) : deleteField() }
+          ? { notified: false, notifiedOverdue: false, notified24hDue: false, oneDayNotified: patch.deadline ? oneDayFlagFor(patch.deadline, Date.now()) : deleteField() }
           : {}),
         updatedAt: new Date(),
       });
@@ -408,6 +408,7 @@ export function useTasks(
         expiredAt: deleteField(),
         notified: false,
         notifiedOverdue: false,
+        notified24hDue: false,
         oneDayNotified: deadlineIso ? oneDayFlagFor(deadlineIso, Date.now()) : deleteField(),
         ...(subtasks ? { subtasks: toFirestoreData(subtasks) } : {}),
         updatedAt: new Date(),

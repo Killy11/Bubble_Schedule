@@ -6,7 +6,8 @@ import { onMessage } from "firebase/messaging";
 import { useAuth } from "@/context/AuthProvider";
 import { useToast } from "@/context/ToastProvider";
 import { getClientMessaging } from "@/lib/firebase/client";
-import { fcmSupported, getFcmToken, requestPermission, saveToken } from "@/lib/fcm";
+import { disablePush, fcmSupported, getFcmToken, requestPermission, saveToken } from "@/lib/fcm";
+import { useUserProfile } from "@/hooks/useUserProfile";
 
 type Permission = NotificationPermission | "unsupported";
 
@@ -16,6 +17,8 @@ interface NotificationContextValue {
   error: string | null;
   /** Ask for permission (must run from a click), fetch the FCM token and save it on the user. */
   enable: () => Promise<void>;
+  /** Master switch off: remove this device and stop all pushes. */
+  disable: () => Promise<void>;
 }
 const NotificationContext = createContext<NotificationContextValue | null>(null);
 
@@ -29,6 +32,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [enabling, setEnabling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const syncedFor = useRef<string | null>(null);
+  const { settings } = useUserProfile(uid);
 
   // Detect support + current permission once.
   useEffect(() => {
@@ -37,12 +41,13 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
   // Already granted earlier? Refresh the token (tokens rotate) and make sure it is saved for this user.
   useEffect(() => {
-    if (!uid || permission !== "granted" || syncedFor.current === uid) return;
+    // Only while the master switch is on: switching it off must not be undone by this refresh.
+    if (!uid || permission !== "granted" || !settings.notificationsEnabled || syncedFor.current === uid) return;
     syncedFor.current = uid;
     getFcmToken()
       .then((token) => (token ? saveToken(uid, token) : undefined))
       .catch((e) => console.warn("fcm token sync:", e instanceof Error ? e.message : e));
-  }, [uid, permission]);
+  }, [uid, permission, settings.notificationsEnabled]);
 
   // Foreground messages: the worker only handles background, so show an in-app toast here.
   useEffect(() => {
@@ -86,7 +91,21 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     }
   }, [uid]);
 
-  const value = useMemo(() => ({ permission, enabling, error, enable }), [permission, enabling, error, enable]);
+  const disable = useCallback(async () => {
+    if (!uid) return;
+    setError(null);
+    setEnabling(true);
+    try {
+      await disablePush(uid);
+      syncedFor.current = null;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't turn notifications off.");
+    } finally {
+      setEnabling(false);
+    }
+  }, [uid]);
+
+  const value = useMemo(() => ({ permission, enabling, error, enable, disable }), [permission, enabling, error, enable, disable]);
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;
 }
 

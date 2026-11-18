@@ -1,4 +1,4 @@
-import { arrayRemove, arrayUnion, doc, setDoc } from "firebase/firestore";
+import { arrayRemove, arrayUnion, deleteDoc, doc, getDoc, setDoc } from "firebase/firestore";
 import { deleteToken, getToken } from "firebase/messaging";
 import { db, getClientMessaging } from "./firebase/client";
 
@@ -66,13 +66,42 @@ export async function requestPermission(): Promise<NotificationPermission> {
   return Notification.requestPermission();
 }
 
-/** Store the token in users/{uid}.fcmTokens and mark notifications as enabled. */
+/** Stable id for this device's token (first 32 hex chars of its SHA-256). */
+async function deviceId(token: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 32);
+}
+
+/**
+ * Store the token on the user (`fcmTokens`, what the server pushes to), register this device under
+ * users/{uid}/devices/{deviceId}, and turn notifications on with a 5-minute lead.
+ */
 export async function saveToken(uid: string, token: string): Promise<void> {
   await setDoc(
     doc(db, "users", uid),
-    { fcmTokens: arrayUnion(token), settings: { notificationsEnabled: true } },
+    { fcmTokens: arrayUnion(token), settings: { notificationsEnabled: true, reminderLeadMinutes: 5 } },
     { merge: true },
   );
+  const ref = doc(db, "users", uid, "devices", await deviceId(token));
+  const existing = await getDoc(ref);
+  const now = new Date();
+  await setDoc(
+    ref,
+    { token, userAgent: navigator.userAgent.slice(0, 200), lastSeenAt: now, ...(existing.exists() ? {} : { createdAt: now }) },
+    { merge: true },
+  );
+}
+
+/** Master switch off: forget this device's token and stop all pushes for the account. */
+export async function disablePush(uid: string): Promise<void> {
+  const token = Notification.permission === "granted" ? await getFcmToken().catch(() => null) : null;
+  if (token) {
+    await setDoc(doc(db, "users", uid), { fcmTokens: arrayRemove(token) }, { merge: true });
+    await deleteDoc(doc(db, "users", uid, "devices", await deviceId(token))).catch(() => {});
+    const messaging = await getClientMessaging();
+    if (messaging) await deleteToken(messaging).catch(() => {});
+  }
+  await setDoc(doc(db, "users", uid), { settings: { notificationsEnabled: false } }, { merge: true });
 }
 
 /** On sign-out: drop this device's token from the user and revoke it, so the next user here isn't pushed A's reminders. */
@@ -81,6 +110,7 @@ export async function removeToken(uid: string): Promise<void> {
   const token = await getFcmToken().catch(() => null);
   if (!token) return;
   await setDoc(doc(db, "users", uid), { fcmTokens: arrayRemove(token) }, { merge: true });
+  await deleteDoc(doc(db, "users", uid, "devices", await deviceId(token))).catch(() => {});
   const messaging = await getClientMessaging();
   if (messaging) await deleteToken(messaging).catch(() => {});
 }

@@ -84,6 +84,7 @@ export async function rebalanceAll(uid: string, now: Date): Promise<RebalanceRes
   // 2) Today's schedule: finished blocks and pinned blocks stay, everything else is the new plan.
   const titleOf = new Map(tasks.map((t) => [t.id, t.title]));
   const done = (today?.blocks ?? []).filter((b) => b.status === "done");
+  const alerted = new Map((today?.blocks ?? []).map((b) => [b.taskId, b.notified5mStart])); // keep "already alerted" across re-plans
   const fresh: ScheduleBlock[] = plan.blocks.map((b) => ({
     id: `blk_${b.taskId}`,
     taskId: b.taskId,
@@ -92,6 +93,7 @@ export async function rebalanceAll(uid: string, now: Date): Promise<RebalanceRes
     end: new Date(b.end).toISOString(),
     reason: "Planned by earliest deadline",
     status: "planned",
+    ...(alerted.get(b.taskId) ? { notified5mStart: alerted.get(b.taskId) } : {}),
   }));
   const blocks = [...done, ...pinnedBlocks, ...fresh].sort((a, b) => a.start.localeCompare(b.start));
   const schedule: Omit<Schedule, "dateKey"> = {
