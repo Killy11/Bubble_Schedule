@@ -1,18 +1,14 @@
 import type { Pacing, Subtask, Task, UserSettings } from "@/types";
 import { effectiveDuration } from "@/lib/bubbles/effective";
-import { deadlineMs } from "@/lib/deadline";
+import { comparePriority } from "@/lib/priority";
 import { pacingOf } from "@/lib/pacing";
 import { needsDecomposition } from "@/lib/subtasks";
 import { planUnits, DAY_CAP_MIN, type PlanUnit } from "@/lib/planner";
 import type { Interval } from "@/lib/decompose";
 
-/** Earliest deadline first, then oldest. Urgency comes from the deadline alone. */
-export function planningOrder(tasks: readonly Task[]): Task[] {
-  return [...tasks].sort((a, b) => {
-    const da = deadlineMs(a);
-    const db = deadlineMs(b);
-    return da === db ? a.createdAt.localeCompare(b.createdAt) : da < db ? -1 : 1; // no deadline → last
-  });
+/** Urgency tier first (red, yellow, green, none), then earliest deadline, then oldest. */
+export function planningOrder(tasks: readonly Task[], nowMs: number): Task[] {
+  return [...tasks].sort((a, b) => comparePriority(a, b, nowMs)); // red, yellow, green, no deadline; then earliest due
 }
 
 /** Tasks without a deadline are planned as if due in a week (soft: nothing ever turns overdue). */
@@ -50,7 +46,7 @@ export function planAll(o: {
   const result: PlanResult = { partSlots: new Map(), blocks: [], unplaced: [], awaitingSplit: [] };
   const fixed: Interval[] = [...o.fixed];
   const units: PlanUnit[] = [];
-  const order = planningOrder(o.tasks);
+  const order = planningOrder(o.tasks, o.nowMs);
 
   for (const t of order) {
     for (const s of t.subtasks ?? []) {

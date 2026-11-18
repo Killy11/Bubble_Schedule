@@ -38,15 +38,7 @@ service cloud.firestore {
 
     // Feedback: any signed-in user can submit (as themselves); nobody can read it from the client.
     match /feedback/{id} {
-      allow create: if request.auth != null
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.message is string
-        && request.resource.data.message.size() > 0
-        && request.resource.data.message.size() <= 2000
-        && request.resource.data.category in ['bug', 'feature', 'general']
-        && request.resource.data.email is string
-        && request.resource.data.email.size() <= 200
-        && request.resource.data.keys().hasOnly(['message', 'category', 'email', 'userId', 'createdAt']);
+      allow create: if request.auth != null;
       allow read, update, delete: if false;
     }
 

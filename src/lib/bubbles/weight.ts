@@ -32,5 +32,9 @@ export function urgency(hours: number): number {
 
 /** 0–1 weight from how soon the deadline is (higher = closer to the centre, scheduled first). */
 export function taskWeight(task: Task, nowMs: number): number {
-  return urgency(hoursLeft(task, nowMs));
+  // Tier bands never overlap: red 0.7–1, yellow 0.35–0.65, green 0.01–0.3, no deadline 0.
+  const h = hoursLeft(task, nowMs);
+  if (!Number.isFinite(h)) return 0;
+  const u = urgency(h);
+  return h <= 24 ? 0.7 + 0.3 * u : h <= 120 ? 0.35 + 0.3 * u : 0.01 + 0.29 * u;
 }

@@ -2,12 +2,10 @@
 
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
-import { addDoc, collection } from "firebase/firestore";
 import { Sheet } from "@/components/Sheet";
 import { useAuth } from "@/context/AuthProvider";
 import { useLang } from "@/context/LanguageProvider";
 import { useToast } from "@/context/ToastProvider";
-import { db } from "@/lib/firebase/client";
 
 const CATEGORIES = ["bug", "feature", "general"] as const;
 type Category = (typeof CATEGORIES)[number];
@@ -44,13 +42,12 @@ function Form({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await addDoc(collection(db, "feedback"), {
-        message: text.slice(0, 2000),
-        category,
-        email: email.trim().slice(0, 200),
-        userId: user.uid,
-        createdAt: new Date(),
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category, message: text, email: email.trim() }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast({ title: t("Thanks! Feedback sent.") });
       onClose();
     } catch (err) {

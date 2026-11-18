@@ -20,7 +20,7 @@ Rules:
   Never place two blocks closer together than "minBreakMinutes", locked blocks included, and never put one right against a locked block unless both are locked.
 - Among tasks of the same pacing, the earlier deadline goes first. The day runs across the whole working window ("workingHours"), so a task due in the evening still fits that day.
 - DAILY LOAD: plan at most about 4–5 hours of non-locked work per day (each day's "targetMinutes"), leaving generous breathing room, rather than filling the whole working day.
-- Each task has a "weight" (0–1) from how close its deadline is. Higher-weight tasks get the earliest suitable slots; lower-weight tasks fill the remaining time. There is no manual priority: urgency is the deadline.
+- Each task has a "weight" (0–1): red (<=24h) tasks are above 0.7, yellow (24-120h) 0.35-0.65, green below 0.3, no deadline 0. Always place higher weight first; a green or deadline-less task must never take a slot before an urgent one. Higher-weight tasks get the earliest suitable slots; lower-weight tasks fill the remaining time. There is no manual priority: urgency is the deadline.
 - HISTORY: a task may carry "historicalAvgMin" and "historySamples": how long this user actually took on similar tasks they finished before. When durationMin is null, base your duration estimate on historicalAvgMin (adjust only if the title clearly describes something much bigger or smaller), and say so in that estimate's reasoning, e.g. "You usually take ~45 min on similar tasks".
 - Add a taskEstimates entry for every task whose durationMin is null (your estimate; the user's own values are never overridden). If durationMin is set, the block must be exactly that long (minus loggedMinutes when it is above 0, but at least 15 minutes).
 

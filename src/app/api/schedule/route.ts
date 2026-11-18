@@ -6,6 +6,7 @@ import { SCHEDULE_JSON_SCHEMA, type AiRawResult } from "@/lib/ai/schema";
 import { describeAiError, generateJson, hasGeminiKey, type Turn } from "@/lib/ai/gemini";
 import { buildUserPrompt, SYSTEM_PROMPT, type ScheduleMode } from "@/lib/ai/prompt";
 import { checkBlocks, type CheckedBlock, type Rejected } from "@/lib/ai/validate";
+import { comparePriority } from "@/lib/priority";
 import { taskWeight } from "@/lib/bubbles/weight";
 import { DEFAULT_SETTINGS } from "@/lib/firebase/users";
 import { sanitizeSettings } from "@/lib/ai/horizon";
@@ -63,7 +64,7 @@ export async function POST(request: Request) {
     const t = fromFirestoreData<Task>(d.data());
     return { ...t, id: d.id, loggedMinutes: t.loggedMinutes ?? 0 }; // older docs predate the field
   }).filter((t) => !t.deadline || Date.parse(t.deadline) > now.getTime())
-    .sort((a, b) => (a.deadline ?? "9").localeCompare(b.deadline ?? "9")); // no deadline → last // overdue tasks can't be placed before their deadline: they stay out of the plan
+    .sort((a, b) => comparePriority(a, b, now.getTime())); // red, yellow, green, then no deadline // overdue tasks can't be placed before their deadline: they stay out of the plan
   const prev = schedSnap.exists ? fromFirestoreData<Schedule>(schedSnap.data()) : null;
   const history = msgSnap.docs
     .map((d) => ({ ...fromFirestoreData<ChatMessage>(d.data()), id: d.id }))
