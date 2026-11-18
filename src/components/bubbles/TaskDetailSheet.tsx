@@ -73,7 +73,7 @@ export function TaskDetailSheet({
 }) {
   const hue = task ? bubbleHue(task, now) : "green";
   return (
-    <Sheet open={!!task} onClose={onClose} title={task?.title ?? ""} tourId="task">
+    <Sheet open={!!task} onClose={onClose} title={task?.title ?? ""} tourId="task" closeTourId="close-task-modal">
       {/* keyed by task: every time a bubble is opened the modal starts on the Timer view */}
       {task && (
         <div className={`hue-${hue}`}>
@@ -308,7 +308,7 @@ function ProgressTimer({
             void act(async () => { await onAdjustSpent(task, n); flash(t("Logged +{n} min", { n })); });
           }}
           className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground/10 px-4 py-2.5 text-sm font-medium transition hover:bg-foreground/15 disabled:opacity-50">
-          {t("+ Log {n} min", { n: toMin(minutes) })}
+          {t("Log {n} min", { n: toMin(minutes) })}
         </button>
         {note && <p role="status" className="text-center text-xs text-emerald-600 dark:text-emerald-400">{note}</p>}
       </section>

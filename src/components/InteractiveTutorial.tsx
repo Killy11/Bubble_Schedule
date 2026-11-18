@@ -3,6 +3,7 @@
 import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { setTutorialActive } from "@/lib/tutorialLock";
 import { useLang, type TFn } from "@/context/LanguageProvider";
 
 export const TUTORIAL_KEY = "bubbleschedule_tutorial_completed_v1";
@@ -31,9 +32,11 @@ interface Step {
   advanceOnModalClose?: string;
   /** Put the card at the top edge of the screen so it never covers the target (the AI chat step). */
   pinTop?: boolean;
+  /** Open this drawer for the step (and close it again afterwards). */
+  drawer?: "profile";
 }
 
-const steps = (t: TFn): Step[] => [
+const steps = (t: TFn, isDesktop: boolean, narrow: boolean): Step[] => [
   {
     id: "add", target: '[data-tour="add-task-btn"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "create",
     title: t("Let's start with your first bubble!"),
@@ -77,27 +80,63 @@ const steps = (t: TFn): Step[] => [
   {
     id: "manual", target: '[data-tour="time-log"]', tab: "bubbles", interactive: true, insideModal: true,
     title: t("Log time manually"),
-    body: t("Worked without the timer? Pick the minutes with −15 / +15 and tap “+ Log”. When the time spent reaches the total, the bubble pops by itself."),
+    body: t("Worked without the timer? Pick the minutes with −15 / +15 and tap “Log N min”. When the time spent reaches the total, the bubble pops by itself."),
   },
   {
     id: "actions", target: '[data-tour="modal-actions"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("Edit and finish"),
-    body: t("At the bottom: “Edit task” changes the title, duration, mode and deadline, and “Finish task” completes everything at once."),
+    title: t("Log, edit and finish"),
+    body: t("“Log N min” adds the time you worked to your progress, and the bubble stays on the canvas. “🎉 Finish task”: tap it when the task is completely done, to remove the bubble from the canvas. “Edit task” changes the title, duration, mode and deadline."),
   },
   {
-    id: "close", target: '[data-tour="timer-clock"]', tab: "bubbles", interactive: true, insideModal: true, mandatory: true, advanceOnModalClose: "task",
+    id: "close", target: '[data-tour="close-task-modal"]', tab: "bubbles", interactive: true, insideModal: true, mandatory: true, advanceOnModalClose: "task",
     title: t("Close the window"),
-    body: t("Close the timer window (the × at the top, or tap outside it) to continue."),
+    body: t("Tap the ✕ to close the task window."),
   },
-  {
-    id: "tabs", target: '[data-tour="mobile-nav"], [data-tour="desktop-tabs"]', tab: "bubbles",
-    title: t("Three main sections"),
-    body: t("The app has 3 sections you can switch between at any time: 1) Bubbles (the visual canvas), 2) Schedule (the hour-by-hour plan of your day) and 3) AI Chat (your assistant)."),
-  },
+  isDesktop
+    ? {
+        id: "tabs", target: '[data-tour="desktop-panels"]', tab: "bubbles",
+        title: t("Your workspace"),
+        body: t("On a computer the canvas with your bubbles is always open, and the Schedule and the AI chat are always next to it."),
+      }
+    : {
+        id: "tabs", target: '[data-tour="mobile-nav"]', tab: "bubbles",
+        title: t("Three tabs"),
+        body: t("At the bottom of the screen there are 3 main tabs to switch between: Bubbles, Schedule and AI Chat."),
+      },
   {
     id: "chat", target: '[data-tour="ai-chat"]', tab: "chat", interactive: true, pinTop: true, closeDialogs: true,
     title: t("Try the AI chat"),
-    body: t("Write or dictate a message right now, for example “Put my task at 4 PM” or “Add coffee for 15 min”, send it and watch the AI answer. Notifications are turned on in your profile. Press the button when you're done."),
+    body: t("Write or dictate a message right now, for example “Put my task at 4 PM” or “Add coffee for 15 min”, send it and watch the AI answer. Press Next when you're done."),
+  },
+  {
+    id: "schedule", target: '[data-tour="auto-schedule-btn"]', tab: "schedule",
+    title: t("Schedule and Auto-schedule"),
+    body: t("Whenever you add or change a task, your schedule updates. There is also an “Auto-schedule” button that places your tasks into the free slots by itself. And if you want something your own way, just ask the AI chat."),
+  },
+  {
+    id: "account", target: '[data-tour="settings-btn"]', tab: "bubbles",
+    title: t("Account and settings"),
+    body: t("In your account and settings you manage your profile, set up notifications for task starts and the timer, and adapt the app to yourself."),
+  },
+  {
+    id: "theme", target: '[data-tour="theme-toggle"]', tab: "bubbles",
+    title: t("Light or dark theme"),
+    body: t("Here you can switch between the light and the dark theme."),
+  },
+  {
+    id: "feedback", target: '[data-tour="feedback-btn"]', tab: "bubbles", drawer: narrow ? "profile" : undefined,
+    title: t("Feedback"),
+    body: t("Leave a review or an idea with the “Feedback” button."),
+  },
+  {
+    id: "support", target: '[data-tour="support-btn"]', tab: "bubbles",
+    title: t("Support us"),
+    body: t("We also have a “Support” button: if you like the app, please support us!"),
+  },
+  {
+    id: "help", target: '[data-tour="help-btn"]', tab: "bubbles",
+    title: t("You can always come back"),
+    body: t("And don't worry: if anything is unclear, you can always tap here (or open the settings) and watch this tutorial again!"),
   },
 ];
 
@@ -110,8 +149,10 @@ const PAD = 6;
  * 375 px phone. `onSelectTab` switches the app's tab so each step's target is actually on screen.
  */
 export function InteractiveTutorial({
-  open, onClose, onSelectTab, bubbleCount, onCloseDialogs,
+  open, onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileOpen,
 }: {
+  /** Open or close the profile drawer (used by the steps that point at controls inside it). */
+  onSetProfileOpen: (open: boolean) => void;
   /** Close any open app dialog (the tour leaves the Task window when it moves on). */
   onCloseDialogs: () => void;
   open: boolean;
@@ -124,14 +165,31 @@ export function InteractiveTutorial({
   if (typeof document === "undefined") return null;
   // A portal on <body> with z-[9999]: always above the app's own dialogs.
   return createPortal(
-    <AnimatePresence>{open && <Tour onClose={onClose} onSelectTab={onSelectTab} bubbleCount={bubbleCount} onCloseDialogs={onCloseDialogs} />}</AnimatePresence>,
+    <AnimatePresence>{open && <Tour onClose={onClose} onSelectTab={onSelectTab} bubbleCount={bubbleCount} onCloseDialogs={onCloseDialogs} onSetProfileOpen={onSetProfileOpen} />}</AnimatePresence>,
     document.body,
   );
 }
 
-function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: () => void; onSelectTab: (tab: TutorialTab) => void; bubbleCount: number; onCloseDialogs: () => void }) {
+function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileOpen }: { onClose: () => void; onSelectTab: (tab: TutorialTab) => void; bubbleCount: number; onCloseDialogs: () => void; onSetProfileOpen: (open: boolean) => void }) {
   const { t } = useLang();
-  const list = useMemo(() => steps(t), [t]);
+  // The layout switches at Tailwind's lg (1024 px): that is where the canvas, Schedule and chat share the screen.
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches);
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < 640); // header hides Feedback
+  useEffect(() => {
+    const on = () => {
+      setIsDesktop(window.matchMedia("(min-width: 1024px)").matches);
+      setNarrow(window.innerWidth < 640);
+    };
+    window.addEventListener("resize", on);
+    return () => window.removeEventListener("resize", on);
+  }, []);
+  const list = useMemo(() => steps(t, isDesktop, narrow), [t, isDesktop, narrow]);
+
+  // While the tour runs, app dialogs ignore backdrop clicks and Escape.
+  useEffect(() => {
+    setTutorialActive(true);
+    return () => setTutorialActive(false);
+  }, []);
   const [i, setI] = useState(0);
   const step = list[i];
   const last = i === list.length - 1;
@@ -175,6 +233,13 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
   useEffect(() => {
     if (step.closeDialogs) onCloseDialogs();
   }, [step.closeDialogs, onCloseDialogs]);
+
+  // Steps that point at a control inside the profile drawer open it; every other step keeps it closed.
+  const drawer = step.drawer;
+  useEffect(() => {
+    onSetProfileOpen(drawer === "profile");
+    return () => onSetProfileOpen(false);
+  }, [drawer, onSetProfileOpen]);
 
   // Show the tab this step needs.
   useEffect(() => {
@@ -225,8 +290,8 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return; // typing
-      if (e.key === "Escape") handlers.current.onClose();
-      else if (e.key === "ArrowRight") {
+      // Escape does nothing: the tutorial ends only with Skip or its last step.
+      if (e.key === "ArrowRight") {
         if (handlers.current.mandatory) return;
         if (handlers.current.last) handlers.current.onClose();
         else setI((n) => n + 1);
@@ -268,26 +333,44 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
   top = Math.min(Math.max(M, top), Math.max(M, view.h - cardH - M));
 
   return (
-    <motion.div data-tour-card className={`fixed inset-0 z-[9999] ${step.interactive ? "pointer-events-none" : ""}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="dialog" aria-modal="true" aria-label={t("Help")}>
-      {/* catches clicks so the app underneath can't be used mid-tour */}
-      {!step.interactive && <div className="absolute inset-0" />}
-      {box && step.interactive ? (
-        (
-          <div
-            aria-hidden
-            className="pointer-events-none fixed animate-pulse rounded-3xl border-2 border-white/70 transition-all duration-300"
-            style={{ left: box.x, top: box.y, width: box.w, height: box.h, boxShadow: "0 0 24px 4px rgba(255,255,255,0.45)" }}
-          />
-        )
-      ) : box ? (
-        <div
-          aria-hidden
-          className="pointer-events-none fixed rounded-3xl border border-white/40 transition-all duration-300 ease-out"
-          style={{ left: box.x, top: box.y, width: box.w, height: box.h, boxShadow: "0 0 0 9999px rgba(0,0,0,0.72), 0 0 28px 4px rgba(255,255,255,0.35)" }}
-        />
-      ) : (
-        <div aria-hidden className="pointer-events-none fixed inset-0" style={{ background: "rgba(0,0,0,0.72)" }} />
-      )}
+    <motion.div data-tour-card className="fixed inset-0 z-[9999]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="dialog" aria-modal="true" aria-label={t("Help")}>
+      {/*
+        The dimmed backdrop is built from blocking panels around the spotlight: every pointer event outside the cutout is
+        swallowed (nothing underneath can be clicked, so no dialog closes and the tutorial can't be left by a stray tap).
+        Inside the cutout events pass through to the real control on interactive steps; on the others the cutout is
+        covered too, so the highlighted control is only shown, not pressed.
+      */}
+      {(() => {
+        const vw = view.w;
+        const vh = view.h;
+        const eat = {
+          onPointerDown: (e: React.SyntheticEvent) => { e.preventDefault(); e.stopPropagation(); },
+          onClick: (e: React.SyntheticEvent) => { e.preventDefault(); e.stopPropagation(); },
+          onTouchStart: (e: React.SyntheticEvent) => e.stopPropagation(),
+          onWheel: (e: React.SyntheticEvent) => e.stopPropagation(),
+        };
+        const dim = "rgba(0,0,0,0.72)";
+        if (!box) return <div aria-hidden className="pointer-events-auto fixed inset-0" style={{ background: dim }} {...eat} />;
+        const x = Math.max(0, box.x);
+        const y = Math.max(0, box.y);
+        const r = Math.min(vw, box.x + box.w);
+        const b = Math.min(vh, box.y + box.h);
+        const panel = "pointer-events-auto fixed";
+        return (
+          <>
+            <div aria-hidden className={panel} style={{ left: 0, top: 0, width: vw, height: y, background: dim }} {...eat} />
+            <div aria-hidden className={panel} style={{ left: 0, top: b, width: vw, height: Math.max(0, vh - b), background: dim }} {...eat} />
+            <div aria-hidden className={panel} style={{ left: 0, top: y, width: x, height: Math.max(0, b - y), background: dim }} {...eat} />
+            <div aria-hidden className={panel} style={{ left: r, top: y, width: Math.max(0, vw - r), height: Math.max(0, b - y), background: dim }} {...eat} />
+            {!step.interactive && <div aria-hidden className={panel} style={{ left: x, top: y, width: Math.max(0, r - x), height: Math.max(0, b - y) }} {...eat} />}
+            <div
+              aria-hidden
+              className={`pointer-events-none fixed rounded-3xl border-2 border-white/70 transition-all duration-300 ${step.interactive ? "animate-pulse" : ""}`}
+              style={{ left: box.x, top: box.y, width: box.w, height: box.h, boxShadow: "0 0 24px 4px rgba(255,255,255,0.45)" }}
+            />
+          </>
+        );
+      })()}
       <motion.div
         ref={cardRef}
         data-tour-card
@@ -315,7 +398,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
           {!step.mandatory && (
             <button type="button" onClick={next}
               className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black transition hover:opacity-90">
-              {last ? t("🚀 Finish tutorial") : `${t("Next")} →`}
+              {last ? t("🚀 Get started") : `${t("Next")} →`}
             </button>
           )}
         </div>

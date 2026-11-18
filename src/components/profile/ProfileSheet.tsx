@@ -354,6 +354,7 @@ export function ProfileSheet({ open, onClose, onOpenFeedback, onShowTutorial }: 
           <button
             type="button"
             onClick={() => { onClose(); onOpenFeedback(); }}
+            data-tour="feedback-btn"
             className={`${primaryBtn} glass hover:brightness-125`}
           >
             <MessageSquarePlus className="h-4 w-4" /> {t("Feedback")}

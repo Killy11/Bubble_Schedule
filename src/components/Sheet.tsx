@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 import { useLang } from "@/context/LanguageProvider";
+import { isTutorialActive } from "@/lib/tutorialLock";
 
 /** Bottom sheet on mobile, centred card on desktop. */
 export function Sheet({
@@ -12,6 +13,7 @@ export function Sheet({
   title,
   children,
   tourId,
+  closeTourId,
 }: {
   open: boolean;
   onClose: () => void;
@@ -19,11 +21,13 @@ export function Sheet({
   children: ReactNode;
   /** Lets the guided tour recognise this dialog (e.g. "create", "task"). */
   tourId?: string;
+  /** `data-tour` value for the ✕ close button, so the tour can point at it. */
+  closeTourId?: string;
 }) {
   const { t } = useLang();
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !isTutorialActive() && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
@@ -36,7 +40,7 @@ export function Sheet({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={onClose}
+          onClick={() => { if (!isTutorialActive()) onClose(); }} // a running tutorial never lets a stray click close the dialog
         >
           <motion.div
             role="dialog"
@@ -54,6 +58,7 @@ export function Sheet({
               <h2 className="min-w-0 break-words pr-3 text-lg font-semibold tracking-tight">{title}</h2>
               <button
                 onClick={onClose}
+                data-tour={closeTourId}
                 aria-label={t("Close")}
                 className="shrink-0 rounded-full p-1.5 text-muted transition hover:text-foreground"
               >

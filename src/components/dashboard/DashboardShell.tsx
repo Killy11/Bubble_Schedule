@@ -526,7 +526,7 @@ export function DashboardShell() {
         </div>
       )}
 
-      <main className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 gap-4 overflow-hidden p-4 pb-24 lg:pb-4">
+      <main data-tour="desktop-panels" className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 gap-4 overflow-hidden p-4 pb-24 lg:pb-4">
         {/* Bubble canvas */}
         <section className={`${tab === "bubbles" ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 flex-col lg:flex`}>
           <div className="mb-3 flex items-center justify-end">
@@ -599,6 +599,8 @@ export function DashboardShell() {
                 onOpenTask={setOpenId}
                 onOpenPart={(taskId, subId) => setOpenPart({ taskId, subId })}
                 onToggleSubtask={(task, sub) => void toggleSubtaskFlow(task, sub)}
+                onAutoSchedule={() => send("auto-schedule")}
+                autoScheduleDisabled={pending || active.length === 0}
                 onAdjust={(task, d) => void adjustRemaining(task, d).catch(() => toast({ title: t("Couldn't save. Please try again.") }))}
                 onToggleTimer={toggleTimer}
                 onComplete={(taskId) => {
@@ -662,7 +664,7 @@ export function DashboardShell() {
         onClearAll={() => deleteForever(completed.map((x) => x.id))}
       />
       <TutorialWelcome open={autoTour && !tourOpen} onYes={() => answerWelcome(true)} onNo={() => answerWelcome(false)} />
-      <InteractiveTutorial open={tourOpen} onClose={closeTour} onSelectTab={setTab} bubbleCount={active.length} onCloseDialogs={closeDialogs} />
+      <InteractiveTutorial open={tourOpen} onClose={closeTour} onSelectTab={setTab} bubbleCount={active.length} onCloseDialogs={closeDialogs} onSetProfileOpen={setProfileOpen} />
       <PartDetailSheet
         task={active.find((x) => x.id === openPart?.taskId) ?? null}
         sub={active.find((x) => x.id === openPart?.taskId)?.subtasks?.find((x) => x.id === openPart?.subId) ?? null}

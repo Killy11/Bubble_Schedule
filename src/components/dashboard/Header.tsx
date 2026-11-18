@@ -44,6 +44,7 @@ export function Header({
           <button
             type="button"
             onClick={onOpenFeedback}
+            data-tour="feedback-btn"
             aria-label={t("Feedback")}
             title={t("Feedback")}
             className="glass hidden h-9 items-center gap-1.5 rounded-full px-2.5 text-xs text-muted transition hover:text-foreground sm:flex" /* on phones Feedback lives in Profile */
@@ -54,6 +55,7 @@ export function Header({
           <button
             type="button"
             onClick={onOpenHelp}
+            data-tour="help-btn"
             aria-label={t("Help")}
             title={t("Help")}
             className="glass flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:text-foreground"
