@@ -174,6 +174,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onSyncDialogs, createdTaskId,
   const baseline = useRef(bubbleCount); // bubbles already there when the guide opened
   const [modalId, setModalId] = useState<string | null>(null); // tour id of the app dialog that is open, if any
   const [modalBox, setModalBox] = useState<Box | null>(null);
+  const [headerTarget, setHeaderTarget] = useState(false);
   const [cardH, setCardH] = useState(240);
 
   // A new bubble appearing while the user is still in the create steps jumps ahead to "tap your bubble".
@@ -252,7 +253,10 @@ function Tour({ onClose, onSelectTab, bubbleCount, onSyncDialogs, createdTaskId,
       });
       setView((v) => (v.w === window.innerWidth && v.h === window.innerHeight ? v : { w: window.innerWidth, h: window.innerHeight }));
       // `target` may list several selectors (e.g. phone nav vs desktop tabs): use the first one that is actually visible.
-      const visible = target ? ([...document.querySelectorAll(target)] as HTMLElement[]).map((e) => e.getBoundingClientRect()).filter((b) => b.width > 1) : [];
+      const els = target ? ([...document.querySelectorAll(target)] as HTMLElement[]).filter((e) => e.getBoundingClientRect().width > 1) : [];
+      const visible = els.map((e) => e.getBoundingClientRect());
+      const inHeader = els.length > 0 && els.every((e) => !!e.closest("header")); // header buttons: the card hangs right below them
+      setHeaderTarget((v) => (v === inHeader ? v : inHeader));
       // One control, or (union steps) the bounding box of every listed control.
       const r = visible.length === 0 ? undefined : unionStep ? { left: Math.min(...visible.map((b) => b.left)), top: Math.min(...visible.map((b) => b.top)), width: Math.max(...visible.map((b) => b.right)) - Math.min(...visible.map((b) => b.left)), height: Math.max(...visible.map((b) => b.bottom)) - Math.min(...visible.map((b) => b.top)) } : visible[0];
       if (!r || r.width < 2 || r.height < 2) return setBox((b) => (b === null ? b : null));
@@ -328,6 +332,13 @@ function Tour({ onClose, onSelectTab, bubbleCount, onSyncDialogs, createdTaskId,
     dock = "free";
     left = modalBox.x + modalBox.w + M + cardW <= view.w ? modalBox.x + modalBox.w + M : modalBox.x - M - cardW;
     top = Math.min(Math.max(M, box.y), Math.max(M, view.h - cardH - M));
+  }
+  // A control in the top header bar: the card hangs directly below it (never docked to the bottom edge), with a pointer.
+  const underHeader = !!box && headerTarget && !step.insideModal;
+  if (underHeader && box) {
+    dock = "free";
+    top = box.y + box.h + 4;
+    left = Math.max(M, Math.min(view.w - cardW - M, box.x + box.w / 2 - cardW / 2));
   }
   const dockedTop = (d: "top" | "bottom") => (d === "top" ? EDGE : view.h - cardH - EDGE);
   if (dock !== "free" && box) {
@@ -417,6 +428,14 @@ function Tour({ onClose, onSelectTab, bubbleCount, onSyncDialogs, createdTaskId,
           )}
         </div>
       </motion.div>
+      {underHeader && box && (
+        // ▲ on the card's top edge, pointing at the centre of the highlighted header button
+        <span
+          aria-hidden
+          className="pointer-events-none fixed h-0 w-0 border-x-[8px] border-b-[9px] border-x-transparent border-b-[#111116]"
+          style={{ left: Math.max(left + 14, Math.min(left + cardW - 30, box.x + box.w / 2 - 8)), top: top - 8 }}
+        />
+      )}
     </motion.div>
   );
 }
