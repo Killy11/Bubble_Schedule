@@ -8,6 +8,7 @@ import { Logo } from "@/components/Logo";
 import { Orb } from "@/components/Orb";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useAuth } from "@/context/AuthProvider";
+import { useLang } from "@/context/LanguageProvider";
 
 const BUBBLES = [
   { size: 150, x: "7%", y: "10%", hue: "green", delay: 0 },
@@ -57,6 +58,7 @@ function GoogleLogo() {
 
 export default function LoginPage() {
   const router = useRouter();
+  const { t } = useLang();
   const { user, loading, signInWithGoogle, signInWithEmail, syncSession } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,7 +123,7 @@ export default function LoginPage() {
         <div className="mx-auto mb-5 flex justify-center"><Logo size={52} /></div>
         <h1 className="text-2xl font-semibold tracking-tight">BubbleSchedule</h1>
         <p className="mt-2 text-sm text-muted">
-          Red, yellow, green: see what needs you now. Your day, planned by AI.
+          {t("Your day, planned by AI.")}
         </p>
 
         <form onSubmit={handleEmailSubmit} className="mt-8 space-y-3 text-left">
@@ -129,7 +131,7 @@ export default function LoginPage() {
             type="email"
             required
             autoComplete="email"
-            placeholder="Email"
+            placeholder={t("Email")}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="glass w-full rounded-full px-5 py-3 text-sm outline-none transition placeholder:text-muted focus:border-[rgb(var(--glow-a))]"
@@ -140,7 +142,7 @@ export default function LoginPage() {
               required
               minLength={6}
               autoComplete={mode === "signup" ? "new-password" : "current-password"}
-              placeholder="Password"
+              placeholder={t("Password")}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="glass w-full rounded-full py-3 pl-5 pr-12 text-sm outline-none transition placeholder:text-muted focus:border-[rgb(var(--glow-a))]"
@@ -148,7 +150,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={() => setShowPassword((v) => !v)}
-              aria-label={showPassword ? "Hide password" : "Show password"}
+              aria-label={showPassword ? t("Hide password") : t("Show password")}
               aria-pressed={showPassword}
               className="absolute right-2 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full text-muted transition hover:text-foreground"
             >
@@ -161,12 +163,12 @@ export default function LoginPage() {
             className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background shadow transition hover:opacity-90 disabled:opacity-60"
           >
             {disabled && <Loader2 className="h-4 w-4 animate-spin" />}
-            {mode === "signup" ? "Create account" : "Sign in"}
+            {mode === "signup" ? t("Create account") : t("Sign in")}
           </button>
         </form>
 
         <p className="mt-3 text-sm text-muted">
-          {mode === "signup" ? "Already have an account?" : "New to BubbleSchedule?"}{" "}
+          {mode === "signup" ? t("Already have an account?") : t("New to BubbleSchedule?")}{" "}
           <button
             type="button"
             onClick={() => {
@@ -175,13 +177,13 @@ export default function LoginPage() {
             }}
             className="font-medium text-[rgb(var(--glow-a))] hover:underline"
           >
-            {mode === "signup" ? "Sign in" : "Create account"}
+            {mode === "signup" ? t("Sign in") : t("Create account")}
           </button>
         </p>
 
         <div className="my-5 flex items-center gap-3 text-xs text-muted">
           <span className="h-px flex-1 bg-line" />
-          or
+          {t("or")}
           <span className="h-px flex-1 bg-line" />
         </div>
 
@@ -192,12 +194,12 @@ export default function LoginPage() {
           className="flex w-full items-center justify-center gap-3 glass rounded-full px-5 py-3 text-sm font-medium transition hover:brightness-125 disabled:opacity-60"
         >
           <GoogleLogo />
-          Continue with Google
+          {t("Continue with Google")}
         </button>
 
         {error && (
           <p role="alert" className="mt-4 text-sm text-red-500">
-            {error}
+            {t(error)}
           </p>
         )}
       </motion.div>

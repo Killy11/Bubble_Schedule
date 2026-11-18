@@ -52,17 +52,27 @@ export interface AssistantRequest {
 /** A task the assistant extracted, matching the Task schema (title, time). */
 export interface AssistantTask {
   title: string; // ≤ 100 chars
-  deadline: ISODateTime; // required; UTC ISO
+  /** UTC ISO. Omitted when the user stated no date or time: the task has no deadline. */
+  deadline?: ISODateTime;
   durationMin?: number;
-  /** The user gave no time, so the server picked one (end of today, or tomorrow). */
-  assumedDeadline: boolean;
+}
+
+/** A change to an existing task, applied on the client through the shared task state. */
+export interface AssistantAction {
+  type: "update" | "complete" | "delete";
+  taskId: string;
+  title?: string;
+  deadline?: ISODateTime;
+  removeDeadline?: boolean;
+  durationMin?: number;
 }
 
 export interface AssistantResponse {
   /** create_tasks: add these bubbles · schedule: re-plan the day (client calls /api/schedule) · answer: just reply */
-  intent: "create_tasks" | "schedule" | "answer";
+  intent: "create_tasks" | "modify_tasks" | "schedule" | "answer";
   reply: string;
   tasks: AssistantTask[];
+  actions: AssistantAction[];
   /** true when GEMINI_API_KEY is missing and a canned heuristic response was returned */
   mock?: boolean;
 }

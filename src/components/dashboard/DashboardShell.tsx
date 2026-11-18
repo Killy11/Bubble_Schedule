@@ -2,11 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Archive, Calendar, MessageCircle, Plus, Sparkles } from "lucide-react";
+import { Calendar, MessageCircle, Plus, Sparkles } from "lucide-react";
 import { useReducedMotion } from "framer-motion";
 import { Orb } from "@/components/Orb";
 import { useAuth } from "@/context/AuthProvider";
 import { useToast } from "@/context/ToastProvider";
+import { useLang } from "@/context/LanguageProvider";
+import { Celebrations } from "@/components/Celebration";
+import { FeedbackSheet } from "@/components/FeedbackSheet";
+import { OverdueSheet } from "@/components/bubbles/OverdueSheet";
+import { deadlineMs, isLiveTask, isOverdueTask } from "@/lib/deadline";
+import { pacingOf } from "@/lib/pacing";
 import { useHistory } from "@/hooks/useHistory";
 import { useChat } from "@/hooks/useChat";
 import { useNow } from "@/hooks/useNow";
@@ -32,12 +38,12 @@ import { oneDayBody } from "@/lib/oneDay";
 import { useRebalance } from "@/hooks/useRebalance";
 import { formatWindow, nextSubtask } from "@/lib/subtasks";
 import { Header } from "./Header";
-import type { Pacing, Subtask, Task } from "@/types";
+import type { Subtask, Task } from "@/types";
+import type { AssistantAction } from "@/types/api";
 import { PartDetailSheet } from "@/components/schedule/PartDetailSheet";
 import type { NewTaskInput } from "@/hooks/useTasks";
 
 const ONBOARDED_KEY = "bs:onboarded";
-const PACING_KEY = "bs:pacing";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function readLocal(key: string): string | null {
@@ -67,32 +73,35 @@ export function DashboardShell() {
   const reducedMotion = useReducedMotion();
   const history = useHistory(uid);
 
+  const { t, lang, setLang } = useLang();
   const [rescheduleId, setRescheduleId] = useState<string | null>(null);
   const [completedOpen, setCompletedOpen] = useState(false);
+  const [overdueOpen, setOverdueOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [popping, setPopping] = useState<ReadonlySet<string>>(new Set());
+  const [bursts, setBursts] = useState<number[]>([]);
   const [tourOpen, setTourOpen] = useState(false);
-  // Pacing given to new tasks (the form, the chat) unless the text says otherwise.
-  const [defaultPacing, setDefaultPacingState] = useState<Pacing>(() => {
-    const saved = readLocal(PACING_KEY);
-    return saved === "chill" || saved === "locked" ? saved : "balanced";
-  });
-  const setDefaultPacing = (p: Pacing) => {
-    setDefaultPacingState(p);
-    writeLocal(PACING_KEY, p);
-  };
+  // New tasks (form, chat) default to Balanced; the form's Focus intensity picks per task.
+  const defaultPacing = "balanced" as const;
   const [tourDismissed, setTourDismissed] = useState(() => readLocal(ONBOARDED_KEY) === "1");
 
-  // A bubble just passed its deadline: it stays on the canvas as Overdue; offer a way to move it.
+  // The language saved in the account is adopted on a device that has no choice of its own yet.
+  const savedLang = profile?.settings?.language;
+  useEffect(() => {
+    if (savedLang && readLocal("bs:lang") === null) setLang(savedLang);
+  }, [savedLang, setLang]);
+
+  // A bubble just passed its deadline: it leaves the canvas for Overdue. A quiet notice with a way to act on it.
   const handleOverdue = useCallback(
     (late: Task[]) => {
       const first = late[0];
       toast({
-        title: late.length === 1 ? `“${first.title}” is overdue` : `${late.length} bubbles are overdue`,
-        body: late.length === 1 ? "Its deadline passed. Reschedule it or finish it." : `“${first.title}” and ${late.length - 1} more passed their deadline.`,
-        action: late.length === 1 ? { label: "Reschedule", onClick: () => setRescheduleId(first.id) } : undefined,
+        title: late.length === 1 ? t("“{title}” is overdue", { title: first.title }) : t("{n} tasks are overdue", { n: late.length }),
+        body: t("Moved to Overdue"),
+        action: { label: t("View"), onClick: () => setOverdueOpen(true) },
       });
     },
-    [toast],
+    [toast, t],
   );
 
   // A bubble just entered its last 24 hours: one warning per task.
@@ -100,12 +109,12 @@ export function DashboardShell() {
     (list: Task[]) => {
       const first = list[0];
       toast({
-        title: list.length === 1 ? `⏰ 1 day left: «${first.title}»` : `⏰ 1 day left on ${list.length} tasks`,
-        body: list.length === 1 ? oneDayBody(first.deadline, Date.now()) : `«${first.title}» and ${list.length - 1} more are due within 24 hours.`,
+        title: list.length === 1 ? `⏰ ${t("1 day left")}: «${first.title}»` : `⏰ ${t("1 day left")}: ${list.length}`,
+        body: list.length === 1 && first.deadline ? oneDayBody(first.deadline, Date.now(), t) : undefined,
         onClick: () => setOpenId(first.id),
       });
     },
-    [toast],
+    [toast, t],
   );
 
   const {
@@ -120,15 +129,15 @@ export function DashboardShell() {
     ({ task, subtasks, placed, total }) => {
       const next = nextSubtask(subtasks);
       toast({
-        title: `“${task.title}” split into ${total} parts`,
+        title: t("“{title}” split into {n} parts", { title: task.title, n: total }),
         body: placed < total
-          ? `Only ${placed} of ${total} fit before the deadline. Check the times.`
-          : next ? `First up: ${formatWindow(next, Date.now())}` : undefined,
+          ? t("Only {a} of {b} fit before the deadline", { a: placed, b: total })
+          : next ? `${t("First up")}: ${formatWindow(next, Date.now(), t, lang)}` : undefined,
         onClick: () => setOpenId(task.id),
       });
     },
     (task, message, manual) => {
-      if (manual) toast({ title: `Couldn't split “${task.title}”`, body: message });
+      if (manual) toast({ title: t("Couldn't split “{title}”", { title: task.title }), body: message });
     },
   );
   const {
@@ -146,8 +155,8 @@ export function DashboardShell() {
     lastUnplaced.current = key;
     const names = unplaced.slice(0, 2).map((t) => `“${t.title}”`).join(", ");
     toast({
-      title: unplaced.length === 1 ? "A task can't fully fit before its deadline" : `${unplaced.length} tasks can't fully fit before their deadlines`,
-      body: `${names}${unplaced.length > 2 ? " and more" : ""}: move a deadline, shorten it, or free some time.`,
+      title: unplaced.length === 1 ? t("A task can't fit before its deadline") : t("{n} tasks can't fit before their deadlines", { n: unplaced.length }),
+      body: `${names}${unplaced.length > 2 ? "…" : ""}`,
     });
   });
 
@@ -160,7 +169,10 @@ export function DashboardShell() {
     },
     [addTask, history, defaultPacing],
   );
-  const { messages, pending, send, ask } = useChat(uid, today, addTaskSmart, defaultPacing);
+  // AI edits go through the same task functions as the UI, so the canvas and the timeline change together.
+  const applyRef = useRef<(actions: AssistantAction[]) => Promise<void>>(async () => {});
+  const applyActions = useCallback((actions: AssistantAction[]) => applyRef.current(actions), []);
+  const { messages, pending, send, ask } = useChat(uid, today, addTaskSmart, defaultPacing, applyActions);
 
   const [tab, setTab] = useState<Tab>("bubbles");
   const [formOpen, setFormOpen] = useState(false);
@@ -176,12 +188,17 @@ export function DashboardShell() {
     }
   }, [loading, user, router]);
 
-  const active = useMemo(() => tasks.filter((t) => t.status === "active"), [tasks]);
+  // Canvas and timeline show live tasks only; past-deadline ones wait in Overdue.
+  const active = useMemo(() => tasks.filter((x) => isLiveTask(x, now)), [tasks, now]);
+  const overdue = useMemo(
+    () => tasks.filter((x) => isOverdueTask(x, now)).sort((a, b) => deadlineMs(a) - deadlineMs(b)),
+    [tasks, now],
+  );
   const completed = useMemo(
     () => tasks.filter((t) => t.status === "completed").sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? "")),
     [tasks],
   );
-  const rescheduleTask = tasks.find((t) => t.id === rescheduleId && t.status === "active") ?? null;
+  const rescheduleTask = tasks.find((x) => x.id === rescheduleId && x.status === "active") ?? null;
 
   // First-run tutorial: a brand-new account (no tasks yet) that hasn't seen it.
   const autoTour =
@@ -198,48 +215,48 @@ export function DashboardShell() {
   ).length;
 
   const summary = useMemo(() => {
-    if (tasksLoading) return "Loading your bubbles…";
-    if (active.length === 0) return doneToday ? `All clear · ${doneToday} done today` : "No bubbles yet · add your first task";
+    if (tasksLoading) return "";
+    if (active.length === 0) return doneToday ? t("{n} done today", { n: doneToday }) : "";
     const planned = (schedule?.blocks ?? []).filter((b) => b.status === "planned");
     const next = planned.find((b) => new Date(b.end).getTime() > now);
-    const parts = [`${active.length} active`, `${planned.length} scheduled`];
-    if (doneToday) parts.push(`${doneToday} done`);
-    if (next) parts.push(`next: ${next.title} ${formatTime(next.start)}`);
+    const parts = [t("{n} active", { n: active.length })];
+    if (doneToday) parts.push(t("{n} done", { n: doneToday }));
+    if (next) parts.push(`${t("Next")}: ${next.title} ${formatTime(next.start)}`);
     return parts.join(" · ");
-  }, [tasksLoading, active.length, schedule, doneToday, now]);
+  }, [tasksLoading, active.length, schedule, doneToday, now, t]);
 
   /** Delete a bubble (and its slot in today's plan), with a 6 s way back. */
-  async function removeTask(t: Task) {
+  async function removeTask(task: Task) {
     try {
-      const blocks = await removeTaskBlocks([t.id]);
-      await deleteTask(t);
+      const blocks = await removeTaskBlocks([task.id]);
+      await deleteTask(task);
       toast({
-        title: "Task deleted",
-        body: t.title,
+        title: t("Task deleted"),
+        body: task.title,
         placement: "bottom",
         durationMs: 6000,
         action: {
-          label: "Undo",
+          label: t("Undo"),
           onClick: () => {
-            restoreDeleted(t)
+            restoreDeleted(task)
               .then(() => restoreBlocks(blocks))
               .catch((e) => {
                 console.warn("undo delete failed:", e);
-                toast({ title: "Couldn't restore that task", body: "Please try again." });
+                toast({ title: t("Couldn't restore that task") });
               });
           },
         },
       });
     } catch (e) {
       console.warn("delete failed:", e);
-      toast({ title: "Couldn't delete that task", body: "Please try again." });
+      toast({ title: t("Couldn't delete that task") });
     }
   }
 
-  async function restoreCompleted(t: Task) {
-    await restoreTask(t);
-    await markTaskBlocksPlanned(t.id).catch(() => {});
-    toast({ title: "Task restored", body: t.title });
+  async function restoreCompleted(task: Task) {
+    await restoreTask(task);
+    await markTaskBlocksPlanned(task.id).catch(() => {});
+    toast({ title: t("Task restored"), body: task.title });
   }
   async function deleteForever(taskIds: string[]) {
     await deleteMany(taskIds);
@@ -247,57 +264,104 @@ export function DashboardShell() {
   }
 
   /** Check / uncheck a part. Checking the last one finishes the whole task, with the full pop. */
-  async function toggleSubtaskFlow(t: Task, sub: Subtask) {
+  async function toggleSubtaskFlow(task: Task, sub: Subtask) {
     const checked = !sub.completed;
     try {
-      const othersLeft = (t.subtasks ?? []).some((s) => s.id !== sub.id && !s.completed);
+      const othersLeft = (task.subtasks ?? []).some((x) => x.id !== sub.id && !x.completed);
       if (checked && !othersLeft) {
         setOpenId(null);
         setOpenPart(null);
-        await completeTask({ ...t, loggedMinutes: (t.loggedMinutes ?? 0) + sub.durationMinutes });
+        await completeTask({ ...task, loggedMinutes: (task.loggedMinutes ?? 0) + sub.durationMinutes });
       } else {
-        await toggleSubtask(t, sub.id, checked);
+        await toggleSubtask(task, sub.id, checked);
       }
     } catch (e) {
       console.warn("toggle part failed:", e);
-      toast({ title: "Couldn't update that part", body: "Please try again." });
+      toast({ title: t("Couldn't update that part") });
+    }
+  }
+
+  /** Write a completion and offer the 6 s Undo. */
+  async function finish(task: Task, actualMin?: number, celebrate = true) {
+    const [undo] = await Promise.all([complete(task, { actualMin }), markTaskBlocksDone(task.id)]);
+    if (celebrate && !reducedMotion) setBursts((b) => [...b, Date.now()]);
+    if (undo) {
+      toast({
+        title: celebrate ? t("🎉 Bubble popped! Great job!") : t("Marked as completed"),
+        body: task.title,
+        placement: "bottom",
+        durationMs: 6000,
+        action: {
+          label: t("Undo"),
+          onClick: () => {
+            Promise.all([undoComplete(undo), markTaskBlocksPlanned(task.id)]).catch((e) => {
+              console.warn("undo failed:", e);
+              toast({ title: t("Couldn't undo") });
+            });
+          },
+        },
+      });
     }
   }
 
   /** Pop the bubble first, then write the completion (so the canvas and Firestore change together). */
-  async function completeTask(t: Task, actualMin?: number) {
-    setPopping((p) => new Set(p).add(t.id));
+  async function completeTask(task: Task, actualMin?: number) {
+    setPopping((p) => new Set(p).add(task.id));
     try {
       await sleep(reducedMotion ? 120 : POP_MS);
-      const [undo] = await Promise.all([complete(t, { actualMin }), markTaskBlocksDone(t.id)]);
-      if (undo) {
-        toast({
-          title: "Task completed",
-          body: t.title,
-          placement: "bottom",
-          durationMs: 6000,
-          action: {
-            label: "Undo",
-            onClick: () => {
-              Promise.all([undoComplete(undo), markTaskBlocksPlanned(t.id)]).catch((e) => {
-                console.warn("undo failed:", e);
-                toast({ title: "Couldn't undo", body: "Please try again from the Completed list." });
-              });
-            },
-          },
-        });
-      }
+      await finish(task, actualMin);
     } catch (e) {
       console.warn("complete failed:", e);
-      toast({ title: "Couldn't complete that bubble", body: "Please try again." });
+      toast({ title: t("Couldn't complete that bubble") });
     } finally {
       setPopping((p) => {
         const n = new Set(p);
-        n.delete(t.id);
+        n.delete(task.id);
         return n;
       });
     }
   }
+
+  /** "I already did this" on an overdue task: straight to Completed (it isn't on the canvas, so no pop). */
+  async function markOverdueDone(task: Task) {
+    await finish(task, undefined, false);
+  }
+
+  /** Reschedule (new deadline, or none) and let the auto re-plan place it again. */
+  async function rescheduleTo(task: Task, iso: string | null) {
+    await reschedule(task, iso);
+    toast({
+      title: t("Rescheduled"),
+      body: iso ? `${task.title} · ${new Date(iso).toLocaleString(lang, { weekday: "short", hour: "2-digit", minute: "2-digit" })}` : `${task.title} · ${t("No deadline")}`,
+    });
+  }
+
+  // What the AI chat can change. Same code paths as the buttons, so there is one source of truth.
+  useEffect(() => {
+    applyRef.current = async (actions) => {
+      for (const a of actions) {
+        const task = tasks.find((x) => x.id === a.taskId && x.status === "active");
+        if (!task) continue;
+        if (a.type === "delete") {
+          await removeTask(task);
+        } else if (a.type === "complete") {
+          await finish(task, undefined, true);
+        } else {
+          const deadline = a.removeDeadline ? null : (a.deadline ?? task.deadline ?? null);
+          const title = a.title ?? task.title;
+          if (isOverdueTask(task, Date.now()) && (deadline === null || Date.parse(deadline) > Date.now())) {
+            await reschedule(task, deadline); // also re-activates its parts and alerts
+          } else {
+            await updateTask(task, { title, deadline, durationMin: a.durationMin ?? task.durationMin ?? null, pacing: pacingOf(task) });
+          }
+          if (a.durationMin && isOverdueTask(task, Date.now())) {
+            await updateTask(task, { title, deadline, durationMin: a.durationMin, pacing: pacingOf(task) });
+          }
+          if (title !== task.title) await renameTaskBlocks(task.id, title).catch(() => {});
+        }
+      }
+    };
+  });
 
   if (loading || !user) {
     return (
@@ -309,9 +373,9 @@ export function DashboardShell() {
 
   const panel: Exclude<Tab, "bubbles"> = tab === "bubbles" ? "schedule" : tab;
   const TABS: Array<{ id: Tab; label: string; icon: typeof Plus }> = [
-    { id: "bubbles", label: "Bubbles", icon: Sparkles },
-    { id: "schedule", label: "Schedule", icon: Calendar },
-    { id: "chat", label: "AI Chat", icon: MessageCircle },
+    { id: "bubbles", label: t("Bubbles"), icon: Sparkles },
+    { id: "schedule", label: t("Schedule"), icon: Calendar },
+    { id: "chat", label: t("AI Chat"), icon: MessageCircle },
   ];
 
   return (
@@ -322,6 +386,7 @@ export function DashboardShell() {
         photoURL={user.photoURL}
         onOpenProfile={() => setProfileOpen(true)}
         onOpenHelp={() => setTourOpen(true)}
+        onOpenFeedback={() => setFeedbackOpen(true)}
         onSignOut={async () => {
           await signOut();
           router.replace("/login");
@@ -331,35 +396,26 @@ export function DashboardShell() {
       <main className="mx-auto flex w-full max-w-[1600px] flex-1 gap-4 p-4 pb-24 lg:pb-4">
         {/* Bubble canvas */}
         <section className={`${tab === "bubbles" ? "flex" : "hidden"} min-h-0 flex-1 flex-col lg:flex`}>
-          <div className="mb-3 flex items-center justify-between">
-            <h1 className="text-sm font-medium text-muted">Today&apos;s bubbles</h1>
+          <div className="mb-3 flex items-center justify-end">
             <div className="flex gap-2">
-              {completed.length > 0 && (
-                <button
-                  onClick={() => setCompletedOpen(true)}
-                  className="flex items-center gap-1.5 rounded-full glass px-4 py-2 text-xs font-medium text-muted transition hover:text-foreground"
-                >
-                  <Archive className="h-3.5 w-3.5" /> Completed ({completed.length})
-                </button>
-              )}
               <button
                 onClick={() => send("auto-schedule")}
                 disabled={pending || active.length === 0}
                 className="flex items-center gap-1.5 rounded-full glass px-4 py-2 text-xs font-medium text-foreground transition hover:brightness-125 disabled:opacity-50"
               >
-                <Sparkles className="h-3.5 w-3.5" /> {pending ? "Planning…" : "Auto-schedule"}
+                <Sparkles className="h-3.5 w-3.5" /> {pending ? t("Planning…") : t("Auto-schedule")}
               </button>
               <button
                 onClick={() => setFormOpen(true)}
                 className="flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background transition hover:opacity-90"
               >
-                <Plus className="h-3.5 w-3.5" /> New bubble
+                <Plus className="h-3.5 w-3.5" /> {t("New bubble")}
               </button>
             </div>
           </div>
           <div className="relative min-h-[360px] flex-1">
             {error ? (
-              <p className="absolute inset-0 flex items-center justify-center text-sm text-red-500">{error}</p>
+              <p className="absolute inset-0 flex items-center justify-center text-sm text-red-500">{t("Couldn't load your tasks.")}</p>
             ) : (
               <BubbleCanvas
                 tasks={active}
@@ -367,7 +423,7 @@ export function DashboardShell() {
                 poppingIds={popping}
                 onOpen={(id) => {
                   // A scheduled bubble opens its time editor (with a link to the details); others open details.
-                  const hasParts = !!active.find((t) => t.id === id)?.subtasks?.length; // parts have no single block to edit
+                  const hasParts = !!active.find((x) => x.id === id)?.subtasks?.length; // parts have no single block to edit
                   const block = hasParts ? undefined : schedule?.blocks.find((b) => b.taskId === id && b.status !== "done");
                   if (block) setEditBlockId(block.id);
                   else setOpenId(id);
@@ -377,7 +433,7 @@ export function DashboardShell() {
             {!tasksLoading && active.length === 0 && !error && (
               <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4 text-center">
                 <Orb hue="green" size={96} className="opacity-70" />
-                <p className="text-sm text-muted">Your sky is clear.<br />Tap <span className="text-foreground">New bubble</span> to add a task.</p>
+                <p className="text-sm text-muted">{t("Tap New bubble to start")}</p>
               </div>
             )}
           </div>
@@ -389,7 +445,7 @@ export function DashboardShell() {
           style={{ height: "calc(100dvh - 7.5rem)" }}
         >
           <div className="hidden gap-1 border-b border-line p-2 lg:flex">
-            {TABS.filter((t) => t.id !== "bubbles").map(({ id, label, icon: Icon }) => (
+            {TABS.filter((x) => x.id !== "bubbles").map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
                 onClick={() => setTab(id)}
@@ -406,34 +462,21 @@ export function DashboardShell() {
                 schedule={schedule}
                 tasks={active}
                 now={now}
+                completedCount={completed.length}
+                overdueCount={overdue.length}
+                onOpenCompleted={() => setCompletedOpen(true)}
+                onOpenOverdue={() => setOverdueOpen(true)}
                 onEditBlockTime={setEditBlockId}
-                onReschedule={setRescheduleId}
-                onRemoveTask={(id) => {
-                  const t = tasks.find((x) => x.id === id);
-                  if (t) void removeTask(t);
-                }}
                 onOpenTask={setOpenId}
                 onOpenPart={(taskId, subId) => setOpenPart({ taskId, subId })}
-                pacing={defaultPacing}
-                onChangePacing={setDefaultPacing}
-                onToggleSubtask={(t, s) => void toggleSubtaskFlow(t, s)}
-                allTasks={tasks}
-                onOpenCompleted={() => setCompletedOpen(true)}
-                onRestoreTask={(id) => {
-                  const t = tasks.find((x) => x.id === id);
-                  if (t) void restoreCompleted(t).catch(() => toast({ title: "Couldn't restore that task" }));
-                }}
-                onDeleteTask={(id) => {
-                  void deleteForever([id]).catch(() => toast({ title: "Couldn't delete that task" }));
-                }}
+                onToggleSubtask={(task, sub) => void toggleSubtaskFlow(task, sub)}
                 onComplete={(taskId) => {
-                  const t = active.find((x) => x.id === taskId);
-                  if (t) void completeTask(t);
+                  const task = active.find((x) => x.id === taskId);
+                  if (task) void completeTask(task);
                 }}
               />
             ) : (
-              <ChatPanel messages={messages} pending={pending} hasTasks={active.length > 0} onSend={send} onAsk={ask}
-                pacing={defaultPacing} onChangePacing={setDefaultPacing} />
+              <ChatPanel messages={messages} pending={pending} hasTasks={active.length > 0} onSend={send} onAsk={ask} />
             )}
           </div>
         </aside>
@@ -454,35 +497,42 @@ export function DashboardShell() {
         ))}
       </nav>
 
-      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} />
+      <Celebrations ids={bursts} onDone={(id) => setBursts((b) => b.filter((x) => x !== id))} />
+      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onOpenFeedback={() => setFeedbackOpen(true)} />
+      <FeedbackSheet open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
       <TaskFormSheet open={formOpen} onClose={() => setFormOpen(false)} onSubmit={addTask} history={history} defaultPacing={defaultPacing} />
       <RescheduleSheet
         task={rescheduleTask}
         now={now}
         onClose={() => setRescheduleId(null)}
-        onReschedule={async (t, iso) => {
-          await reschedule(t, iso);
-          toast({ title: "Rescheduled", body: `“${t.title}” is now due ${new Date(iso).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}. Re-planning your schedule…` });
-        }}
+        onReschedule={rescheduleTo}
+      />
+      <OverdueSheet
+        open={overdueOpen}
+        tasks={overdue}
+        now={now}
+        onClose={() => setOverdueOpen(false)}
+        onDone={markOverdueDone}
+        onReschedule={(task) => setRescheduleId(task.id)}
       />
       <CompletedSheet
         open={completedOpen}
         tasks={completed}
         onClose={() => setCompletedOpen(false)}
         onRestore={restoreCompleted}
-        onDelete={(t) => deleteForever([t.id])}
-        onClearAll={() => deleteForever(completed.map((t) => t.id))}
+        onDelete={(task) => deleteForever([task.id])}
+        onClearAll={() => deleteForever(completed.map((x) => x.id))}
       />
       <OnboardingTour open={tourOpen || autoTour} onClose={closeTour} />
       <PartDetailSheet
-        task={active.find((t) => t.id === openPart?.taskId) ?? null}
-        sub={active.find((t) => t.id === openPart?.taskId)?.subtasks?.find((s) => s.id === openPart?.subId) ?? null}
+        task={active.find((x) => x.id === openPart?.taskId) ?? null}
+        sub={active.find((x) => x.id === openPart?.taskId)?.subtasks?.find((x) => x.id === openPart?.subId) ?? null}
         now={now}
         onClose={() => setOpenPart(null)}
-        onToggle={(t, s) => toggleSubtaskFlow(t, s)}
-        onEditParent={(t) => {
+        onToggle={(task, sub) => toggleSubtaskFlow(task, sub)}
+        onEditParent={(task) => {
           setOpenPart(null);
-          setOpenId(t.id);
+          setOpenId(task.id);
         }}
       />
       <BlockEditSheet
@@ -502,18 +552,17 @@ export function DashboardShell() {
         onClose={() => setOpenId(null)}
         onComplete={completeTask}
         onDelete={removeTask}
-        onLogTime={(t, m) => logMinutes(t.id, m)}
-        onStartTimer={(t) => startTimer(t.id)}
+        onLogTime={(task, m) => logMinutes(task.id, m)}
+        onStartTimer={(task) => startTimer(task.id)}
         onStopTimer={stopTimer}
         onSetRecurrence={setRecurrence}
         splitting={!!openTask && splitting.has(openTask.id)}
-        onToggleSubtask={(t, s, checked) => (checked === !s.completed ? toggleSubtaskFlow(t, s) : Promise.resolve())}
+        onToggleSubtask={(task, sub, checked) => (checked === !sub.completed ? toggleSubtaskFlow(task, sub) : Promise.resolve())}
         onSaveSubtasks={saveSubtasks}
-        onSplit={(t, n) => void split(t, n)}
-        onReschedule={(t) => setRescheduleId(t.id)}
-        onEdit={async (t, patch) => {
-          await updateTask(t, patch);
-          if (patch.title.trim() !== t.title) await renameTaskBlocks(t.id, patch.title.trim()).catch(() => {});
+        onSplit={(task, n) => void split(task, n)}
+        onEdit={async (task, patch) => {
+          await updateTask(task, patch);
+          if (patch.title.trim() !== task.title) await renameTaskBlocks(task.id, patch.title.trim()).catch(() => {});
         }}
       />
     </div>

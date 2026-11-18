@@ -8,10 +8,11 @@ import {
   ASSISTANT_SYSTEM_PROMPT,
   localNow,
   mockAssistant,
+  normalizeActions,
   normalizeTasks,
   type RawAssistantResult,
 } from "@/lib/ai/assistant";
-import { weekdayOf, dateKeyInTz } from "@/lib/time";
+import { weekdayOf, dateKeyInTz, toLocalNaive } from "@/lib/time";
 import type { ChatMessage, Task, User } from "@/types";
 import type { AssistantRequest, AssistantResponse } from "@/types/api";
 
@@ -40,10 +41,14 @@ export async function POST(request: Request) {
   const db = adminDb();
   const [userSnap, taskSnap, msgSnap] = await Promise.all([
     db.doc(`users/${uid}`).get(),
-    db.collection(`users/${uid}/tasks`).where("status", "==", "active").orderBy("deadline", "asc").limit(30).get(),
+    db.collection(`users/${uid}/tasks`).where("status", "==", "active").limit(60).get(),
     db.collection(`users/${uid}/messages`).orderBy("createdAt", "desc").limit(7).get(),
   ]);
   const tz = userSnap.exists ? (fromFirestoreData<User>(userSnap.data()).timezone ?? "UTC") : "UTC";
+
+  const existing = taskSnap.docs
+    .map((d) => ({ ...fromFirestoreData<Task>(d.data()), id: d.id }))
+    .sort((a, b) => (a.deadline ?? "9").localeCompare(b.deadline ?? "9"));
 
   let raw: RawAssistantResult;
   let mock = false;
@@ -53,7 +58,6 @@ export async function POST(request: Request) {
     raw = mockAssistant(message, now, tz);
     mock = true;
   } else {
-    const tasks = taskSnap.docs.map((d) => fromFirestoreData<Task>(d.data()));
     const history = msgSnap.docs
       .map((d) => fromFirestoreData<ChatMessage>(d.data()))
       .reverse()
@@ -65,7 +69,12 @@ export async function POST(request: Request) {
       NOW: localNow(now, tz),
       today: `${DAYS[weekdayOf(today)]} ${today}`,
       timezone: tz,
-      existingTasks: tasks.map((t) => t.title),
+      existingTasks: existing.map((t) => ({
+        id: t.id,
+        title: t.title,
+        deadline: t.deadline ? toLocalNaive(t.deadline, tz) : null,
+        durationMin: t.durationMin ?? null,
+      })),
       recentChat: history,
       userMessage: message,
     };
@@ -84,12 +93,18 @@ export async function POST(request: Request) {
     }
   }
 
-  const tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], now, tz) : [];
+  const tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz) : [];
+  const actions =
+    raw.intent === "modify_tasks" ? normalizeActions(raw.actions ?? [], new Set(existing.map((t) => t.id)), tz) : [];
   const response: AssistantResponse = {
     // create_tasks with nothing usable degrades to a plain answer
-    intent: raw.intent === "create_tasks" && tasks.length === 0 ? "answer" : raw.intent,
+    intent:
+      (raw.intent === "create_tasks" && tasks.length === 0) || (raw.intent === "modify_tasks" && actions.length === 0)
+        ? "answer"
+        : raw.intent,
     reply: String(raw.reply ?? "").slice(0, 1200) || "Done.",
     tasks,
+    actions,
     ...(mock ? { mock: true } : {}),
   };
   return NextResponse.json(response);

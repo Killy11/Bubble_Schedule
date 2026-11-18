@@ -83,7 +83,7 @@ export async function POST(request: Request) {
   const settings = sanitizeSettings({ ...DEFAULT_SETTINGS, ...user?.settings });
   const task = { ...fromFirestoreData<Task>(taskSnap.data()), id: taskId };
 
-  if (Date.parse(task.deadline) <= now.getTime() + 30 * 60_000) return err("This task is due too soon to split.", 400);
+  if (task.deadline && Date.parse(task.deadline) <= now.getTime() + 30 * 60_000) return err("This task is due too soon to split.", 400);
   // Locked-in tasks are only split when the user says how many parts (a number from the request, or on the task).
   const requested = asked ?? task.requestedParts;
   if (pacingOf(task) === "locked" && !requested && !force) return NextResponse.json({ skipped: true });
@@ -111,7 +111,7 @@ export async function POST(request: Request) {
               title: task.title,
               description: task.description ?? null,
               totalMinutes: total,
-              deadline: toLocalNaive(task.deadline, tz),
+              deadline: task.deadline ? toLocalNaive(task.deadline, tz) : null,
               now: toLocalNaive(now, tz),
             }),
           },

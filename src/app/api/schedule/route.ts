@@ -49,7 +49,7 @@ export async function POST(request: Request) {
   const db = adminDb();
   const [userSnap, taskSnap, schedSnap, msgSnap, histSnap] = await Promise.all([
     db.doc(`users/${uid}`).get(),
-    db.collection(`users/${uid}/tasks`).where("status", "==", "active").orderBy("deadline", "asc").limit(MAX_TASKS).get(),
+    db.collection(`users/${uid}/tasks`).where("status", "==", "active").limit(MAX_TASKS).get(),
     db.doc(`users/${uid}/schedules/${body.targetDate}`).get(),
     db.collection(`users/${uid}/messages`).orderBy("createdAt", "desc").limit(8).get(),
     db.collection(`users/${uid}/history`).orderBy("completedAt", "desc").limit(200).get(),
@@ -62,7 +62,8 @@ export async function POST(request: Request) {
   const allTasks = taskSnap.docs.map((d) => {
     const t = fromFirestoreData<Task>(d.data());
     return { ...t, id: d.id, loggedMinutes: t.loggedMinutes ?? 0 }; // older docs predate the field
-  }).filter((t) => Date.parse(t.deadline) > now.getTime()); // overdue tasks can't be placed before their deadline: they stay out of the plan
+  }).filter((t) => !t.deadline || Date.parse(t.deadline) > now.getTime())
+    .sort((a, b) => (a.deadline ?? "9").localeCompare(b.deadline ?? "9")); // no deadline → last // overdue tasks can't be placed before their deadline: they stay out of the plan
   const prev = schedSnap.exists ? fromFirestoreData<Schedule>(schedSnap.data()) : null;
   const history = msgSnap.docs
     .map((d) => ({ ...fromFirestoreData<ChatMessage>(d.data()), id: d.id }))

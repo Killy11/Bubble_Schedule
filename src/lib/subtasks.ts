@@ -14,13 +14,16 @@ export const MAX_SUBTASKS = 12;
 
 export const newSubtaskId = (): string => Math.random().toString(36).slice(2, 10);
 
-/** "45m", "1h", "1h 15m". */
-export function formatDuration(min: number): string {
+type Tr = (en: string, vars?: Record<string, string | number>) => string;
+const same: Tr = (en, vars) => (vars ? en.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? "")) : en);
+
+/** "45m", "1h", "1h 15m" (units translated when `t` is given). */
+export function formatDuration(min: number, t: Tr = same): string {
   const total = Math.max(0, Math.round(min));
   const h = Math.floor(total / 60);
   const m = total % 60;
-  if (h === 0) return `${m}m`;
-  return m ? `${h}h ${m}m` : `${h}h`;
+  if (h === 0) return t("{n}m", { n: m });
+  return m ? `${t("{n}h", { n: h })} ${t("{n}m", { n: m })}` : t("{n}h", { n: h });
 }
 
 export function needsDecomposition(t: Task): boolean {
@@ -33,18 +36,18 @@ export function needsDecomposition(t: Task): boolean {
 const dayStart = (t: number) => new Date(t).setHours(0, 0, 0, 0);
 
 /** "Today", "Tomorrow" or "Nov 20" for a device-local day. */
-function dayWord(ms: number, now: number): string {
+function dayWord(ms: number, now: number, t: Tr, locale?: string): string {
   const diff = Math.round((dayStart(ms) - dayStart(now)) / 86_400_000);
-  if (diff === 0) return "Today";
-  if (diff === 1) return "Tomorrow";
-  if (diff === -1) return "Yesterday";
-  return new Date(ms).toLocaleDateString([], { month: "short", day: "numeric" });
+  if (diff === 0) return t("Today");
+  if (diff === 1) return t("Tomorrow");
+  if (diff === -1) return t("Yesterday");
+  return new Date(ms).toLocaleDateString(locale ? [locale] : [], { month: "short", day: "numeric" });
 }
 
 /** "Tomorrow, 14:00 – 15:15" (or "Not scheduled"). */
-export function formatWindow(s: Subtask, now: number): string {
-  if (!s.scheduledStart || !s.scheduledEnd) return "Not scheduled";
-  return `${dayWord(Date.parse(s.scheduledStart), now)}, ${formatTime(s.scheduledStart)} – ${formatTime(s.scheduledEnd)}`;
+export function formatWindow(s: Subtask, now: number, t: Tr = same, locale?: string): string {
+  if (!s.scheduledStart || !s.scheduledEnd) return t("Not scheduled");
+  return `${dayWord(Date.parse(s.scheduledStart), now, t, locale)}, ${formatTime(s.scheduledStart)} – ${formatTime(s.scheduledEnd)}`;
 }
 
 /** The next part to work on: the earliest unfinished one (scheduled ones first, by time). */
@@ -61,9 +64,9 @@ export function subtaskProgress(t: Task): { done: number; total: number; next?: 
 }
 
 /** "2/6 parts · Next: Today, 18:00 – 19:30" */
-export function progressLabel(t: Task, now: number): string | null {
-  const p = subtaskProgress(t);
+export function progressLabel(task: Task, now: number, t: Tr = same, locale?: string): string | null {
+  const p = subtaskProgress(task);
   if (!p) return null;
-  if (!p.next) return `${p.done}/${p.total} parts · all done`;
-  return `${p.done}/${p.total} parts · Next: ${formatWindow(p.next, now)}`;
+  if (!p.next) return `${p.done}/${p.total} ${t("parts")} · ${t("all done")}`;
+  return `${p.done}/${p.total} ${t("parts")} · ${t("Next")}: ${formatWindow(p.next, now, t, locale)}`;
 }

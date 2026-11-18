@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react";
 
-/** Traffic-light hues (red = urgent, yellow = warning, green = safe) plus deep plum-crimson for overdue. */
-export type Hue = "overdue" | "red" | "yellow" | "green";
+/** Traffic-light hues by time left: red = under a day, yellow = 1–5 days, green = 5+ days or no deadline. */
+export type Hue = "red" | "yellow" | "green";
 
 export function Orb({
   hue = "green",

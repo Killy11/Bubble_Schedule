@@ -1,5 +1,6 @@
 import type { Pacing, Subtask, Task, UserSettings } from "@/types";
 import { effectiveDuration } from "@/lib/bubbles/effective";
+import { deadlineMs } from "@/lib/deadline";
 import { pacingOf } from "@/lib/pacing";
 import { needsDecomposition } from "@/lib/subtasks";
 import { planUnits, DAY_CAP_MIN, type PlanUnit } from "@/lib/planner";
@@ -7,11 +8,15 @@ import type { Interval } from "@/lib/decompose";
 
 /** Earliest deadline first, then oldest. Urgency comes from the deadline alone. */
 export function planningOrder(tasks: readonly Task[]): Task[] {
-  return [...tasks].sort(
-    (a, b) =>
-      Date.parse(a.deadline) - Date.parse(b.deadline) || a.createdAt.localeCompare(b.createdAt),
-  );
+  return [...tasks].sort((a, b) => {
+    const da = deadlineMs(a);
+    const db = deadlineMs(b);
+    return da === db ? a.createdAt.localeCompare(b.createdAt) : da < db ? -1 : 1; // no deadline → last
+  });
 }
+
+/** Tasks without a deadline are planned as if due in a week (soft: nothing ever turns overdue). */
+export const NO_DEADLINE_PLAN_DAYS = 7;
 
 export interface PlanResult {
   /** taskId → (subtaskId → new slot, or null when it doesn't fit before the deadline) */
@@ -56,10 +61,10 @@ export function planAll(o: {
   }
 
   order.forEach((t, orderIdx) => {
-    const deadlineMs = Date.parse(t.deadline);
-    if (deadlineMs <= o.nowMs + 30 * 60_000) return; // about to expire: nothing useful to plan
+    const dueMs = t.deadline ? Date.parse(t.deadline) : o.nowMs + NO_DEADLINE_PLAN_DAYS * 86_400_000;
+    if (dueMs <= o.nowMs + 30 * 60_000) return; // about to expire: nothing useful to plan
     const pacing: Pacing = pacingOf(t);
-    const base = { taskId: t.id, deadlineMs, pacing, orderIdx };
+    const base = { taskId: t.id, deadlineMs: dueMs, pacing, orderIdx };
 
     if (t.subtasks?.length) {
       const parts = t.subtasks

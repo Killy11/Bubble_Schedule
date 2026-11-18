@@ -27,6 +27,7 @@ Rules:
 SCHEDULING STRATEGY:
 1. Front-load with a safety buffer. Do tasks as EARLY as possible, but every block must END by the task's "mustEndBy" time (the deadline minus a safety margin). Never schedule right up to the deadline: the margin is there in case things go wrong. A task due in 5 days belongs in the first days, not on its last day.
 2. Distribute evenly. Each availableDay has "freeMinutes". Each day has a "targetMinutes" load (70% of freeMinutes, never more than 270 = 4.5 hours): once a day's blocks add up to targetMinutes, move the remaining tasks to the next available day instead of filling it to the brim. Only exceed targetMinutes when a task would otherwise miss its mustEndBy. Do not put many hours on today while the following days are empty, but never delay a task past the earliest sensible day just to balance: urgent and high-weight tasks go first, and a day that still has room should be used before a later one. When two days are equally good, take the earlier one.
+A task with "deadline": null has no deadline: schedule it after the dated tasks, within the available days, and never mark it unscheduled for lack of a deadline.
 3. If a task cannot fit before its mustEndBy, put it in "unscheduled" with a short reason. Tasks whose deadline is beyond the last availableDay may be left unscheduled ("will be planned later") unless the user asks for them.
 
 MODE says how much freedom you have:
@@ -83,8 +84,8 @@ export function buildUserPrompt(c: PromptContext): string {
       taskId: t.id,
       title: t.title,
       description: t.description ?? null,
-      deadline: local(t.deadline),
-      mustEndBy: local(new Date(latestEndMs(Date.parse(t.deadline), nowMs, t.durationMin ?? t.aiEstimate?.durationMin ?? c.settings.defaultTaskMinutes)).toISOString()),
+      deadline: t.deadline ? local(t.deadline) : null,
+      mustEndBy: t.deadline ? local(new Date(latestEndMs(Date.parse(t.deadline), nowMs, t.durationMin ?? t.aiEstimate?.durationMin ?? c.settings.defaultTaskMinutes)).toISOString()) : null,
       durationMin: t.durationMin ?? null,
       historicalAvgMin: c.durationHints?.get(t.id)?.minutes ?? null,
       historySamples: c.durationHints?.get(t.id)?.samples ?? 0,

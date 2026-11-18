@@ -1,14 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarClock, Check, Clock, Flag, Loader2, Pencil, Play, Repeat, Sparkles, Square, Trash2 } from "lucide-react";
+import { Check, Clock, Flag, Loader2, Pencil, Play, Repeat, Sparkles, Square, Trash2 } from "lucide-react";
 import { Sheet } from "@/components/Sheet";
 import { RecurrencePicker } from "./RecurrencePicker";
 import { formatDuration } from "@/lib/subtasks";
 import { SubtaskList } from "./SubtaskList";
-import { PacingSelector } from "@/components/PacingSelector";
-import { PACING_META, pacingOf } from "@/lib/pacing";
-import { formatDeadline, formatOverdue } from "@/lib/time";
+import { DeadlineField } from "@/components/DeadlineField";
+import { useLang } from "@/context/LanguageProvider";
+import { pacingOf } from "@/lib/pacing";
+import { formatDeadline } from "@/lib/time";
 import { effectiveDuration } from "@/lib/bubbles/effective";
 import { DurationFields } from "@/components/DurationFields";
 import { clampDuration, splitMinutes, totalMinutes } from "@/lib/duration";
@@ -17,7 +18,7 @@ import type { Pacing, Recurrence, Subtask, Task } from "@/types";
 
 export interface TaskEdit {
   title: string;
-  deadline: string; // ISO
+  deadline: string | null; // ISO, or null = no deadline
   durationMin: number | null;
   pacing: Pacing;
 }
@@ -36,6 +37,7 @@ const CHIPS = [
   { label: "+1h", min: 60 },
 ];
 
+
 export function TaskDetailSheet({
   task,
   now,
@@ -51,7 +53,6 @@ export function TaskDetailSheet({
   onToggleSubtask,
   onSaveSubtasks,
   onSplit,
-  onReschedule,
 }: {
   task: Task | null;
   now: number;
@@ -68,9 +69,8 @@ export function TaskDetailSheet({
   onToggleSubtask: (t: Task, sub: Subtask, checked: boolean) => Promise<void>;
   onSaveSubtasks: (t: Task, subs: Subtask[]) => Promise<void>;
   onSplit: (t: Task, parts?: number) => void;
-  /** Overdue task: pick a new deadline. */
-  onReschedule: (t: Task) => void;
 }) {
+  const { t, lang } = useLang();
   const [busy, setBusy] = useState(false);
   const [actual, setActual] = useState("");
   const [editing, setEditing] = useState(false);
@@ -101,43 +101,28 @@ export function TaskDetailSheet({
           <>
           <div className="flex items-center gap-2">
             <span className="hue-badge">
-              <span className="hue-dot h-2 w-2 rounded-full" /> {hue === "overdue" ? formatOverdue(task.deadline, now) : HUE_META[hue].label}
+              <span className="hue-dot h-2 w-2 rounded-full" /> {t(HUE_META[hue].label)}
             </span>
-            <span className="text-xs text-muted">{HUE_META[hue].hint}</span>
-            {pacingOf(task) !== "balanced" && (
-              <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">{PACING_META[pacingOf(task)].label}</span>
-            )}
+            <span className="text-xs text-muted">{t(HUE_META[hue].hint)}</span>
           </div>
           <dl className="space-y-2 text-sm">
             <div className="flex items-center gap-2 text-muted"><Clock className="h-4 w-4" />
               <span className="text-foreground">
-                {hue === "overdue" ? `Was due ${new Date(task.deadline).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : `Due ${formatDeadline(task.deadline, now)}`}
+                {task.deadline ? `${t("Due")} ${formatDeadline(task.deadline, now, t, lang)}` : t("No deadline")}
               </span></div>
             <div className="flex items-center gap-2 text-muted"><Flag className="h-4 w-4" />
               <span className="text-foreground">
-                {dur ? `Takes ${formatDuration(dur)}` : "Standard size"}
-                {guessed ? " (AI estimate)" : ""}
+                {dur ? t("Takes {d}", { d: formatDuration(dur, t) }) : t("Standard size")}
+                {guessed ? ` (${t("AI estimate")})` : ""}
               </span></div>
             {task.aiEstimate?.reasoning && (
               <div className="flex items-start gap-2 text-muted"><Sparkles className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{task.aiEstimate.reasoning}</span></div>
             )}
           </dl>
-          {hue === "overdue" && (
-            <div className="flex gap-3">
-              <button type="button" onClick={() => { close(); onReschedule(task); }}
-                className="flex flex-1 items-center justify-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition hover:opacity-90">
-                <CalendarClock className="h-4 w-4" /> Reschedule
-              </button>
-              <button type="button" disabled={busy} onClick={() => run(onDelete)}
-                className="glass flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm text-muted transition hover:text-red-500 disabled:opacity-60">
-                <Trash2 className="h-4 w-4" /> Delete
-              </button>
-            </div>
-          )}
           <button type="button" onClick={() => setEditing(true)}
             className="glass flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs text-muted transition hover:text-foreground">
-            <Pencil className="h-3.5 w-3.5" /> Edit title, due date &amp; duration
+            <Pencil className="h-3.5 w-3.5" /> {t("Edit")}
           </button>
           </>
           )}
@@ -162,26 +147,25 @@ export function TaskDetailSheet({
             onStopTimer={onStopTimer}
           />
 
-          <section className="space-y-2">
-            <p className="flex items-center gap-2 text-xs text-muted"><Repeat className="h-3.5 w-3.5" /> Repeat</p>
+          {task.deadline && <section className="space-y-2">
+            <p className="flex items-center gap-2 text-xs text-muted"><Repeat className="h-3.5 w-3.5" /> {t("Repeat")}</p>
             <RecurrencePicker
               key={task.id}
               value={task.recurrence ?? null}
-              anchorDow={new Date(task.deadline).getDay()}
+              anchorDow={new Date(task.deadline ?? now).getDay()}
               onChange={(r) => void onSetRecurrence(task, r)}
             />
-          </section>
+          </section>}
 
           <label className="block text-xs text-muted">
-            How long did it take? (optional, min)
+            {t("How long did it take? (min)")}
             <input
               key={task.id}
               type="number" inputMode="numeric" min={1} max={1440} value={actual}
               onChange={(e) => setActual(e.target.value)}
-              placeholder={tracked > 0 ? `${tracked} tracked` : dur ? `about ${dur}` : "e.g. 45"}
+              placeholder={tracked > 0 ? t("{n} tracked", { n: tracked }) : dur ? t("about {n}", { n: dur }) : "45"}
               className="glass mt-1 w-full rounded-full px-4 py-2 text-sm text-foreground outline-none placeholder:text-muted focus:border-[rgb(var(--glow-a))]"
             />
-            <span className="mt-1 block">Used to estimate similar tasks next time.</span>
           </label>
 
           <div className="flex gap-3">
@@ -192,9 +176,9 @@ export function TaskDetailSheet({
                 void run((t) => onComplete(t, value));
               }}
               className="flex flex-1 items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60">
-              <Check className="h-4 w-4" /> Complete
+              <Check className="h-4 w-4" /> {t("Complete")}
             </button>
-            <button disabled={busy} onClick={() => run(onDelete)} aria-label="Delete bubble"
+            <button disabled={busy} onClick={() => run(onDelete)} aria-label={t("Delete")}
               className="glass flex items-center justify-center rounded-full px-4 text-muted transition hover:text-red-500 disabled:opacity-60">
               <Trash2 className="h-4 w-4" />
             </button>
@@ -220,6 +204,7 @@ function TimeLogger({
   onStartTimer: (t: Task) => Promise<void>;
   onStopTimer: (t: Task) => Promise<void>;
 }) {
+  const { t } = useLang();
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -235,7 +220,7 @@ function TimeLogger({
       await onLogTime(task, minutes);
       setValue("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't save your time.");
+      setError(e instanceof Error ? e.message : t("Couldn't save"));
     } finally {
       setSaving(false);
     }
@@ -246,8 +231,8 @@ function TimeLogger({
       <div>
         <p className="text-sm">
           {total
-            ? `${formatDuration(logged)} / ${formatDuration(total)} spent · ${formatDuration(remaining ?? 0)} remaining`
-            : `${formatDuration(logged)} spent`}
+            ? t("{a} / {b} spent · {c} left", { a: formatDuration(logged, t), b: formatDuration(total, t), c: formatDuration(remaining ?? 0, t) })
+            : t("{a} spent", { a: formatDuration(logged, t) })}
         </p>
         {total && (
           <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line" role="progressbar"
@@ -257,12 +242,12 @@ function TimeLogger({
           </div>
         )}
         {total && logged > total && (
-          <p className="mt-1 text-xs text-muted">Over the estimate by {formatDuration(logged - total)}.</p>
+          <p className="mt-1 text-xs text-muted">{t("Over by {d}", { d: formatDuration(logged - total, t) })}</p>
         )}
       </div>
 
       <div className="flex items-center justify-between gap-2 text-sm">
-        <span className="text-muted">{task.startedAt ? `Timer running · ${formatDuration(timerMin)}` : "Working on it now?"}</span>
+        <span className="text-muted">{task.startedAt ? `${t("Timer running")} · ${formatDuration(timerMin, t)}` : t("Working on it now?")}</span>
         <button
           type="button"
           disabled={saving}
@@ -270,12 +255,12 @@ function TimeLogger({
             setError(null);
             setSaving(true);
             try { await (task.startedAt ? onStopTimer(task) : onStartTimer(task)); }
-            catch { setError("Couldn't update the timer."); }
+            catch { setError(t("Couldn't update the timer")); }
             finally { setSaving(false); }
           }}
           className="flex items-center gap-1.5 rounded-full bg-foreground px-3.5 py-1.5 text-xs font-medium text-background transition hover:opacity-90 disabled:opacity-50"
         >
-          {task.startedAt ? <><Square className="h-3 w-3 fill-current" /> Stop</> : <><Play className="h-3 w-3 fill-current" /> Start timer</>}
+          {task.startedAt ? <><Square className="h-3 w-3 fill-current" /> {t("Stop")}</> : <><Play className="h-3 w-3 fill-current" /> {t("Start timer")}</>}
         </button>
       </div>
 
@@ -293,21 +278,20 @@ function TimeLogger({
         onSubmit={(e) => {
           e.preventDefault();
           const n = Number(value);
-          if (!Number.isInteger(n) || n < 1 || n > 1440) return setError("Enter a whole number of minutes (1–1440).");
+          if (!Number.isInteger(n) || n < 1 || n > 1440) return setError(t("Enter 1–1440 minutes"));
           void log(n);
         }}
       >
         <input type="number" inputMode="numeric" min={1} max={1440} value={value}
-          onChange={(e) => setValue(e.target.value)} placeholder="Minutes spent"
-          aria-label="Minutes spent"
+          onChange={(e) => setValue(e.target.value)} placeholder={t("Minutes spent")}
+          aria-label={t("Minutes spent")}
           className="glass min-w-0 flex-1 rounded-full px-4 py-2 text-sm outline-none placeholder:text-muted focus:border-[rgb(var(--glow-a))]" />
         <button type="submit" disabled={saving || !value}
           className="flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-50">
-          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Save
+          {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />} {t("Save")}
         </button>
       </form>
       {error && <p role="alert" className="text-xs text-red-500">{error}</p>}
-      <p className="text-xs text-muted">Logging time only shrinks the bubble. It never changes your schedule.</p>
     </section>
   );
 }
@@ -323,34 +307,35 @@ function EditForm({
   onSave: (patch: TaskEdit) => Promise<void>;
   onCancel: () => void;
 }) {
+  const { t } = useLang();
   const [title, setTitle] = useState(task.title);
-  const [deadline, setDeadline] = useState(toLocalInput(task.deadline));
+  const [deadline, setDeadline] = useState(task.deadline ? toLocalInput(task.deadline) : "");
+  const [noDeadline, setNoDeadline] = useState(!task.deadline);
   const [hours, setHours] = useState(() => splitMinutes(task.durationMin).hours);
   const [mins, setMins] = useState(() => splitMinutes(task.durationMin).minutes);
-  const [pacing, setPacing] = useState<Pacing>(pacingOf(task));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const when = new Date(deadline);
-    if (!title.trim()) return setError("The title can't be empty.");
-    if (Number.isNaN(when.getTime())) return setError("Pick a due date and time.");
-    if (when.getTime() <= now) return setError("Pick a time in the future (a past deadline would expire the bubble).");
+    if (!title.trim()) return setError(t("Give your bubble a title."));
+    if (!noDeadline && Number.isNaN(when.getTime())) return setError(t("Pick a deadline."));
+    if (!noDeadline && when.getTime() <= now) return setError(t("Pick a time in the future."));
     setBusy(true);
     setError(null);
     try {
       await onSave({
         title: title.trim(),
-        deadline: when.toISOString(),
+        deadline: noDeadline ? null : when.toISOString(),
         durationMin: (() => {
           const t = totalMinutes(hours, mins);
           return t ? clampDuration(t) : null;
         })(),
-        pacing,
+        pacing: pacingOf(task),
       });
     } catch {
-      setError("Couldn't save your changes. Please try again.");
+      setError(t("Couldn't save. Please try again."));
       setBusy(false);
     }
   }
@@ -358,32 +343,24 @@ function EditForm({
   return (
     <form onSubmit={submit} className="space-y-3">
       <label className="block text-xs text-muted">
-        <span className="flex justify-between"><span>Title *</span><span aria-live="polite">{title.length}/100</span></span>
+        <span className="flex justify-between"><span>{t("Title")}</span><span aria-live="polite">{title.length}/100</span></span>
         <input autoFocus required maxLength={100} value={title} onChange={(e) => setTitle(e.target.value)}
           className={`${field} mt-1 text-foreground`} />
       </label>
-      <label className="block text-xs text-muted">
-        Due date &amp; time *
-        <input required type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)}
-          className={`${field} mt-1 text-foreground`} />
-      </label>
+      <DeadlineField value={deadline} none={noDeadline} onValue={setDeadline} onNone={setNoDeadline} />
       <div className="text-xs text-muted">
-        <span className="mb-1 block">Duration</span>
+        <span className="mb-1 block">{t("Duration")}</span>
         <DurationFields hours={hours} minutes={mins} onHours={setHours} onMinutes={setMins} />
-      </div>
-      <div className="text-xs text-muted">
-        <span className="mb-1 block">Focus intensity</span>
-        <PacingSelector value={pacing} onChange={setPacing} />
       </div>
       {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
       <div className="flex gap-3">
         <button type="submit" disabled={busy}
           className="flex flex-1 items-center justify-center gap-2 rounded-full bg-foreground px-5 py-2.5 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60">
-          {busy && <Loader2 className="h-4 w-4 animate-spin" />} Save changes
+          {busy && <Loader2 className="h-4 w-4 animate-spin" />} {t("Save")}
         </button>
         <button type="button" onClick={onCancel} disabled={busy}
           className="glass rounded-full px-5 py-2.5 text-sm text-muted transition hover:text-foreground disabled:opacity-60">
-          Cancel
+          {t("Cancel")}
         </button>
       </div>
     </form>

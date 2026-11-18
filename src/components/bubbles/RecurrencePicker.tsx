@@ -1,6 +1,7 @@
 "use client";
 
 import type { Recurrence } from "@/types";
+import { useLang } from "@/context/LanguageProvider";
 import { DAY_LABELS, recurrenceDays } from "@/lib/recurrence";
 
 type Kind = "none" | Recurrence["type"];
@@ -22,6 +23,7 @@ export function RecurrencePicker({
   anchorDow: number;
   disabled?: boolean;
 }) {
+  const { t } = useLang();
   const kind: Kind = value?.type ?? "none";
   const days = value?.type === "custom" ? recurrenceDays(value, anchorDow) : [];
 
@@ -41,17 +43,17 @@ export function RecurrencePicker({
         value={kind}
         disabled={disabled}
         onChange={(e) => pick(e.target.value as Kind)}
-        aria-label="Repeat"
+        aria-label={t("Repeat")}
         className={field}
       >
-        <option value="none">Does not repeat</option>
-        <option value="daily">Daily</option>
-        <option value="weekdays">Weekdays (Mon–Fri)</option>
-        <option value="weekly">Weekly ({DAY_LABELS[anchorDow]})</option>
-        <option value="custom">Custom days…</option>
+        <option value="none">{t("Does not repeat")}</option>
+        <option value="daily">{t("Daily")}</option>
+        <option value="weekdays">{t("Weekdays")}</option>
+        <option value="weekly">{t("Weekly")} ({t(DAY_LABELS[anchorDow])})</option>
+        <option value="custom">{t("Custom days")}</option>
       </select>
       {kind === "custom" && (
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Repeat on">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("Repeat on")}>
           {MON_FIRST.map((d) => {
             const on = days.includes(d);
             return (
@@ -65,7 +67,7 @@ export function RecurrencePicker({
                   on ? "bg-foreground text-background" : "glass text-muted hover:text-foreground"
                 }`}
               >
-                {DAY_LABELS[d]}
+                {t(DAY_LABELS[d])}
               </button>
             );
           })}

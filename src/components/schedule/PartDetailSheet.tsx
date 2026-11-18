@@ -4,9 +4,9 @@ import { Check, Circle, Clock, Loader2, Pencil } from "lucide-react";
 import { useState } from "react";
 import { Sheet } from "@/components/Sheet";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
-import { PACING_META, pacingOf } from "@/lib/pacing";
+import { useLang } from "@/context/LanguageProvider";
 import { formatDuration, formatWindow, subtaskProgress } from "@/lib/subtasks";
-import { formatDeadline, formatOverdue } from "@/lib/time";
+import { formatDeadline } from "@/lib/time";
 import type { Subtask, Task } from "@/types";
 
 /** One scheduled step, with the context of the bigger task it belongs to. */
@@ -25,6 +25,7 @@ export function PartDetailSheet({
   onToggle: (t: Task, s: Subtask) => Promise<void>;
   onEditParent: (t: Task) => void;
 }) {
+  const { t, lang } = useLang();
   const open = !!task && !!sub;
   const [busy, setBusy] = useState(false);
   const hue = task ? bubbleHue(task, now) : "green";
@@ -40,8 +41,8 @@ export function PartDetailSheet({
           <section className="space-y-2 text-sm">
             <p className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-muted" />
-              <span>{formatWindow(sub, now)}</span>
-              <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">{formatDuration(sub.durationMinutes)}</span>
+              <span>{formatWindow(sub, now, t, lang)}</span>
+              <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">{formatDuration(sub.durationMinutes, t)}</span>
             </p>
             <button
               type="button"
@@ -59,24 +60,23 @@ export function PartDetailSheet({
               }`}
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              {sub.completed ? "Mark as not done" : "Mark this step complete"}
+              {sub.completed ? t("Mark as not done") : t("Mark complete")}
             </button>
           </section>
 
-          <section className="glass space-y-3 rounded-2xl p-4" aria-label="Parent task">
+          <section className="glass space-y-3 rounded-2xl p-4" aria-label={t("Part of")}>
             <div>
-              <p className="text-xs text-muted">Part of</p>
+              <p className="text-xs text-muted">{t("Part of")}</p>
               <p className="break-words text-base font-semibold">{task.title}</p>
               <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
-                <span className="hue-badge"><span className="hue-dot h-2 w-2 rounded-full" /> {HUE_META[hue].label}</span>
-                <span>· {PACING_META[pacingOf(task)].label}</span>
-                <span>· {hue === "overdue" ? formatOverdue(task.deadline, now) : `due ${formatDeadline(task.deadline, now)}`}</span>
+                <span className="hue-badge"><span className="hue-dot h-2 w-2 rounded-full" /> {t(HUE_META[hue].label)}</span>
+                <span>· {formatDeadline(task.deadline, now, t, lang)}</span>
               </p>
             </div>
 
             {progress && (
               <div>
-                <p className="text-sm">{progress.done} of {progress.total} steps completed</p>
+                <p className="text-sm">{progress.done} / {progress.total}</p>
                 <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-line" role="progressbar"
                   aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.done}>
                   <div className="h-full rounded-full transition-all duration-500"
@@ -93,9 +93,9 @@ export function PartDetailSheet({
                     <span className={`break-words ${s.completed ? "text-muted line-through" : ""}`}>
                       {i + 1}. {s.title}
                     </span>
-                    <span className="block text-xs text-muted">{formatWindow(s, now)} · {formatDuration(s.durationMinutes)}</span>
+                    <span className="block text-xs text-muted">{formatWindow(s, now, t, lang)} · {formatDuration(s.durationMinutes, t)}</span>
                   </span>
-                  {s.id === sub.id && <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[11px]">this step</span>}
+                  {s.id === sub.id && <span className="rounded-full bg-foreground/10 px-2 py-0.5 text-[11px]">{t("this step")}</span>}
                 </li>
               ))}
             </ol>
@@ -105,7 +105,7 @@ export function PartDetailSheet({
               onClick={() => onEditParent(task)}
               className="glass flex w-full items-center justify-center gap-2 rounded-full px-4 py-2 text-sm text-muted transition hover:text-foreground"
             >
-              <Pencil className="h-3.5 w-3.5" /> Edit the full task
+              <Pencil className="h-3.5 w-3.5" /> {t("Edit")}
             </button>
           </section>
         </div>

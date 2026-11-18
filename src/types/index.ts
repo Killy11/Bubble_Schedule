@@ -25,6 +25,8 @@ export interface UserSettings {
   defaultTaskMinutes: number;
   reminderLeadMinutes: number;
   notificationsEnabled: boolean;
+  /** Interface language (default English). */
+  language?: "en" | "uk";
 }
 
 /** users/{uid}/devices/{tokenHash} */
@@ -68,7 +70,8 @@ export interface Subtask {
 export interface Task {
   id: string;
   title: string; // REQUIRED
-  deadline: ISODateTime; // REQUIRED
+  /** OPTIONAL. Without one the task stays active, is always green and never becomes overdue. */
+  deadline?: ISODateTime;
   description?: string;
   durationMin?: number; // OPTIONAL, user-provided
   loggedMinutes: number; // time already spent (defaults to 0); shrinks the bubble

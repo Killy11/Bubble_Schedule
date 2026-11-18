@@ -9,7 +9,6 @@ import {
   getDoc,
   increment,
   onSnapshot,
-  orderBy,
   query,
   runTransaction,
   setDoc,
@@ -21,11 +20,12 @@ import { historyConverter, taskConverter, toFirestoreData } from "@/lib/firebase
 import { cleanRecurrence, nextOccurrence } from "@/lib/recurrence";
 import { makeHistoryRecord } from "@/lib/history";
 import { oneDayFlagFor, withinOneDay } from "@/lib/oneDay";
+import { deadlineMs, hasDeadline } from "@/lib/deadline";
 import type { Pacing, Recurrence, Subtask, Task } from "@/types";
 
 export interface NewTaskInput {
   title: string;
-  deadline: string; // ISO
+  deadline?: string; // ISO; omitted = no deadline
   durationMin?: number;
   description?: string;
   recurrence?: Recurrence;
@@ -41,6 +41,9 @@ export interface CompleteUndo {
   before: Task;
   spawnedId: string | null;
 }
+
+/** Earliest deadline first; tasks without one go last. */
+const byDeadline = (a: Task, b: Task) => deadlineMs(a) - deadlineMs(b) || (a.createdAt < b.createdAt ? -1 : 1);
 
 const minutesSince = (iso: string, nowMs: number) => Math.max(0, Math.round((nowMs - Date.parse(iso)) / 60_000));
 
@@ -59,14 +62,12 @@ export function useTasks(
 
   useEffect(() => {
     if (!uid) return;
-    const q = query(
-      collection(db, "users", uid, "tasks").withConverter(taskConverter),
-      orderBy("deadline", "asc"),
-    );
+    // No orderBy("deadline"): Firestore would silently drop tasks that have no deadline.
+    const q = query(collection(db, "users", uid, "tasks").withConverter(taskConverter));
     return onSnapshot(
       q,
       (snap) => {
-        setTasks(snap.docs.map((d) => d.data()));
+        setTasks(snap.docs.map((d) => d.data()).sort(byDeadline));
         setLoading(false);
         setError(null);
       },
@@ -87,14 +88,14 @@ export function useTasks(
       const task: Task = {
         id: ref.id,
         title: input.title.trim(),
-        deadline: input.deadline,
+        deadline: input.deadline || undefined,
         description: input.description?.trim() || undefined,
         durationMin: input.durationMin,
         loggedMinutes: 0,
         aiEstimate: input.historyEstimate
           ? { durationMin: input.historyEstimate.durationMin, reasoning: input.historyEstimate.reasoning, estimatedAt: nowIso }
           : undefined,
-        oneDayNotified: oneDayFlagFor(input.deadline, Date.now()) || undefined,
+        oneDayNotified: (input.deadline && oneDayFlagFor(input.deadline, Date.now())) || undefined,
         recurrence,
         pacing: input.pacing,
         requestedParts: input.requestedParts,
@@ -122,7 +123,7 @@ export function useTasks(
    */
   const ensureNext = useCallback(
     async (task: Task): Promise<string | null> => {
-      if (!uid || !task.recurrence) return null;
+      if (!uid || !task.recurrence || !task.deadline) return null;
       const next = nextOccurrence(task.deadline, task.recurrence, timezone, Date.now());
       if (!next) return null;
       const series = task.seriesId ?? task.id;
@@ -365,18 +366,18 @@ export function useTasks(
   const updateTask = useCallback(
     async (
       task: Task,
-      patch: { title: string; deadline: string; durationMin: number | null; pacing: Pacing },
+      patch: { title: string; deadline: string | null; durationMin: number | null; pacing: Pacing },
     ) => {
       if (!uid) return;
-      const deadlineChanged = Date.parse(patch.deadline) !== Date.parse(task.deadline);
+      const deadlineChanged = (patch.deadline ? Date.parse(patch.deadline) : null) !== (task.deadline ? Date.parse(task.deadline) : null);
       await updateDoc(doc(db, "users", uid, "tasks", task.id), {
         title: patch.title.trim(),
-        deadline: new Date(patch.deadline),
+        deadline: patch.deadline ? new Date(patch.deadline) : deleteField(),
         durationMin: patch.durationMin ?? deleteField(),
         pacing: patch.pacing,
         // A new deadline deserves fresh "due soon" / "expired" alerts.
         ...(deadlineChanged
-          ? { notified: false, notifiedOverdue: false, oneDayNotified: oneDayFlagFor(patch.deadline, Date.now()) }
+          ? { notified: false, notifiedOverdue: false, oneDayNotified: patch.deadline ? oneDayFlagFor(patch.deadline, Date.now()) : deleteField() }
           : {}),
         updatedAt: new Date(),
       });
@@ -389,7 +390,7 @@ export function useTasks(
    * cleared: the re-plan that follows the deadline change gives the parts fresh slots.
    */
   const reschedule = useCallback(
-    async (task: Task, deadlineIso: string) => {
+    async (task: Task, deadlineIso: string | null) => {
       if (!uid) return;
       const nowMs = Date.now();
       const stale = (s: Subtask) => !s.completed && !!s.scheduledEnd && Date.parse(s.scheduledEnd) < nowMs;
@@ -403,11 +404,11 @@ export function useTasks(
         : null;
       await updateDoc(doc(db, "users", uid, "tasks", task.id), {
         status: "active",
-        deadline: new Date(deadlineIso),
+        deadline: deadlineIso ? new Date(deadlineIso) : deleteField(),
         expiredAt: deleteField(),
         notified: false,
         notifiedOverdue: false,
-        oneDayNotified: oneDayFlagFor(deadlineIso, Date.now()),
+        oneDayNotified: deadlineIso ? oneDayFlagFor(deadlineIso, Date.now()) : deleteField(),
         ...(subtasks ? { subtasks: toFirestoreData(subtasks) } : {}),
         updatedAt: new Date(),
       });
@@ -427,7 +428,7 @@ export function useTasks(
   });
   useEffect(() => {
     if (!uid || loading) return;
-    const overdue = tasks.filter((t) => t.status === "active" && Date.parse(t.deadline) < now);
+    const overdue = tasks.filter((t) => t.status === "active" && deadlineMs(t) < now);
     if (seenOverdue.current === null) {
       seenOverdue.current = new Set(overdue.map((t) => t.id)); // already overdue when the app opened: no toast
     } else {
@@ -453,7 +454,7 @@ export function useTasks(
   useEffect(() => {
     if (!uid || loading) return;
     const due = tasks.filter(
-      (t) => t.status === "active" && !t.oneDayNotified && withinOneDay(t.deadline, now) && !claiming.current.has(t.id),
+      (t) => t.status === "active" && !t.oneDayNotified && hasDeadline(t) && withinOneDay(t.deadline!, now) && !claiming.current.has(t.id),
     );
     if (due.length === 0) return;
     due.forEach((t) => claiming.current.add(t.id));
@@ -499,7 +500,7 @@ export function useTasks(
       if (!t.recurrence) continue;
       const key = t.seriesId ?? t.id;
       const cur = latest.get(key);
-      if (!cur || t.deadline > cur.deadline) latest.set(key, t);
+      if (!cur || deadlineMs(t) > deadlineMs(cur)) latest.set(key, t);
     }
     for (const t of latest.values()) {
       if (t.status === "active" || t.nextSpawned || sweptSeries.current.has(t.id)) continue;

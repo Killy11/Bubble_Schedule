@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { Check, ListTree, Loader2, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
-import { pacingOf } from "@/lib/pacing";
+import { useLang } from "@/context/LanguageProvider";
 import { DurationFields } from "@/components/DurationFields";
 import { splitMinutes, totalMinutes } from "@/lib/duration";
 import { formatDuration, formatWindow, MAX_SUBTASKS, newSubtaskId, progressLabel, subtaskProgress } from "@/lib/subtasks";
@@ -57,6 +57,7 @@ export function SubtaskList({
   const [partCount, setPartCount] = useState("");
   const subs = task.subtasks ?? [];
   const progress = subtaskProgress(task);
+  const { t, lang } = useLang();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,17 +72,17 @@ export function SubtaskList({
       await onSave(task, next);
       return true;
     } catch {
-      setError("Couldn't save your changes. Please try again.");
+      setError(t("Couldn't save. Please try again."));
       return false;
     }
   }
 
   return (
-    <section className="glass space-y-3 rounded-2xl p-4" aria-label="Parts">
+    <section className="glass space-y-3 rounded-2xl p-4" aria-label={t("Parts")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="flex items-center gap-2 text-sm font-medium"><ListTree className="h-4 w-4 text-muted" /> Parts</p>
-          {progress && <p className="mt-0.5 text-xs text-muted">{progressLabel(task, now)}</p>}
+          <p className="flex items-center gap-2 text-sm font-medium"><ListTree className="h-4 w-4 text-muted" /> {t("Parts")}</p>
+          {progress && <p className="mt-0.5 text-xs text-muted">{progressLabel(task, now, t, lang)}</p>}
         </div>
         <button
           type="button"
@@ -93,16 +94,15 @@ export function SubtaskList({
           className="flex shrink-0 items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background transition hover:opacity-90 disabled:opacity-60"
         >
           {splitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-          {splitting ? "Planning…" : subs.length ? "Re-split with AI" : "Split into subtasks with AI"}
+          {splitting ? t("Planning…") : subs.length ? t("Re-split") : t("Split with AI")}
         </button>
       </div>
 
       <label className="flex items-center gap-2 text-xs text-muted">
-        Parts
+        {t("Parts")}
         <input type="number" inputMode="numeric" min={2} max={MAX_SUBTASKS} value={partCount}
-          onChange={(e) => setPartCount(e.target.value)} placeholder="auto" aria-label="Number of parts"
+          onChange={(e) => setPartCount(e.target.value)} placeholder={t("auto")} aria-label={t("Number of parts")}
           className="glass w-16 rounded-lg px-2 py-1 text-xs text-foreground outline-none placeholder:text-muted focus:border-[rgb(var(--glow-a))]" />
-        <span>{pacingOf(task) === "locked" ? "Locked-in tasks stay whole unless you set a number." : "Leave empty to let the AI decide."}</span>
       </label>
 
       {progress && (
@@ -111,12 +111,6 @@ export function SubtaskList({
           <div className="h-full rounded-full transition-all duration-500"
             style={{ width: `${(progress.done / progress.total) * 100}%`, background: "rgb(var(--c))" }} />
         </div>
-      )}
-
-      {subs.length === 0 && !splitting && (
-        <p className="text-xs text-muted">
-          Big tasks work better in small sessions. Split this one and every part gets its own time slot.
-        </p>
       )}
 
       <ul className="space-y-2">
@@ -158,7 +152,7 @@ export function SubtaskList({
         subs.length < MAX_SUBTASKS && (
           <button type="button" onClick={() => { setEditingId(null); setAdding(true); }}
             className="flex items-center gap-1.5 text-xs text-muted transition hover:text-foreground">
-            <Plus className="h-3.5 w-3.5" /> Add a part
+            <Plus className="h-3.5 w-3.5" /> {t("Add part")}
           </button>
         )
       )}
@@ -180,6 +174,7 @@ function Row({
   onEdit: () => void;
   onRemove: () => void;
 }) {
+  const { t, lang } = useLang();
   const [pops, setPops] = useState(0);
   const [busy, setBusy] = useState(false);
   const missed = !sub.completed && !!sub.scheduledEnd && Date.parse(sub.scheduledEnd) < now;
@@ -201,7 +196,7 @@ function Row({
         type="button"
         role="checkbox"
         aria-checked={sub.completed}
-        aria-label={`${sub.completed ? "Mark not done" : "Mark done"}: ${sub.title}`}
+        aria-label={`${sub.completed ? t("Mark as not done") : t("Mark complete")}: ${sub.title}`}
         disabled={busy}
         onClick={toggle}
         className={`relative mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition ${
@@ -219,17 +214,17 @@ function Row({
         <div className="flex items-start justify-between gap-2">
           <p className={`break-words text-sm ${sub.completed ? "line-through" : ""}`}>{sub.title}</p>
           <span className="shrink-0 rounded-full border border-line px-2 py-0.5 text-[11px] text-muted">
-            {formatDuration(sub.durationMinutes)}
+            {formatDuration(sub.durationMinutes, t)}
           </span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
           <p className={`text-xs ${missed ? "text-red-500" : "text-muted"}`}>
-            {formatWindow(sub, now)}{missed ? " · missed" : ""}
+            {formatWindow(sub, now, t, lang)}{missed ? ` · ${t("missed")}` : ""}
           </p>
           <span className="flex shrink-0 gap-0.5">
-            <button type="button" onClick={onEdit} aria-label={`Edit ${sub.title}`}
+            <button type="button" onClick={onEdit} aria-label={`${t("Edit")}: ${sub.title}`}
               className="rounded-full p-1 text-muted transition hover:text-foreground"><Pencil className="h-3.5 w-3.5" /></button>
-            <button type="button" onClick={onRemove} aria-label={`Remove ${sub.title}`}
+            <button type="button" onClick={onRemove} aria-label={`${t("Delete")}: ${sub.title}`}
               className="rounded-full p-1 text-muted transition hover:text-red-500"><Trash2 className="h-3.5 w-3.5" /></button>
           </span>
         </div>
@@ -246,11 +241,12 @@ function EditRow({
   onCancel,
 }: {
   sub: Subtask;
-  deadline: string;
+  deadline?: string;
   isNew?: boolean;
   onSave: (s: Subtask) => Promise<void>;
   onCancel: () => void;
 }) {
+  const { t } = useLang();
   const [title, setTitle] = useState(sub.title);
   const [hours, setHours] = useState(() => splitMinutes(sub.durationMinutes).hours);
   const [minutes, setMinutes] = useState(() => splitMinutes(sub.durationMinutes).minutes);
@@ -261,14 +257,14 @@ function EditRow({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const min = totalMinutes(hours, minutes) ?? 0;
-    if (!title.trim()) return setError("Give this part a title.");
-    if (!Number.isFinite(min) || min < 5 || min > 480) return setError("Duration must be 5–480 minutes.");
+    if (!title.trim()) return setError(t("Give your bubble a title."));
+    if (!Number.isFinite(min) || min < 5 || min > 480) return setError(t("Duration: 5–480 min"));
     let scheduled: Pick<Subtask, "scheduledStart" | "scheduledEnd"> = {};
     if (start) {
-      const t = new Date(start).getTime();
-      if (Number.isNaN(t)) return setError("Pick a valid start time.");
-      if (t + min * 60_000 >= Date.parse(deadline)) return setError("This session must end before the task's due date.");
-      scheduled = { scheduledStart: new Date(t).toISOString(), scheduledEnd: new Date(t + min * 60_000).toISOString() };
+      const at = new Date(start).getTime();
+      if (Number.isNaN(at)) return setError(t("Pick a start time."));
+      if (deadline && at + min * 60_000 >= Date.parse(deadline)) return setError(t("Must end before the deadline."));
+      scheduled = { scheduledStart: new Date(at).toISOString(), scheduledEnd: new Date(at + min * 60_000).toISOString() };
     }
     // A time typed in by hand is kept: automatic re-planning works around it instead of moving it.
     const pinned = !!start && (isNew || start !== toLocalInput(sub.scheduledStart) || !!sub.pinned);
@@ -285,24 +281,23 @@ function EditRow({
     <li>
       <form onSubmit={submit} className="space-y-2 rounded-xl border border-line p-2.5">
         <input autoFocus value={title} maxLength={100} onChange={(e) => setTitle(e.target.value)}
-          placeholder="What to do in this session" aria-label="Part title" className={`${input} w-full`} />
+          placeholder={t("What to do")} aria-label={t("Title")} className={`${input} w-full`} />
         <div className="flex flex-wrap gap-2">
           <div className="w-44 shrink-0">
             <DurationFields hours={hours} minutes={minutes} onHours={setHours} onMinutes={setMinutes} hint={false} />
           </div>
           <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)}
-            aria-label="Start time" className={`${input} min-w-0 flex-1`} />
+            aria-label={t("Start time")} className={`${input} min-w-0 flex-1`} />
         </div>
-        <p className="text-[11px] text-muted">The end time follows from the duration. Leave the start empty to let the planner choose it. A time you set stays put.</p>
         {error && <p role="alert" className="text-xs text-red-500">{error}</p>}
         <div className="flex gap-2">
           <button type="submit" disabled={busy}
             className="flex items-center gap-1.5 rounded-full bg-foreground px-3.5 py-1.5 text-xs font-medium text-background transition hover:opacity-90 disabled:opacity-60">
-            {busy && <Loader2 className="h-3 w-3 animate-spin" />} {isNew ? "Add part" : "Save"}
+            {busy && <Loader2 className="h-3 w-3 animate-spin" />} {isNew ? t("Add part") : t("Save")}
           </button>
           <button type="button" onClick={onCancel}
             className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs text-muted transition hover:text-foreground">
-            <X className="h-3 w-3" /> Cancel
+            <X className="h-3 w-3" /> {t("Cancel")}
           </button>
         </div>
       </form>

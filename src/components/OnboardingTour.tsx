@@ -4,6 +4,8 @@ import { useEffect, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Calendar, Check, Mic, Plus, Repeat, Sparkles } from "lucide-react";
 import { Orb } from "@/components/Orb";
+import { SupportButton } from "@/components/SupportButton";
+import { useLang, type TFn } from "@/context/LanguageProvider";
 
 interface Step {
   title: string;
@@ -11,20 +13,17 @@ interface Step {
   visual: ReactNode;
 }
 
-const STEPS: Step[] = [
+const steps = (t: TFn): Step[] => [
   {
-    title: "Colours tell you what needs you",
+    title: t("Colours show urgency"),
     body: (
       <>
-        <b className="text-red-500">Red</b> is urgent: less than a day left.{" "}
-        <b className="text-amber-500">Yellow</b> means 1–5 days. <b className="text-green-500">Green</b> is safe, 5+ days away.
-        A deep <b className="text-pink-600">plum</b> bubble is overdue. It is never deleted: reschedule it or finish it.
-        The more pressing a task, the bigger its bubble.
+        <b className="text-red-500">{t("Red")}</b>: {t("under 1 day")}. <b className="text-amber-500">{t("Yellow")}</b>: {t("1–5 days")}.{" "}
+        <b className="text-green-500">{t("Green")}</b>: {t("5+ days or no deadline")}.
       </>
     ),
     visual: (
       <div className="flex items-end gap-4">
-        <Orb hue="overdue" size={72} />
         <Orb hue="red" size={84} />
         <Orb hue="yellow" size={64} />
         <Orb hue="green" size={46} />
@@ -32,8 +31,8 @@ const STEPS: Step[] = [
     ),
   },
   {
-    title: "Add tasks by typing or speaking",
-    body: "Tap New bubble, or use the AI chat and just write “send the report tomorrow 5pm, urgent”. Prefer talking? Tap the mic: it understands Ukrainian and English.",
+    title: t("Type or speak a task"),
+    body: t("Tap New bubble, use the chat, or the mic (UA / EN)."),
     visual: (
       <div className="flex items-center gap-4">
         <span className="flex h-14 w-14 items-center justify-center rounded-full bg-foreground text-background"><Plus className="h-6 w-6" /></span>
@@ -45,8 +44,8 @@ const STEPS: Step[] = [
     ),
   },
   {
-    title: "Pop a bubble to finish it",
-    body: "Tap a bubble, then Complete, and it bursts. You can start a timer or enter how long it really took: BubbleSchedule learns and suggests realistic durations next time.",
+    title: t("Pop a bubble to finish it"),
+    body: t("Open a bubble and tap Complete."),
     visual: (
       <div className="relative">
         <Orb hue="green" size={72} />
@@ -55,13 +54,13 @@ const STEPS: Step[] = [
     ),
   },
   {
-    title: "Repeat what repeats",
-    body: "Set a task to repeat daily, on weekdays, weekly or on custom days. Repeating bubbles carry a small ↻ badge, and the next one appears when you finish (or miss) the current one.",
+    title: t("Repeat what repeats"),
+    body: t("Daily, weekdays, weekly or custom days."),
     visual: <span className="glass flex h-16 w-16 items-center justify-center rounded-full"><Repeat className="h-7 w-7" /></span>,
   },
   {
-    title: "Let AI plan your day",
-    body: "Press Auto-schedule and the AI lays your bubbles out in your working hours, earliest and most urgent first. Ask it in chat to shift things (“I overslept”). Bubbles whose deadline passes turn plum and move to the Overdue section at the top, where you can reschedule or delete them.",
+    title: t("AI plans your day"),
+    body: t("Missed deadlines move to Overdue in Schedule."),
     visual: (
       <div className="flex items-center gap-4">
         <span className="glass flex h-14 w-14 items-center justify-center rounded-full"><Sparkles className="h-6 w-6" /></span>
@@ -77,6 +76,8 @@ export function OnboardingTour({ open, onClose }: { open: boolean; onClose: () =
 }
 
 function Tour({ onClose }: { onClose: () => void }) {
+  const { t } = useLang();
+  const STEPS = steps(t);
   const [i, setI] = useState(0);
   const last = i === STEPS.length - 1;
   const step = STEPS[i];
@@ -97,13 +98,13 @@ function Tour({ onClose }: { onClose: () => void }) {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Welcome to BubbleSchedule"
+        aria-label={t("Help")}
         className="glass w-full max-w-md rounded-3xl bg-background/90 p-6 shadow-2xl"
       >
         <div className="mb-2 flex items-center justify-between text-xs text-muted">
-          <span>Step {i + 1} of {STEPS.length}</span>
+          <span>{i + 1} / {STEPS.length}</span>
           <button type="button" onClick={onClose} className="rounded-full px-2 py-1 transition hover:text-foreground">
-            Skip
+            {t("Skip")}
           </button>
         </div>
         <AnimatePresence mode="wait">
@@ -113,7 +114,7 @@ function Tour({ onClose }: { onClose: () => void }) {
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -24 }}
             transition={{ duration: 0.2 }}
-            className="flex min-h-[19rem] flex-col items-center text-center"
+            className="flex min-h-[15rem] flex-col items-center text-center"
           >
             <div className="flex h-32 items-center justify-center">{step.visual}</div>
             <h2 className="mt-2 text-lg font-semibold tracking-tight">{step.title}</h2>
@@ -130,14 +131,17 @@ function Tour({ onClose }: { onClose: () => void }) {
             {i > 0 && (
               <button type="button" onClick={() => setI(i - 1)}
                 className="glass rounded-full px-4 py-2 text-sm text-muted transition hover:text-foreground">
-                Back
+                {t("Back")}
               </button>
             )}
             <button type="button" autoFocus onClick={() => (last ? onClose() : setI(i + 1))}
               className="rounded-full bg-foreground px-5 py-2 text-sm font-medium text-background transition hover:opacity-90">
-              {last ? "Get started" : "Next"}
+              {last ? t("Get started") : t("Next")}
             </button>
           </div>
+        </div>
+        <div className="mt-4 flex justify-center border-t border-line pt-4">
+          <SupportButton />
         </div>
       </div>
     </motion.div>

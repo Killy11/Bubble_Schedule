@@ -67,7 +67,7 @@ export function checkBlocks(c: Ctx): { ok: CheckedBlock[]; rejected: Rejected[] 
       { bad(`must be within working hours ${ws}–${we}`); continue; }
     if (start.getTime() < c.now.getTime() - 60_000)
       { bad("starts before the current time"); continue; }
-    const mustEnd = latestEndMs(new Date(task.deadline).getTime(), c.now.getTime(), (end.getTime() - start.getTime()) / 60_000);
+    const mustEnd = !task.deadline ? Infinity : latestEndMs(new Date(task.deadline).getTime(), c.now.getTime(), (end.getTime() - start.getTime()) / 60_000);
     if (end.getTime() > mustEnd)
       { bad(`must end by ${toLocalNaive(new Date(mustEnd), c.tz)} (deadline minus a safety margin)`); continue; }
     if ((c.busy ?? []).some((x) => start < x.end && end > x.start))

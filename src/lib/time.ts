@@ -62,23 +62,28 @@ export function formatTime(iso: ISODateTime): string {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-/** "Overdue · 5h ago" / "Overdue · 1d ago" / "Overdue · 12m ago" for a deadline that has passed. */
-export function formatOverdue(iso: ISODateTime, now: number): string {
+type Tr = (en: string, vars?: Record<string, string | number>) => string;
+const same: Tr = (en, vars) => (vars ? en.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? "")) : en);
+
+/** "5h ago" style age of a passed deadline. */
+export function formatOverdue(iso: ISODateTime, now: number, t: Tr = same): string {
   const min = Math.max(1, Math.round((now - new Date(iso).getTime()) / 60_000));
-  const ago = min < 60 ? `${min}m` : min < 24 * 60 ? `${Math.round(min / 60)}h` : `${Math.round(min / (24 * 60))}d`;
-  return `Overdue · ${ago} ago`;
+  const ago =
+    min < 60 ? t("{n}m ago", { n: min }) : min < 24 * 60 ? t("{n}h ago", { n: Math.round(min / 60) }) : t("{n}d ago", { n: Math.round(min / (24 * 60)) });
+  return t("Overdue · {ago}", { ago });
 }
 
-/** "Today 14:30", "Tomorrow 09:00", "Nov 18, 09:00", or "Overdue · 5h ago". */
-export function formatDeadline(iso: ISODateTime, now: number): string {
+/** "Today 14:30", "Tomorrow 09:00", "Nov 18, 09:00", "No deadline", or "Overdue · 5h ago". */
+export function formatDeadline(iso: ISODateTime | undefined, now: number, t: Tr = same, locale?: string): string {
+  if (!iso) return t("No deadline");
   const d = new Date(iso);
-  if (d.getTime() < now) return formatOverdue(iso, now);
-  const startOfDay = (t: number) => new Date(t).setHours(0, 0, 0, 0);
+  if (d.getTime() < now) return formatOverdue(iso, now, t);
+  const startOfDay = (x: number) => new Date(x).setHours(0, 0, 0, 0);
   const days = Math.round((startOfDay(d.getTime()) - startOfDay(now)) / 86_400_000);
   const time = formatTime(iso);
-  if (days === 0) return `Today ${time}`;
-  if (days === 1) return `Tomorrow ${time}`;
-  return `${d.toLocaleDateString([], { month: "short", day: "numeric" })}, ${time}`;
+  if (days === 0) return `${t("Today")} ${time}`;
+  if (days === 1) return `${t("Tomorrow")} ${time}`;
+  return `${d.toLocaleDateString(locale ? [locale] : [], { month: "short", day: "numeric" })}, ${time}`;
 }
 
 /** DateKey n days after `key` (calendar arithmetic, DST-safe). */

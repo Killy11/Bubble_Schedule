@@ -13,8 +13,9 @@ function ramp(x: number, pts: Array<[number, number]>): number {
   return pts[pts.length - 1][1];
 }
 
+/** Hours to the deadline; `Infinity` for a task without one. */
 export const hoursLeft = (task: Task, nowMs: number): number =>
-  (new Date(task.deadline).getTime() - nowMs) / 3_600_000;
+  task.deadline ? (new Date(task.deadline).getTime() - nowMs) / 3_600_000 : Infinity;
 
 /**
  * Radius multiplier as the deadline nears (1 → 1.4). Smooth through 24h / 12h / 6h / 2h / overdue,

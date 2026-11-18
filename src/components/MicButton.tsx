@@ -1,6 +1,7 @@
 "use client";
 
 import { Mic, Square } from "lucide-react";
+import { useLang } from "@/context/LanguageProvider";
 import { useToast } from "@/context/ToastProvider";
 import { useSpeechInput, useSpeechLang } from "@/hooks/useSpeechInput";
 
@@ -15,11 +16,12 @@ export function MicButton({
   size?: "sm" | "md";
 }) {
   const { toast } = useToast();
+  const { t } = useLang();
   const [lang, setLang] = useSpeechLang();
   const { supported, listening, start, stop } = useSpeechInput({
     lang,
     onTranscript: onChange,
-    onError: (message) => toast({ title: "Voice input", body: message }),
+    onError: (message) => toast({ title: t("Voice input"), body: t(message) }),
   });
   const dim = size === "sm" ? "h-9 w-9" : "h-10 w-10";
 
@@ -29,8 +31,8 @@ export function MicButton({
         type="button"
         onClick={() => setLang(lang === "uk-UA" ? "en-US" : "uk-UA")}
         disabled={listening}
-        aria-label={`Voice language: ${lang === "uk-UA" ? "Ukrainian" : "English"}. Tap to switch.`}
-        title="Voice language"
+        aria-label={`${t("Voice language")}: ${lang === "uk-UA" ? "UA" : "EN"}`}
+        title={t("Voice language")}
         className="glass h-7 rounded-full px-2 text-[10px] font-semibold tracking-wide text-muted transition hover:text-foreground disabled:opacity-50"
       >
         {lang === "uk-UA" ? "UA" : "EN"}
@@ -38,9 +40,9 @@ export function MicButton({
       <button
         type="button"
         onClick={() => (listening ? stop() : start(value))}
-        aria-label={listening ? "Stop recording" : "Speak your task"}
+        aria-label={listening ? t("Stop") : t("Speak")}
         aria-pressed={listening}
-        title={supported ? (listening ? "Stop" : "Speak") : "Voice input isn't supported in this browser"}
+        title={supported ? (listening ? t("Stop") : t("Speak")) : t("Voice input isn't supported in this browser. Try Chrome, Edge or Safari.")}
         className={`relative flex ${dim} items-center justify-center rounded-full transition ${
           listening ? "bg-red-500 text-white" : "glass text-muted hover:text-foreground"
         } ${supported ? "" : "opacity-50"}`}
@@ -48,7 +50,7 @@ export function MicButton({
         {listening && <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-red-500/50" />}
         {listening ? <Square className="relative h-3.5 w-3.5 fill-current" /> : <Mic className="relative h-4 w-4" />}
       </button>
-      <span className="sr-only" aria-live="polite">{listening ? "Listening" : ""}</span>
+      <span className="sr-only" aria-live="polite">{listening ? t("Listening") : ""}</span>
     </div>
   );
 }

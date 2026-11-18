@@ -7,7 +7,7 @@ import { messageConverter } from "@/lib/firebase/converters";
 import type { NewTaskInput } from "@/hooks/useTasks";
 import { detectPacing, parseSplitRequest } from "@/lib/pacing";
 import type { ChatMessage, DateKey, Pacing } from "@/types";
-import type { AssistantRequest, AssistantResponse, ScheduleRequest } from "@/types/api";
+import type { AssistantAction, AssistantRequest, AssistantResponse, ScheduleRequest } from "@/types/api";
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -28,6 +28,8 @@ export function useChat(
   addTask: (input: NewTaskInput) => Promise<void>,
   /** Pacing for tasks created from chat when the message doesn't say otherwise. */
   defaultPacing: Pacing,
+  /** Apply AI edits (reschedule, change duration, complete, delete) to the shared task state. */
+  applyActions: (actions: AssistantAction[]) => Promise<void>,
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
@@ -122,23 +124,21 @@ export function useChat(
           await runSchedule("user-message", message); // writes its own assistant reply
           return;
         }
+        if (result.intent === "modify_tasks") {
+          // Same code path as the UI's own edits: one Firestore write, and the canvas and the timeline both follow.
+          await applyActions(result.actions);
+          await post("assistant", result.reply, "text", "sent");
+          return;
+        }
         // "chill", "все підряд", "розбий на 3 частини"… in the message set how the new tasks are laid out.
         const pacing = detectPacing(message) ?? defaultPacing;
         const requestedParts = parseSplitRequest(message) ?? undefined;
         for (const t of result.tasks) {
           await addTask({ title: t.title, deadline: t.deadline, durationMin: t.durationMin, pacing, requestedParts });
         }
-        await post("assistant", result.reply, "text", "sent");
-        // New tasks are folded into the plan automatically (the server only moves lower-weight blocks).
-        if (result.tasks.length > 0) {
-          try {
-            await runSchedule("auto-schedule");
-          } catch (e) {
-            await post("system", `Tasks added, but I couldn't update your schedule: ${e instanceof Error ? e.message : "unknown error"}`, "text", "error").catch(() => {});
-          }
-        }
+        await post("assistant", result.reply, "text", "sent"); // new tasks are folded into the plan by the auto re-plan
       }),
-    [guarded, post, runSchedule, addTask, defaultPacing],
+    [guarded, post, runSchedule, addTask, defaultPacing, applyActions],
   );
 
   return { messages, pending, send, ask };

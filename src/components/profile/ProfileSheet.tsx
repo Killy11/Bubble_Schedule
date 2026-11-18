@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BellRing, Check, Clock, Download, Heart, Loader2, Mail, Share } from "lucide-react";
+import { BellRing, Check, Clock, Download, Globe, Loader2, Mail, MessageSquarePlus, Share } from "lucide-react";
 import { doc, updateDoc } from "firebase/firestore";
 import { Sheet } from "@/components/Sheet";
 import { db } from "@/lib/firebase/client";
@@ -9,9 +9,8 @@ import { useUserProfile } from "@/hooks/useUserProfile";
 import { useAuth } from "@/context/AuthProvider";
 import { useInstall } from "@/context/InstallProvider";
 import { useNotifications } from "@/context/NotificationProvider";
-
-// Replace with your Stripe Payment Link / Buy Me a Coffee page (set NEXT_PUBLIC_SUPPORT_URL).
-const SUPPORT_URL = process.env.NEXT_PUBLIC_SUPPORT_URL || "https://buymeacoffee.com/your-name";
+import { SupportButton } from "@/components/SupportButton";
+import { useLang } from "@/context/LanguageProvider";
 
 const primaryBtn =
   "flex w-full items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-medium transition disabled:opacity-60";
@@ -20,6 +19,7 @@ const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 
 /** Working-hours range picker; saved to users/{uid}.settings.workingHours and used by the AI planner. */
 function WorkingHours({ uid, start: s0, end: e0 }: { uid: string; start: string; end: string }) {
+  const { t } = useLang();
   const [start, setStart] = useState(s0);
   const [end, setEnd] = useState(e0);
   const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -39,28 +39,28 @@ function WorkingHours({ uid, start: s0, end: e0 }: { uid: string; start: string;
 
   return (
     <div className="space-y-2">
-      <p className="flex items-center gap-1.5 text-sm font-medium"><Clock className="h-4 w-4" /> Working hours</p>
+      <p className="flex items-center gap-1.5 text-sm font-medium"><Clock className="h-4 w-4" /> {t("Working hours")}</p>
       <div className="flex items-center gap-2">
-        <input type="time" aria-label="Working hours start" value={start} onChange={(e) => { setStart(e.target.value); setState("idle"); }} className={input} />
-        <span className="text-sm text-muted">to</span>
-        <input type="time" aria-label="Working hours end" value={end} onChange={(e) => { setEnd(e.target.value); setState("idle"); }} className={input} />
+        <input type="time" aria-label={t("Working hours")} value={start} onChange={(e) => { setStart(e.target.value); setState("idle"); }} className={input} />
+        <span className="text-sm text-muted">–</span>
+        <input type="time" aria-label={t("Working hours")} value={end} onChange={(e) => { setEnd(e.target.value); setState("idle"); }} className={input} />
       </div>
-      {!valid && <p className="text-xs text-red-500">End must be at least 1 hour after the start.</p>}
-      {state === "error" && <p role="alert" className="text-xs text-red-500">Couldn&apos;t save. Try again.</p>}
+      {!valid && <p className="text-xs text-red-500">{t("At least 1 hour")}</p>}
+      {state === "error" && <p role="alert" className="text-xs text-red-500">{t("Couldn't save. Please try again.")}</p>}
       <button
         onClick={save}
         disabled={!valid || !dirty || state === "saving"}
         className={`${primaryBtn} glass hover:brightness-125`}
       >
         {state === "saving" ? <Loader2 className="h-4 w-4 animate-spin" /> : state === "saved" && !dirty ? <Check className="h-4 w-4" /> : null}
-        {state === "saved" && !dirty ? "Saved" : "Save working hours"}
+        {state === "saved" && !dirty ? t("Saved") : t("Save")}
       </button>
-      <p className="text-xs text-muted">The AI only schedules inside these hours. Existing blocks outside them are re-planned on the next scheduling.</p>
     </div>
   );
 }
 
-export function ProfileSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function ProfileSheet({ open, onClose, onOpenFeedback }: { open: boolean; onClose: () => void; onOpenFeedback: () => void }) {
+  const { t, lang, setLang } = useLang();
   const { user } = useAuth();
   const { canInstall, installed, isIOS, install } = useInstall();
   const { permission, enabling, error, enable } = useNotifications();
@@ -72,7 +72,7 @@ export function ProfileSheet({ open, onClose }: { open: boolean; onClose: () => 
   const initial = (name || user?.email || "?")[0].toUpperCase();
 
   return (
-    <Sheet open={open} onClose={onClose} title="Your profile">
+    <Sheet open={open} onClose={onClose} title={t("Profile")}>
       <div className="space-y-5">
         <div className="flex items-center gap-4">
           {user?.photoURL ? (
@@ -84,10 +84,34 @@ export function ProfileSheet({ open, onClose }: { open: boolean; onClose: () => 
             </div>
           )}
           <div className="min-w-0">
-            <p className="break-words text-base font-semibold">{name ?? "No name set"}</p>
+            <p className="break-words text-base font-semibold">{name ?? "—"}</p>
             <p className="flex items-center gap-1.5 break-all text-sm text-muted">
               <Mail className="h-3.5 w-3.5 shrink-0" /> {email}
             </p>
+          </div>
+        </div>
+
+        {/* Interface language: English by default; saved on this device and in the account. */}
+        <div className="space-y-2">
+          <p className="flex items-center gap-1.5 text-sm font-medium"><Globe className="h-4 w-4" /> {t("Language")}</p>
+          <div role="radiogroup" aria-label={t("Language")} className="glass flex rounded-full p-1">
+            {([["en", "English"], ["uk", "Українська"]] as const).map(([code, label]) => (
+              <button
+                key={code}
+                type="button"
+                role="radio"
+                aria-checked={lang === code}
+                onClick={() => {
+                  setLang(code);
+                  if (user) updateDoc(doc(db, "users", user.uid), { "settings.language": code }).catch((e) => console.warn("language save:", e));
+                }}
+                className={`flex-1 rounded-full px-3 py-1.5 text-sm transition ${
+                  lang === code ? "bg-foreground font-medium text-background" : "text-muted hover:text-foreground"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -104,7 +128,7 @@ export function ProfileSheet({ open, onClose }: { open: boolean; onClose: () => 
           {/* Install the PWA */}
           {installed ? (
             <div className={`${primaryBtn} glass text-muted`}>
-              <Check className="h-4 w-4" /> App installed
+              <Check className="h-4 w-4" /> {t("App installed")}
             </div>
           ) : (
             <>
@@ -117,18 +141,11 @@ export function ProfileSheet({ open, onClose }: { open: boolean; onClose: () => 
                 className={`${primaryBtn} bg-foreground text-background hover:opacity-90`}
               >
                 {installing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                Install App
+                {t("Install app")}
               </button>
-              {!canInstall && (
+              {!canInstall && isIOS && (
                 <p className="flex items-start gap-1.5 text-xs text-muted">
-                  {isIOS ? (
-                    <>
-                      <Share className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      On iPhone/iPad: tap Share, then &ldquo;Add to Home Screen&rdquo;.
-                    </>
-                  ) : (
-                    "Install isn't available right now. Use Chrome or Edge on the deployed (HTTPS) app, or your browser's menu."
-                  )}
+                  <Share className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {t("Share → Add to Home Screen")}
                 </p>
               )}
             </>
@@ -143,24 +160,23 @@ export function ProfileSheet({ open, onClose }: { open: boolean; onClose: () => 
                 className={`${primaryBtn} glass hover:brightness-125`}
               >
                 {enabling ? <Loader2 className="h-4 w-4 animate-spin" /> : permission === "granted" ? <Check className="h-4 w-4" /> : <BellRing className="h-4 w-4" />}
-                {permission === "granted" ? "Notifications on" : "Enable reminders"}
+                {permission === "granted" ? t("Notifications on") : t("Enable reminders")}
               </button>
               {permission === "denied" && !error && (
-                <p className="mt-1.5 text-xs text-muted">Notifications are blocked in your browser settings for this site.</p>
+                <p className="mt-1.5 text-xs text-muted">{t("Notifications are blocked in browser settings")}</p>
               )}
               {error && <p role="alert" className="mt-1.5 text-xs text-red-500">{error}</p>}
             </div>
           )}
 
-          {/* Donate */}
-          <a
-            href={SUPPORT_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`${primaryBtn} bg-[rgb(225_29_72)] text-white hover:brightness-110`}
+          <SupportButton variant="block" />
+          <button
+            type="button"
+            onClick={() => { onClose(); onOpenFeedback(); }}
+            className={`${primaryBtn} glass hover:brightness-125`}
           >
-            <Heart className="h-4 w-4" /> Support the Project
-          </a>
+            <MessageSquarePlus className="h-4 w-4" /> {t("Feedback")}
+          </button>
         </div>
       </div>
     </Sheet>

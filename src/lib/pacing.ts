@@ -6,15 +6,15 @@ export const pacingOf = (t: Pick<Task, "pacing">): Pacing => t.pacing ?? DEFAULT
 export const PACING_META: Record<Pacing, { label: string; hint: string }> = {
   chill: {
     label: "Chill",
-    hint: "Relaxed: spread over several days in 45–75 min sessions, about 3 h a day, with long recharge breaks.",
+    hint: "Spread out, long breaks",
   },
   balanced: {
     label: "Balanced",
-    hint: "Wave rhythm: 15 min break, then a 45–60 min one. About 4–4.5 h a day, spread over the days before the deadline.",
+    hint: "Steady rhythm, short breaks",
   },
   locked: {
     label: "Locked-in",
-    hint: "One unbroken block on one day. It is never split and pushes other tasks aside.",
+    hint: "One unbroken block",
   },
 };
 

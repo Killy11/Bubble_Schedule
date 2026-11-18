@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
+import { useLang } from "@/context/LanguageProvider";
 
 /** Bottom sheet on mobile, centred card on desktop. */
 export function Sheet({
@@ -16,6 +17,7 @@ export function Sheet({
   title: string;
   children: ReactNode;
 }) {
+  const { t } = useLang();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -48,7 +50,7 @@ export function Sheet({
               <h2 className="min-w-0 break-words pr-3 text-lg font-semibold tracking-tight">{title}</h2>
               <button
                 onClick={onClose}
-                aria-label="Close"
+                aria-label={t("Close")}
                 className="shrink-0 rounded-full p-1.5 text-muted transition hover:text-foreground"
               >
                 <X className="h-4 w-4" />

@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Bell, Undo2, X } from "lucide-react";
+import { useLang } from "@/context/LanguageProvider";
 
 export interface ToastInput {
   title: string;
@@ -25,6 +26,7 @@ const ToastContext = createContext<{ toast: (t: ToastInput) => void } | null>(nu
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
   const nextId = useRef(1);
+  const { t: tr } = useLang();
 
   const dismiss = useCallback((id: number) => setItems((l) => l.filter((t) => t.id !== id)), []);
   const toast = useCallback(
@@ -91,7 +93,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <button
                   type="button"
                   onClick={() => dismiss(t.id)}
-                  aria-label="Dismiss"
+                  aria-label={tr("Dismiss")}
                   className="shrink-0 rounded-full p-1 text-muted transition hover:text-foreground"
                 >
                   <X className="h-3.5 w-3.5" />

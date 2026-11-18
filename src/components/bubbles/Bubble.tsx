@@ -7,7 +7,8 @@ import { BubbleText } from "./BubbleText";
 import { bubbleHue } from "@/lib/bubbles/urgency";
 import { recurrenceLabel } from "@/lib/recurrence";
 import { progressLabel, subtaskProgress } from "@/lib/subtasks";
-import { formatDeadline, formatOverdue } from "@/lib/time";
+import { formatDeadline } from "@/lib/time";
+import { useLang } from "@/context/LanguageProvider";
 import type { Task } from "@/types";
 import type { BubblePlacement } from "@/lib/bubbles/layout";
 
@@ -72,13 +73,14 @@ export function Bubble({
   popping?: boolean;
 }) {
   const reduced = useReducedMotion();
+  const { t, lang } = useLang();
   const hue = bubbleHue(task, now);
   // Each bubble drifts on its own slow loop.
   const dur = 5 + (index % 5) * 1.3;
   const amp = 5 + (index % 3) * 2;
   const geometry = { x: place.x, y: place.y, width: place.d, height: place.d };
   const parts = subtaskProgress(task);
-  const repeats = task.recurrence ? recurrenceLabel(task.recurrence).toLowerCase() : null;
+  const repeats = task.recurrence ? t(recurrenceLabel(task.recurrence)).toLowerCase() : null;
 
   return (
     <motion.div
@@ -112,7 +114,7 @@ export function Bubble({
         type="button"
         onClick={() => onOpen(task.id)}
         disabled={popping}
-        aria-label={`${task.title}, ${hue === "overdue" ? formatOverdue(task.deadline, now) : `due ${formatDeadline(task.deadline, now)}`}${repeats ? `, repeats ${repeats}` : ""}${parts ? `, ${progressLabel(task, now)}` : ""}`}
+        aria-label={`${task.title}, ${formatDeadline(task.deadline, now, t, lang)}${repeats ? `, ${t("repeats")} ${repeats}` : ""}${parts ? `, ${progressLabel(task, now, t, lang)}` : ""}`}
         animate={{ y: [0, -amp, 0], x: [0, amp / 2, 0] }}
         transition={{ duration: dur, repeat: Infinity, ease: "easeInOut", delay: index * 0.35 }}
         whileHover={{ scale: 1.07 }}
@@ -125,14 +127,14 @@ export function Bubble({
             diameter={place.d}
             subtitle={
               place.d >= 100
-                ? parts ? `${parts.done}/${parts.total} parts` : formatDeadline(task.deadline, now)
+                ? parts ? `${parts.done}/${parts.total} ${t("parts")}` : task.deadline ? formatDeadline(task.deadline, now, t, lang) : undefined
                 : undefined
             }
           />
         </Orb>
         {repeats && place.d >= 64 && (
           <span
-            title={`Repeats ${repeats}`}
+            title={`${t("Repeats")} ${repeats}`}
             className="glass absolute flex h-5 w-5 items-center justify-center rounded-full text-muted opacity-80"
             style={{ right: place.d * 0.1, top: place.d * 0.1 }}
           >

@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { HelpCircle, Loader2, LogOut } from "lucide-react";
+import { HelpCircle, Loader2, LogOut, MessageSquarePlus } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { SupportButton } from "@/components/SupportButton";
+import { useLang } from "@/context/LanguageProvider";
 
 export function Header({
   summary,
@@ -11,6 +13,7 @@ export function Header({
   photoURL,
   onOpenProfile,
   onOpenHelp,
+  onOpenFeedback,
   onSignOut,
 }: {
   summary: string;
@@ -18,8 +21,10 @@ export function Header({
   photoURL?: string | null;
   onOpenProfile: () => void;
   onOpenHelp: () => void;
+  onOpenFeedback: () => void;
   onSignOut: () => Promise<void>;
 }) {
+  const { t } = useLang();
   const [busy, setBusy] = useState(false);
   return (
     <header className="sticky top-0 z-30 border-b border-line bg-background/70 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
@@ -33,11 +38,22 @@ export function Header({
         </p>
 
         <div className="flex shrink-0 items-center gap-2">
+          <SupportButton />
+          <button
+            type="button"
+            onClick={onOpenFeedback}
+            aria-label={t("Feedback")}
+            title={t("Feedback")}
+            className="glass flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs text-muted transition hover:text-foreground"
+          >
+            <MessageSquarePlus className="h-4 w-4" />
+            <span className="hidden xl:inline">{t("Feedback")}</span>
+          </button>
           <button
             type="button"
             onClick={onOpenHelp}
-            aria-label="Show the tutorial"
-            title="How BubbleSchedule works"
+            aria-label={t("Help")}
+            title={t("Help")}
             className="glass flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:text-foreground"
           >
             <HelpCircle className="h-4 w-4" />
@@ -46,7 +62,7 @@ export function Header({
           <button
             type="button"
             onClick={onOpenProfile}
-            aria-label="Open profile"
+            aria-label={t("Profile")}
             title={name}
             className="glass flex h-9 items-center gap-2 rounded-full pl-1 pr-1 text-sm text-muted transition hover:text-foreground lg:pr-3"
           >
@@ -69,7 +85,7 @@ export function Header({
             className="glass flex h-9 items-center gap-1.5 rounded-full px-3 text-xs text-muted transition hover:text-foreground disabled:opacity-60"
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
-            <span className="hidden sm:inline">Sign out</span>
+            <span className="hidden sm:inline">{t("Sign out")}</span>
           </button>
         </div>
       </div>

@@ -1,21 +1,33 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { MicButton } from "@/components/MicButton";
 import { Sheet } from "@/components/Sheet";
 import { PacingSelector } from "@/components/PacingSelector";
+import { DeadlineField } from "@/components/DeadlineField";
 import { RecurrencePicker } from "./RecurrencePicker";
+import { useLang } from "@/context/LanguageProvider";
 import { DECOMPOSE_AT_MIN } from "@/lib/subtasks";
-import { detectPacing, PACING_META, parseSplitRequest } from "@/lib/pacing";
+import { detectPacing, parseSplitRequest } from "@/lib/pacing";
 import type { NewTaskInput } from "@/hooks/useTasks";
-import { describeSuggestion, suggestDuration } from "@/lib/history";
+import { suggestDuration } from "@/lib/history";
 import type { HistoryRecord, Pacing, Recurrence } from "@/types";
 import { DurationFields } from "@/components/DurationFields";
 import { clampDuration, splitMinutes, totalMinutes } from "@/lib/duration";
 
 const field =
   "glass w-full rounded-2xl px-4 py-2.5 text-sm outline-none transition focus:border-[rgb(var(--glow-a))] placeholder:text-muted";
+
+/** Wait for the user to pause typing before the (cheap but non-trivial) title analysis runs. */
+function useDebounced<T>(value: T, ms: number): T {
+  const [v, setV] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setV(value), ms);
+    return () => clearTimeout(id);
+  }, [value, ms]);
+  return v;
+}
 
 function defaultDeadline(): string {
   const d = new Date();
@@ -38,8 +50,9 @@ export function TaskFormSheet({
   history: readonly HistoryRecord[];
   defaultPacing: Pacing;
 }) {
+  const { t } = useLang();
   return (
-    <Sheet open={open} onClose={onClose} title="New bubble">
+    <Sheet open={open} onClose={onClose} title={t("New bubble")}>
       {/* Remounts on each open, so the form resets and gets a fresh default deadline. */}
       {open && <Form onClose={onClose} onSubmit={onSubmit} history={history} defaultPacing={defaultPacing} />}
     </Sheet>
@@ -57,8 +70,10 @@ function Form({
   history: readonly HistoryRecord[];
   defaultPacing: Pacing;
 }) {
+  const { t } = useLang();
   const [title, setTitle] = useState("");
   const [deadline, setDeadline] = useState(defaultDeadline);
+  const [noDeadline, setNoDeadline] = useState(false);
   const [hours, setHours] = useState("");
   const [mins, setMins] = useState("");
   const [durationTouched, setDurationTouched] = useState(false);
@@ -67,97 +82,91 @@ function Form({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Prefill the duration from similar tasks the user finished before, until they type their own.
-  const suggestion = useMemo(() => suggestDuration(title, history), [title, history]);
+  // Typing only updates `title`. Everything that analyses it (history lookup, pacing words, "split into N parts")
+  // runs on a debounced copy, at low priority, so keystrokes are never blocked by it.
+  const settled = useDeferredValue(useDebounced(title, 350));
+  const suggestion = useMemo(() => suggestDuration(settled, history), [settled, history]);
+  const detected = useMemo(() => detectPacing(settled), [settled]);
+  const requestedParts = useMemo(() => parseSplitRequest(settled) ?? undefined, [settled]);
+
   const suggested = splitMinutes(suggestion?.minutes);
   const shownHours = durationTouched ? hours : suggested.hours;
   const shownMins = durationTouched ? mins : suggested.minutes;
   const totalMin = totalMinutes(shownHours, shownMins); // blank both → undefined → the AI estimates
   const anchorDow = new Date(deadline).getDay();
-  // "chill", "все підряд", "розбий на 3 частини"… typed or spoken in the title set the pacing, until picked by hand.
-  const detected = detectPacing(title);
   const pacing: Pacing = pacingPick ?? detected ?? defaultPacing;
-  const requestedParts = parseSplitRequest(title) ?? undefined;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const when = new Date(deadline);
-    if (!title.trim()) return setError("Give your bubble a title.");
-    if (Number.isNaN(when.getTime())) return setError("Pick a deadline.");
+    if (!title.trim()) return setError(t("Give your bubble a title."));
+    if (!noDeadline && Number.isNaN(when.getTime())) return setError(t("Pick a deadline."));
     setBusy(true);
     setError(null);
     try {
       await onSubmit({
         title,
-        deadline: when.toISOString(),
+        deadline: noDeadline ? undefined : when.toISOString(),
         durationMin: totalMin ? clampDuration(totalMin) : undefined,
-        recurrence: recurrence ?? undefined,
+        recurrence: noDeadline ? undefined : (recurrence ?? undefined),
         pacing,
-        requestedParts,
+        requestedParts: parseSplitRequest(title) ?? requestedParts,
       });
       onClose();
     } catch {
-      setError("Couldn't save the bubble. Please try again.");
+      setError(t("Couldn't save. Please try again."));
       setBusy(false);
     }
   }
+
+  const splitAt = DECOMPOSE_AT_MIN[pacing];
+  const hint = requestedParts
+    ? t("Will be split into {n} parts", { n: requestedParts })
+    : pacing !== "locked" && splitAt && (totalMin ?? 0) >= splitAt
+      ? t("Will be split into parts")
+      : null;
 
   return (
     <form onSubmit={submit} className="space-y-3">
       <label className="block text-xs text-muted">
         <span className="flex justify-between">
-          <span>Title *</span>
+          <span>{t("Title")}</span>
           <span aria-live="polite">{title.length}/100</span>
         </span>
         <div className="mt-1 flex items-center gap-2">
           <input autoFocus required maxLength={100} value={title} onChange={(e) => setTitle(e.target.value.slice(0, 100))}
-            placeholder="Type or tap the mic: “Write project report”" className={`${field} min-w-0 flex-1`} />
-          <MicButton value={title} onChange={(t) => setTitle(t.slice(0, 100))} size="sm" />
+            spellCheck={false} autoComplete="off" autoCorrect="off" autoCapitalize="sentences"
+            placeholder={t("Write project report")} className={`${field} min-w-0 flex-1`} />
+          <MicButton value={title} onChange={(v) => setTitle(v.slice(0, 100))} size="sm" />
         </div>
       </label>
-      <label className="block text-xs text-muted">
-        Deadline *
-        <input required type="datetime-local" value={deadline} onChange={(e) => setDeadline(e.target.value)}
-          className={`${field} mt-1`} />
-      </label>
+      <DeadlineField value={deadline} none={noDeadline} onValue={setDeadline} onNone={setNoDeadline} />
       <div className="text-xs text-muted">
-        <span className="mb-1 block">Duration</span>
+        <span className="mb-1 block">{t("Duration")}</span>
         <DurationFields
           hours={shownHours}
           minutes={shownMins}
           onHours={(v) => { setHours(v); setMins(shownMins); setDurationTouched(true); }}
           onMinutes={(v) => { setMins(v); setHours(shownHours); setDurationTouched(true); }}
         />
+        {hint && <p className="mt-1 text-[11px]">{hint}</p>}
+        {suggestion && !durationTouched && <p className="mt-1 text-[11px]">{t("From {n} similar tasks", { n: suggestion.samples })}</p>}
       </div>
+      {/* Focus intensity lives here only. */}
       <div className="text-xs text-muted">
-        <span className="mb-1 block">Focus intensity</span>
-        <PacingSelector
-          value={pacing}
-          onChange={setPacingPick}
-          note={pacingPick === null && detected ? `Picked up from what you wrote: ${PACING_META[detected].label}` : undefined}
-        />
+        <span className="mb-1 block">{t("Focus intensity")}</span>
+        <PacingSelector value={pacing} onChange={setPacingPick} />
       </div>
-      {(() => {
-        const at = DECOMPOSE_AT_MIN[pacing];
-        if (requestedParts) return <p className="-mt-1 text-xs text-muted">Will be split into {requestedParts} parts, as you asked.</p>;
-        if (pacing === "locked") return <p className="-mt-1 text-xs text-muted">Locked-in tasks stay in one piece; say “split into 3 parts” to break one up.</p>;
-        return at && (totalMin ?? 0) >= at ? (
-          <p className="-mt-1 text-xs text-muted">
-            {at >= 180 ? "3 hours or more" : "90 minutes or more"}: AI will split this into ~1 hour parts and give each a time slot.
-          </p>
-        ) : null;
-      })()}
-      {suggestion && !durationTouched && (
-        <p className="-mt-1 text-xs text-muted">{describeSuggestion(suggestion)}. Edit it if you like.</p>
+      {!noDeadline && (
+        <div className="text-xs text-muted">
+          <span className="mb-1 block">{t("Repeat")}</span>
+          <RecurrencePicker value={recurrence} onChange={setRecurrence} anchorDow={anchorDow} />
+        </div>
       )}
-      <div className="text-xs text-muted">
-        <span className="mb-1 block">Repeat</span>
-        <RecurrencePicker value={recurrence} onChange={setRecurrence} anchorDow={anchorDow} />
-      </div>
       {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
       <button type="submit" disabled={busy}
         className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60">
-        {busy && <Loader2 className="h-4 w-4 animate-spin" />} Add bubble
+        {busy && <Loader2 className="h-4 w-4 animate-spin" />} {t("Add bubble")}
       </button>
     </form>
   );
