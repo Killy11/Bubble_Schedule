@@ -520,4 +520,15 @@ export const UK: Record<string, string> = {
   "We also have a “Support” button: if you like the app, please support us!": "Також у нас є кнопка «Підтримати» — якщо вам подобається програма, підтримайте нас, будь ласка!",
   "You can always come back": "Сюди можна повернутись будь-коли",
   "And don't worry: if anything is unclear, you can always tap here (or open the settings) and watch this tutorial again!": "І не хвилюйтеся: якщо вам щось буде незрозуміло, ви завжди можете натиснути сюди (або зайти в налаштування) і переглянути цей туторіал знову!",
+
+  // Tutorial v4
+  "Your schedule": "Ваш розклад",
+  "Your tasks appear on the timeline by themselves and the schedule updates whenever you add or change a task. To move something to another time, just ask the AI chat.": "Ваші завдання з’являються на стрічці самі, а розклад оновлюється щоразу, коли ви додаєте чи змінюєте завдання. Щоб перенести щось на інший час, просто попросіть про це ШІ-чат.",
+  "Your account": "Ваш акаунт",
+  "Here you see your account, and you can turn on notifications for task starts and for the timer finishing.": "Тут у профілі відображається ваш акаунт, а також тут можна увімкнути сповіщення про початок завдань і завершення таймера.",
+  "Theme and feedback": "Тема і відгуки",
+  "Here you can switch between the light and the dark theme, and write us an idea or a remark with the “Feedback” button.": "Тут можна перемикати світлу або темну тему оформлення, а також написати нам ідею чи зауваження через кнопку «Відгуки».",
+  "There is also a “Support” button here: if you like the app, please support us!": "Також тут є кнопка «Підтримати» — якщо вам подобається програма, підтримайте нас, будь ласка!",
+  "And don't worry: if you forget something or it is unclear, you can always tap here, or in your profile, to watch the tutorial again!": "І не хвилюйтеся: якщо щось забудеться або буде незрозуміло, ви завжди можете натиснути сюди або в профілі, щоб переглянути туторіал знову!",
+  Theme: "Тема",
 };

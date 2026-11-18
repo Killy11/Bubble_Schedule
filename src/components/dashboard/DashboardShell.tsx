@@ -106,6 +106,8 @@ export function DashboardShell() {
     stopBubblePop();
   };
   const [tourOpen, setTourOpen] = useState(false);
+  // Ids of the bubbles that existed when the tutorial started: the one created afterwards is the tutorial's own.
+  const [tutorialBaseline, setTutorialBaseline] = useState<ReadonlySet<string> | null>(null);
   const [supportPromptOpen, setSupportPromptOpen] = useState(false);
   // New tasks (form, chat) default to Balanced; the form's Focus intensity picks per task.
   const defaultPacing = "balanced" as const;
@@ -289,20 +291,34 @@ export function DashboardShell() {
   }, [dashboardReady, tourOpen, autoTour]);
 
   /** The welcome question for a new account. Either answer is remembered (device and profile), so it is asked once. */
+  /** Start (or replay) the tutorial from the very beginning, whatever is on screen and however many bubbles exist. */
+  const startTutorial = () => {
+    closeDialogs();
+    setProfileOpen(false);
+    setFeedbackOpen(false);
+    setTab("bubbles");
+    setTutorialBaseline(new Set(active.map((x) => x.id)));
+    setTourOpen(true);
+  };
   const answerWelcome = (wantsTour: boolean) => {
     setTourDismissed(true);
     writeLocal(ONBOARDED_KEY, "1");
     if (!wantsTour) writeLocal(TUTORIAL_KEY, "1");
     if (uid) markOnboardingComplete(uid).catch((e) => console.warn("onboarding flag:", e));
-    if (wantsTour) setTourOpen(true);
+    if (wantsTour) startTutorial();
   };
   const closeTour = () => {
     setTourOpen(false);
+    setTutorialBaseline(null);
     setTourDismissed(true);
     writeLocal(ONBOARDED_KEY, "1");
     writeLocal(TUTORIAL_KEY, "1"); // never auto-launches again; replay from ? or the profile
     if (uid) markOnboardingComplete(uid).catch((e) => console.warn("onboarding flag:", e));
   };
+  // The bubble created while the tutorial is running (the newest one that was not there at the start).
+  const tutorialBubbleId = tutorialBaseline
+    ? [...active].filter((x) => !tutorialBaseline.has(x.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.id ?? null
+    : null;
   // A timer that is running stays visible on every tab and with every window closed. Its state lives on the task in
   // Firestore (startedAt + accumulatedSeconds), so it also survives tab switches and reloads.
   const runningTasks = active.filter((x) => !!x.startedAt);
@@ -503,7 +519,7 @@ export function DashboardShell() {
         name={user.displayName || user.email || "You"}
         photoURL={user.photoURL}
         onOpenProfile={() => setProfileOpen(true)}
-        onOpenHelp={() => setTourOpen(true)}
+        onOpenHelp={startTutorial}
         onOpenFeedback={() => setFeedbackOpen(true)}
         onSignOut={async () => {
           await signOut();
@@ -532,13 +548,6 @@ export function DashboardShell() {
           <div className="mb-3 flex items-center justify-end">
             <div className="flex gap-2">
               <button
-                onClick={() => send("auto-schedule")}
-                disabled={pending || active.length === 0}
-                className="flex items-center gap-1.5 rounded-full glass px-4 py-2 text-xs font-medium text-foreground transition hover:brightness-125 disabled:opacity-50"
-              >
-                <Sparkles className="h-3.5 w-3.5" /> {pending ? t("Planning…") : t("Auto-schedule")}
-              </button>
-              <button
                 onClick={() => setFormOpen(true)}
                 data-tour="add-task-btn"
                 className="flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background transition hover:opacity-90"
@@ -557,6 +566,7 @@ export function DashboardShell() {
                 now={now}
                 poppingIds={popping}
                 onOpen={setOpenId} // a tap opens the Task modal; complete and the timer live there
+                tutorialBubbleId={tutorialBubbleId}
               />
             )}
             {!tasksLoading && active.length === 0 && !error && (
@@ -599,8 +609,6 @@ export function DashboardShell() {
                 onOpenTask={setOpenId}
                 onOpenPart={(taskId, subId) => setOpenPart({ taskId, subId })}
                 onToggleSubtask={(task, sub) => void toggleSubtaskFlow(task, sub)}
-                onAutoSchedule={() => send("auto-schedule")}
-                autoScheduleDisabled={pending || active.length === 0}
                 onAdjust={(task, d) => void adjustRemaining(task, d).catch(() => toast({ title: t("Couldn't save. Please try again.") }))}
                 onToggleTimer={toggleTimer}
                 onComplete={(taskId) => {
@@ -630,7 +638,7 @@ export function DashboardShell() {
         ))}
       </nav>
 
-      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onOpenFeedback={() => setFeedbackOpen(true)} onShowTutorial={() => { setProfileOpen(false); setTourOpen(true); }} />
+      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onOpenFeedback={() => setFeedbackOpen(true)} onShowTutorial={startTutorial} />
       <SupportPrompt
         open={supportPromptOpen}
         onClose={() => setSupportPromptOpen(false)}

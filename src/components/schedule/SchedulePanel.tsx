@@ -33,8 +33,6 @@ export function SchedulePanel({
   onOpenPart,
   onEditBlockTime,
   onToggleSubtask,
-  onAutoSchedule,
-  autoScheduleDisabled,
   onAdjust,
   onToggleTimer,
 }: {
@@ -53,9 +51,6 @@ export function SchedulePanel({
   onOpenPart: (taskId: string, subId: string) => void;
   onEditBlockTime: (blockId: string) => void;
   onToggleSubtask: (task: Task, sub: Subtask) => void;
-  /** Lay the open tasks out in the free slots (the AI auto-schedule). */
-  onAutoSchedule: () => void;
-  autoScheduleDisabled: boolean;
   /** Add / take away planned time in 15-minute steps, without opening the editor. */
   onAdjust: (task: Task, deltaMin: number) => void;
   onToggleTimer: (task: Task) => void;
@@ -122,16 +117,6 @@ export function SchedulePanel({
           <span className={`text-sm font-semibold tabular-nums ${overdueCount > 0 ? "text-red-500" : ""}`}>{overdueCount}</span>
         </button>
       </div>
-
-      <button
-        type="button"
-        data-tour="auto-schedule-btn"
-        onClick={onAutoSchedule}
-        disabled={autoScheduleDisabled}
-        className="glass flex items-center justify-center gap-1.5 rounded-2xl px-3 py-2.5 text-sm font-medium transition hover:brightness-125 disabled:opacity-50"
-      >
-        <Sparkles className="h-4 w-4" /> {t("Auto-schedule")}
-      </button>
 
       {change && (
         <section className="glass rounded-2xl p-4">

@@ -8,6 +8,7 @@ import { Sheet } from "@/components/Sheet";
 import { PacingSelector } from "@/components/PacingSelector";
 import { DeadlineField } from "@/components/DeadlineField";
 import { RecurrencePicker } from "./RecurrencePicker";
+import { isTutorialActive } from "@/lib/tutorialLock";
 import { useLang } from "@/context/LanguageProvider";
 import { DECOMPOSE_AT_MIN } from "@/lib/subtasks";
 import { detectPacing, parseSplitRequest } from "@/lib/pacing";
@@ -155,7 +156,14 @@ function Form({
       : null;
 
   return (
-    <form onSubmit={submit} className="space-y-3">
+    <form
+      onSubmit={submit}
+      // While the tutorial runs, Enter inside a field must not submit: the form is sent only by pressing Create.
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && isTutorialActive() && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault();
+      }}
+      className="space-y-3"
+    >
       <label data-tour="field-title" className="block text-xs text-muted">
         <span className="flex justify-between">
           <span>{t("Title")}</span>

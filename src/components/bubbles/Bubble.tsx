@@ -65,6 +65,7 @@ export function Bubble({
   now,
   index,
   onOpen,
+  tutorialTarget = false,
   popping = false,
 }: {
   task: Task;
@@ -73,6 +74,8 @@ export function Bubble({
   index: number;
   /** A tap or click opens the Task modal (complete, timer, and settings live there). */
   onOpen: (id: string) => void;
+  /** The bubble the user created during the tutorial (the guide asks them to tap it). */
+  tutorialTarget?: boolean;
   popping?: boolean;
 }) {
   const reduced = useReducedMotion();
@@ -125,7 +128,7 @@ export function Bubble({
       <motion.button
         type="button"
         onClick={() => onOpen(task.id)}
-        data-tour={index === 0 ? "first-bubble" : undefined} // the clickable element itself, not a wrapper
+        data-tour={tutorialTarget ? "tutorial-target-bubble" : undefined} // the clickable element itself, not a wrapper
         disabled={popping}
         aria-label={`${task.title}, ${formatDeadline(task.deadline, now, t, lang)}${repeats ? `, ${t("repeats")} ${repeats}` : ""}${parts ? `, ${progressLabel(task, now, t, lang)}` : ""}`}
         animate={{ y: [0, -amp, 0], x: [0, amp / 2, 0] }}

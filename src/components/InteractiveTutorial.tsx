@@ -34,9 +34,11 @@ interface Step {
   pinTop?: boolean;
   /** Open this drawer for the step (and close it again afterwards). */
   drawer?: "profile";
+  /** The target selector lists several controls: spotlight them all together (their bounding box). */
+  union?: boolean;
 }
 
-const steps = (t: TFn, isDesktop: boolean, narrow: boolean): Step[] => [
+const steps = (t: TFn, isDesktop: boolean): Step[] => [
   {
     id: "add", target: '[data-tour="add-task-btn"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "create",
     title: t("Let's start with your first bubble!"),
@@ -68,7 +70,7 @@ const steps = (t: TFn, isDesktop: boolean, narrow: boolean): Step[] => [
     body: t("Done! Tap “Create”: your first bubble appears on the canvas."),
   },
   {
-    id: "bubble", target: '[data-tour="first-bubble"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "task", closeDialogs: true,
+    id: "bubble", target: '[data-tour="tutorial-target-bubble"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "task", closeDialogs: true,
     title: t("Tap your bubble"),
     body: t("Tap right on the bubble you created to open its timer window."),
   },
@@ -109,34 +111,32 @@ const steps = (t: TFn, isDesktop: boolean, narrow: boolean): Step[] => [
     body: t("Write or dictate a message right now, for example “Put my task at 4 PM” or “Add coffee for 15 min”, send it and watch the AI answer. Press Next when you're done."),
   },
   {
-    id: "schedule", target: '[data-tour="auto-schedule-btn"]', tab: "schedule",
-    title: t("Schedule and Auto-schedule"),
-    body: t("Whenever you add or change a task, your schedule updates. There is also an “Auto-schedule” button that places your tasks into the free slots by itself. And if you want something your own way, just ask the AI chat."),
+    id: "schedule", target: '[data-tour="schedule-view"]', tab: "schedule",
+    title: t("Your schedule"),
+    body: t("Your tasks appear on the timeline by themselves and the schedule updates whenever you add or change a task. To move something to another time, just ask the AI chat."),
   },
   {
-    id: "account", target: '[data-tour="settings-btn"]', tab: "bubbles",
-    title: t("Account and settings"),
-    body: t("In your account and settings you manage your profile, set up notifications for task starts and the timer, and adapt the app to yourself."),
+    id: "account", tab: "bubbles", drawer: "profile", insideModal: true, union: true,
+    target: '[data-tour-modal="profile"] [data-tour="profile-header"], [data-tour-modal="profile"] [data-tour="profile-notifications"]',
+    title: t("Your account"),
+    body: t("Here you see your account, and you can turn on notifications for task starts and for the timer finishing."),
   },
   {
-    id: "theme", target: '[data-tour="theme-toggle"]', tab: "bubbles",
-    title: t("Light or dark theme"),
-    body: t("Here you can switch between the light and the dark theme."),
+    id: "theme", tab: "bubbles", drawer: "profile", insideModal: true, union: true,
+    target: '[data-tour-modal="profile"] [data-tour="theme-toggle"], [data-tour-modal="profile"] [data-tour="feedback-btn"]',
+    title: t("Theme and feedback"),
+    body: t("Here you can switch between the light and the dark theme, and write us an idea or a remark with the “Feedback” button."),
   },
   {
-    id: "feedback", target: '[data-tour="feedback-btn"]', tab: "bubbles", drawer: narrow ? "profile" : undefined,
-    title: t("Feedback"),
-    body: t("Leave a review or an idea with the “Feedback” button."),
-  },
-  {
-    id: "support", target: '[data-tour="support-btn"]', tab: "bubbles",
+    id: "support", tab: "bubbles", drawer: "profile", insideModal: true,
+    target: '[data-tour-modal="profile"] [data-tour="support-btn"]',
     title: t("Support us"),
-    body: t("We also have a “Support” button: if you like the app, please support us!"),
+    body: t("There is also a “Support” button here: if you like the app, please support us!"),
   },
   {
     id: "help", target: '[data-tour="help-btn"]', tab: "bubbles",
     title: t("You can always come back"),
-    body: t("And don't worry: if anything is unclear, you can always tap here (or open the settings) and watch this tutorial again!"),
+    body: t("And don't worry: if you forget something or it is unclear, you can always tap here, or in your profile, to watch the tutorial again!"),
   },
 ];
 
@@ -174,16 +174,14 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileO
   const { t } = useLang();
   // The layout switches at Tailwind's lg (1024 px): that is where the canvas, Schedule and chat share the screen.
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches);
-  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.innerWidth < 640); // header hides Feedback
   useEffect(() => {
     const on = () => {
       setIsDesktop(window.matchMedia("(min-width: 1024px)").matches);
-      setNarrow(window.innerWidth < 640);
     };
     window.addEventListener("resize", on);
     return () => window.removeEventListener("resize", on);
   }, []);
-  const list = useMemo(() => steps(t, isDesktop, narrow), [t, isDesktop, narrow]);
+  const list = useMemo(() => steps(t, isDesktop), [t, isDesktop]);
 
   // While the tour runs, app dialogs ignore backdrop clicks and Escape.
   useEffect(() => {
@@ -248,6 +246,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileO
 
   // Measure the target and keep it current (it may appear a moment after a tab switch; the layout can also change).
   const target = step.target;
+  const unionStep = !!step.union;
   useEffect(() => {
     const measure = () => {
       const modal = document.querySelector("[data-tour-modal]") as HTMLElement | null;
@@ -259,8 +258,9 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileO
       });
       setView((v) => (v.w === window.innerWidth && v.h === window.innerHeight ? v : { w: window.innerWidth, h: window.innerHeight }));
       // `target` may list several selectors (e.g. phone nav vs desktop tabs): use the first one that is actually visible.
-      const el = target ? ([...document.querySelectorAll(target)] as HTMLElement[]).find((e) => e.getBoundingClientRect().width > 1) ?? null : null;
-      const r = el?.getBoundingClientRect();
+      const visible = target ? ([...document.querySelectorAll(target)] as HTMLElement[]).map((e) => e.getBoundingClientRect()).filter((b) => b.width > 1) : [];
+      // One control, or (union steps) the bounding box of every listed control.
+      const r = visible.length === 0 ? undefined : unionStep ? { left: Math.min(...visible.map((b) => b.left)), top: Math.min(...visible.map((b) => b.top)), width: Math.max(...visible.map((b) => b.right)) - Math.min(...visible.map((b) => b.left)), height: Math.max(...visible.map((b) => b.bottom)) - Math.min(...visible.map((b) => b.top)) } : visible[0];
       if (!r || r.width < 2 || r.height < 2) return setBox((b) => (b === null ? b : null));
       const next = { x: r.left - PAD, y: r.top - PAD, w: r.width + PAD * 2, h: r.height + PAD * 2 };
       setBox((b) => (b && Math.abs(b.x - next.x) < 0.5 && Math.abs(b.y - next.y) < 0.5 && Math.abs(b.w - next.w) < 0.5 && Math.abs(b.h - next.h) < 0.5 ? b : next));
@@ -269,7 +269,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileO
     el0?.scrollIntoView({ block: "nearest" });
     // A bubble on the canvas springs into place and drifts, so while a step points at one the rectangle is
     // re-measured every animation frame; other targets are still, so a slower tick is enough.
-    const followsBubble = !!target && target.includes("first-bubble");
+    const followsBubble = !!target && target.includes("tutorial-target-bubble");
     let raf = 0;
     const loop = () => {
       measure();
@@ -286,7 +286,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileO
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
     };
-  }, [target]);
+  }, [target, unionStep]);
   useLayoutEffect(() => {
     if (cardRef.current) setCardH(cardRef.current.offsetHeight);
   }, [i, box, t]);

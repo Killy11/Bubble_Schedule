@@ -16,12 +16,15 @@ export function BubbleCanvas({
   tasks,
   now,
   onOpen,
+  tutorialBubbleId,
   poppingIds,
 }: {
   tasks: Task[];
   now: number;
   /** A tap or click on a bubble opens the Task modal. */
   onOpen: (id: string) => void;
+  /** Id of the bubble created during the tutorial. */
+  tutorialBubbleId?: string | null;
   /** Bubbles playing their pop animation (task being completed). */
   poppingIds?: ReadonlySet<string>;
 }) {
@@ -66,6 +69,7 @@ export function BubbleCanvas({
               now={now}
               index={i}
               onOpen={onOpen}
+              tutorialTarget={t.id === tutorialBubbleId}
               popping={poppingIds?.has(t.id) ?? false}
             />
           ) : null;

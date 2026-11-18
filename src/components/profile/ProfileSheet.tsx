@@ -13,6 +13,7 @@ import { useUserProfile } from "@/hooks/useUserProfile";
 import { useAuth } from "@/context/AuthProvider";
 import { useInstall } from "@/context/InstallProvider";
 import { useNotifications } from "@/context/NotificationProvider";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { SupportButton } from "@/components/SupportButton";
 import { useLang } from "@/context/LanguageProvider";
 
@@ -143,7 +144,7 @@ function NotificationsCard({
   }
 
   return (
-    <div className="space-y-2">
+    <div data-tour="profile-notifications" className="space-y-2">
       <p className="flex items-center gap-1.5 text-sm font-medium"><BellRing className="h-4 w-4" /> {t("Notifications")}</p>
 
       {permission === "denied" ? (
@@ -253,9 +254,9 @@ export function ProfileSheet({ open, onClose, onOpenFeedback, onShowTutorial }: 
   const initial = (name || user?.email || "?")[0].toUpperCase();
 
   return (
-    <Sheet open={open} onClose={onClose} title={t("Profile")}>
+    <Sheet open={open} onClose={onClose} title={t("Profile")} tourId="profile">
       <div className="space-y-5">
-        <div className="flex items-center gap-4">
+        <div data-tour="profile-header" className="flex items-center gap-4">
           {user?.photoURL ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={user.photoURL} alt="" referrerPolicy="no-referrer" className="h-14 w-14 rounded-full object-cover" />
@@ -294,6 +295,11 @@ export function ProfileSheet({ open, onClose, onOpenFeedback, onShowTutorial }: 
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm font-medium">{t("Theme")}</p>
+          <ThemeToggle />
         </div>
 
         {user && (
@@ -347,7 +353,7 @@ export function ProfileSheet({ open, onClose, onOpenFeedback, onShowTutorial }: 
             />
           )}
 
-          <button type="button" onClick={onShowTutorial} className={`${primaryBtn} glass hover:brightness-125`}>
+          <button type="button" data-tour="replay-tutorial-btn" onClick={onShowTutorial} className={`${primaryBtn} glass hover:brightness-125`}>
             {t("🎓 Show the interactive guide")}
           </button>
           <SupportButton variant="block" />
