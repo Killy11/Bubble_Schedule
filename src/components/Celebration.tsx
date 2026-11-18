@@ -7,9 +7,15 @@ import { useLang } from "@/context/LanguageProvider";
 const DURATION_MS = 3800;
 const FIRE_AT = 0.45; // seconds after mount: the poppers go off
 const FLOAT_S = 3.0; // how long the bubbles live after the bang
-const POPPER_W = 140;
-const POPPER_H = 182;
-const LEAN_DEG = 32; // poppers point diagonally inward
+const LEAN_DEG = 38; // poppers point diagonally inward
+const POPPER_MS = 2200; // slide in, fire, slide back out
+
+/** Popper size and how far its base hangs off the corner, by screen width (phones: ~96px, larger: ~144px). */
+function popperLayout(vw: number) {
+  const phone = vw < 640;
+  const w = phone ? 96 : 144;
+  return { w, h: Math.round(w * 1.3), off: phone ? 24 : 32 };
+}
 const NEON = ["#22d3ee", "#a78bfa", "#f472b6", "#4ade80", "#facc15", "#38bdf8", "#fb7185"];
 const CONFETTI_COLORS = ["#f43f5e", "#f59e0b", "#facc15", "#22c55e", "#38bdf8", "#8b5cf6", "#ec4899", "#ffffff"];
 
@@ -25,6 +31,9 @@ const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 interface Popper {
   side: "left" | "right";
+  w: number;
+  h: number;
+  off: number;
   /** Lean from vertical in degrees (CSS rotation: + clockwise). */
   theta: number;
   /** Where the bang comes out, in viewport pixels. */
@@ -32,12 +41,14 @@ interface Popper {
 }
 
 function makePoppers(vw: number, vh: number): Popper[] {
-  const margin = 10;
-  const reach = POPPER_H * 0.77; // pivot (the tip) → mouth
+  const { w, h, off } = popperLayout(vw);
+  const reach = h * 0.77; // pivot (the tip, hidden off-screen) → open mouth
   return ([["left", LEAN_DEG], ["right", -LEAN_DEG]] as const).map(([side, theta]) => {
-    const px = side === "left" ? margin + POPPER_W / 2 : vw - margin - POPPER_W / 2;
+    // The box hangs `off` px past the corner, so its base stays hidden and only the upper cone peeks in.
+    const px = side === "left" ? -off + w / 2 : vw + off - w / 2;
+    const py = vh + off;
     const rad = (theta * Math.PI) / 180;
-    return { side, theta, nozzle: { x: px + reach * Math.sin(rad), y: vh - reach * Math.cos(rad) } };
+    return { side, w, h, off, theta, nozzle: { x: px + reach * Math.sin(rad), y: py - reach * Math.cos(rad) } };
   });
 }
 
@@ -120,9 +131,9 @@ function Bubble3D({ f }: { f: Flight }) {
 }
 
 /** A crisp party popper: striped cone, open mouth at the top, streamers and a star poking out. */
-function PartyPopper({ uid }: { uid: string }) {
+function PartyPopper({ uid, w, h }: { uid: string; w: number; h: number }) {
   return (
-    <svg viewBox="0 0 100 130" width={POPPER_W} height={POPPER_H} aria-hidden>
+    <svg viewBox="0 0 100 130" width={w} height={h} aria-hidden>
       <defs>
         <linearGradient id={`${uid}-body`} x1="0" x2="1" y1="0" y2="0">
           <stop offset="0" stopColor="#be123c" />
@@ -158,32 +169,34 @@ function PartyPopper({ uid }: { uid: string }) {
 
 function PopperView({ p, uid }: { p: Popper; uid: string }) {
   const left = p.side === "left";
+  // Tucked behind its corner, it slides diagonally in, recoils as it fires, then slides back out.
+  const hidden = { x: left ? -p.w : p.w, y: p.h };
   return (
     <motion.div
-      className="absolute bottom-0"
+      className="absolute"
       style={{
-        [left ? "left" : "right"]: 10,
-        width: POPPER_W,
-        height: POPPER_H,
+        [left ? "left" : "right"]: -p.off,
+        bottom: -p.off,
+        width: p.w,
+        height: p.h,
         transformOrigin: "50% 100%",
         rotate: p.theta,
       }}
-      initial={{ y: POPPER_H, scale: 0.5, opacity: 0 }}
-      animate={{ y: 0, scale: 1, opacity: 1 }}
-      transition={{ type: "spring", stiffness: 380, damping: 18 }}
+      initial={hidden}
+      animate={{ x: [hidden.x, 0, 0, hidden.x], y: [hidden.y, 0, 0, hidden.y] }}
+      transition={{ duration: POPPER_MS / 1000, times: [0, 0.14, 0.82, 1], ease: ["backOut", "linear", "easeIn"] }}
     >
-      {/* recoil at the bang, then a clean fade-out */}
+      {/* crisp kickback at the bang */}
       <motion.div
         style={{ transformOrigin: "50% 100%" }}
         animate={{
           scale: [1, 1, 0.86, 1.07, 1, 1],
           rotate: [0, 0, left ? -9 : 9, left ? 3 : -3, 0, 0],
-          y: [0, 0, 12, -4, 0, 0],
-          opacity: [1, 1, 1, 1, 1, 0],
+          y: [0, 0, 12, -4, 0, 0], // backward nudge along the barrel
         }}
-        transition={{ duration: 2.6, times: [0, FIRE_AT / 2.6, (FIRE_AT + 0.08) / 2.6, (FIRE_AT + 0.3) / 2.6, 0.62, 1], ease: "easeOut" }}
+        transition={{ duration: 1.4, times: [0, FIRE_AT / 1.4, (FIRE_AT + 0.08) / 1.4, (FIRE_AT + 0.3) / 1.4, 0.8, 1], ease: "easeOut" }}
       >
-        <PartyPopper uid={uid} />
+        <PartyPopper uid={uid} w={p.w} h={p.h} />
       </motion.div>
     </motion.div>
   );
@@ -246,7 +259,7 @@ function Burst({ id, onDone }: { id: number; onDone: () => void }) {
   }, [reduced, setup]);
 
   return (
-    <div aria-hidden className="pointer-events-none fixed inset-0 z-[55] h-screen w-screen overflow-hidden">
+    <div aria-hidden className="pointer-events-none fixed inset-0 z-[55] h-screen w-screen overflow-hidden" /* clips the poppers at the screen edges */>
       {!reduced && (
         <>
           {setup.poppers.map((p) => <PopperView key={p.side} p={p} uid={`pp${id}${p.side}`} />)}
