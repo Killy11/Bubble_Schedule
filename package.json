@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "deploy:firebase": "firebase deploy --only firestore"
   },
   "dependencies": {
     "@google/genai": "^3.3.0",
