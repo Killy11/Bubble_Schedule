@@ -17,7 +17,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { historyConverter, taskConverter, toFirestoreData } from "@/lib/firebase/converters";
-import { MAX_TOTAL_MIN, MIN_REMAINING_MIN, sessionMinutes, sessionSeconds, totalMinutes } from "@/lib/remaining";
+import { MAX_TOTAL_MIN, sessionMinutes, sessionSeconds, totalMinutes } from "@/lib/remaining";
 import { cleanRecurrence, nextOccurrence } from "@/lib/recurrence";
 import { makeHistoryRecord } from "@/lib/history";
 import { oneDayFlagFor, withinOneDay } from "@/lib/oneDay";
@@ -415,9 +415,20 @@ export function useTasks(
   const adjustRemaining = useCallback(
     async (task: Task, deltaMin: number) => {
       if (!uid) return;
-      const total = totalMinutes(task);
-      const next = Math.min(MAX_TOTAL_MIN, Math.max((task.loggedMinutes ?? 0) + MIN_REMAINING_MIN, total + deltaMin));
-      if (next === total && task.durationMin !== undefined) return;
+      const spent = task.loggedMinutes ?? 0;
+      const next = Math.min(MAX_TOTAL_MIN, Math.max(spent, totalMinutes(task) + deltaMin)); // time left stays ≥ 0
+      if (next === totalMinutes(task) && task.durationMin !== undefined) return;
+      await updateDoc(doc(db, "users", uid, "tasks", task.id), { durationMin: next, updatedAt: new Date() });
+    },
+    [uid],
+  );
+
+  /** Set the time left to an exact number of whole minutes (typed by the user). */
+  const setRemaining = useCallback(
+    async (task: Task, minutes: number) => {
+      if (!uid || !Number.isInteger(minutes) || minutes < 0) return;
+      const next = Math.min(MAX_TOTAL_MIN, (task.loggedMinutes ?? 0) + minutes);
+      if (next === totalMinutes(task) && task.durationMin !== undefined) return;
       await updateDoc(doc(db, "users", uid, "tasks", task.id), { durationMin: next, updatedAt: new Date() });
     },
     [uid],
@@ -593,6 +604,7 @@ export function useTasks(
     toggleSubtask,
     updateTask,
     adjustRemaining,
+    setRemaining,
     reschedule,
   };
 }

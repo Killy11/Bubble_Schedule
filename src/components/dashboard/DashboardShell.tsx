@@ -32,7 +32,7 @@ import { BubbleCanvas } from "@/components/bubbles/BubbleCanvas";
 import { POP_MS } from "@/components/bubbles/Bubble";
 import { CompletedSheet } from "@/components/bubbles/CompletedSheet";
 import { RescheduleSheet } from "@/components/bubbles/RescheduleSheet";
-import { OnboardingTour } from "@/components/OnboardingTour";
+import { InteractiveTutorial, TUTORIAL_KEY } from "@/components/InteractiveTutorial";
 import { TaskDetailSheet } from "@/components/bubbles/TaskDetailSheet";
 import { TaskFormSheet } from "@/components/bubbles/TaskFormSheet";
 import { ChatPanel } from "@/components/chat/ChatPanel";
@@ -102,7 +102,7 @@ export function DashboardShell() {
   const [supportPromptOpen, setSupportPromptOpen] = useState(false);
   // New tasks (form, chat) default to Balanced; the form's Focus intensity picks per task.
   const defaultPacing = "balanced" as const;
-  const [tourDismissed, setTourDismissed] = useState(() => readLocal(ONBOARDED_KEY) === "1");
+  const [tourDismissed, setTourDismissed] = useState(() => readLocal(ONBOARDED_KEY) === "1" || readLocal(TUTORIAL_KEY) === "1");
 
   // Look for a custom /sounds/bubble-pop.* once, so the first pop has no delay.
   useEffect(() => {
@@ -150,7 +150,7 @@ export function DashboardShell() {
   );
 
   const {
-    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, confirmTimer,
+    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, confirmTimer, setRemaining,
     startTimer, stopTimer, setRecurrence, updateTask, saveSubtasks, toggleSubtask, reschedule,
   } = useTasks(uid, timezone, now, handleOverdue, handleOneDay);
 
@@ -285,6 +285,7 @@ export function DashboardShell() {
     setTourOpen(false);
     setTourDismissed(true);
     writeLocal(ONBOARDED_KEY, "1");
+    writeLocal(TUTORIAL_KEY, "1"); // never auto-launches again; replay from ? or the profile
     if (uid) markOnboardingComplete(uid).catch((e) => console.warn("onboarding flag:", e));
   };
   const openTask = active.find((t) => t.id === openId) ?? null;
@@ -505,13 +506,14 @@ export function DashboardShell() {
               </button>
               <button
                 onClick={() => setFormOpen(true)}
+                data-tour="add-task-btn"
                 className="flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background transition hover:opacity-90"
               >
                 <Plus className="h-3.5 w-3.5" /> {t("New bubble")}
               </button>
             </div>
           </div>
-          <div ref={canvasHost} className="relative min-h-0 flex-1 overflow-hidden">
+          <div ref={canvasHost} data-tour="bubble-canvas" className="relative min-h-0 flex-1 overflow-hidden">
             <Celebrations bursts={bursts} onDone={(id) => setBursts((b) => b.filter((x) => x.id !== id))} />
             {error ? (
               <p className="absolute inset-0 flex items-center justify-center text-sm text-red-500">{t("Couldn't load your tasks.")}</p>
@@ -591,7 +593,7 @@ export function DashboardShell() {
         ))}
       </nav>
 
-      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onOpenFeedback={() => setFeedbackOpen(true)} />
+      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onOpenFeedback={() => setFeedbackOpen(true)} onShowTutorial={() => { setProfileOpen(false); setTourOpen(true); }} />
       <SupportPrompt
         open={supportPromptOpen}
         onClose={() => setSupportPromptOpen(false)}
@@ -624,7 +626,7 @@ export function DashboardShell() {
         onDelete={(task) => deleteForever([task.id])}
         onClearAll={() => deleteForever(completed.map((x) => x.id))}
       />
-      <OnboardingTour open={tourOpen || autoTour} onClose={closeTour} />
+      <InteractiveTutorial open={tourOpen || autoTour} onClose={closeTour} onSelectTab={setTab} />
       <PartDetailSheet
         task={active.find((x) => x.id === openPart?.taskId) ?? null}
         sub={active.find((x) => x.id === openPart?.taskId)?.subtasks?.find((x) => x.id === openPart?.subId) ?? null}
@@ -654,6 +656,7 @@ export function DashboardShell() {
         onComplete={completeTask}
         onDelete={removeTask}
         onConfirmTimer={confirmTimer}
+        onSetRemaining={(task, m) => setRemaining(task, m)}
         onAdjust={(task, d) => adjustRemaining(task, d)}
         onEditTime={(task) => {
           const block = schedule?.blocks.find((b) => b.taskId === task.id && b.status !== "done");

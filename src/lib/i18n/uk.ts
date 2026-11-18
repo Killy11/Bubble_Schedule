@@ -389,4 +389,23 @@ export const UK: Record<string, string> = {
   "🔔 Enable timer completion notifications": "🔔 Увімкнути сповіщення про завершення таймера",
   "⏰ Time's up": "⏰ Час вийшов!",
   "Timer for “{title}” has finished": "Таймер для завдання «{title}» завершився",
+
+  // Interactive tutorial
+  "Every bubble is a task": "Кожна бульбашка — це завдання",
+  "Bigger bubbles are longer tasks. Colour shows the deadline: red is under a day, yellow is 1–5 days, green is 5+ days or no deadline.": "Більші бульбашки — довші завдання. Колір показує дедлайн: червоний — менше доби, жовтий — 1–5 днів, зелений — 5+ днів або без дедлайну.",
+  "Tap a bubble: timer and quick actions": "Торкніться бульбашки: таймер і швидкі дії",
+  "A tap opens the timer first: run it, tap Credit to log whole minutes (rounded down), adjust the time left with −15 / a number / +15, tap Complete, or open Edit task.": "Дотик спершу відкриває таймер: запустіть його, натисніть «Зарахувати», щоб записати цілі хвилини (округлення вниз), змініть залишок кнопками −15 / числом / +15, натисніть «Виконано» або відкрийте «Редагувати завдання».",
+  "Add a task": "Додайте завдання",
+  "Tap New bubble to create one by hand: a title, a duration in minutes and a deadline. Everything but the title is optional.": "Натисніть «Нова бульбашка», щоб створити завдання вручну: назва, тривалість у хвилинах і дедлайн. Усе, крім назви, необов'язкове.",
+  "AI assistant and voice": "ШІ-асистент і голос",
+  "Type or tap the mic and speak: “send the report tomorrow 5pm”. The AI creates tasks, changes them and plans your day.": "Напишіть або натисніть мікрофон і скажіть: «надіслати звіт завтра о 17:00». ШІ створює й змінює завдання та планує ваш день.",
+  "Your daily schedule": "Ваш розклад на день",
+  "The timeline lists what to do and when, day by day. Overdue and Completed tasks are one tap away at the top.": "Стрічка показує, що й коли робити, день за днем. Прострочені та виконані завдання — одним дотиком угорі.",
+  "Notifications and reminders": "Сповіщення та нагадування",
+  "In your profile you can turn on notifications for task starts and timer endings. On iPhone, add the site to your Home Screen first (Share → Add to Home Screen).": "У профілі можна ввімкнути сповіщення про початок завдань і завершення таймера. На iPhone спершу додайте сайт на екран «Домівка» (Поділитися → На екран «Домівка»).",
+  "You're ready!": "Все готово!",
+  "That's all. You can replay this guide any time from the ? button or your profile.": "Це все. Гід можна переглянути знову кнопкою ? або в профілі.",
+  "Step {a} of {b}": "Крок {a} з {b}",
+  "🚀 Get started": "🚀 Почати роботу",
+  "🎓 Show the interactive guide": "🎓 Показати інтерактивний гід",
 };

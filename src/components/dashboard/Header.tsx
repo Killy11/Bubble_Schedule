@@ -64,6 +64,7 @@ export function Header({
           <button
             type="button"
             onClick={onOpenProfile}
+            data-tour="settings-btn"
             aria-label={t("Profile")}
             title={name}
             className="glass flex h-9 items-center gap-2 rounded-full pl-1 pr-1 text-sm text-muted transition hover:text-foreground lg:pr-3"

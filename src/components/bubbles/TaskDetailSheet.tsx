@@ -46,6 +46,7 @@ export function TaskDetailSheet({
   onStopTimer,
   onConfirmTimer,
   onAdjust,
+  onSetRemaining,
   onSetRecurrence,
   onEdit,
   onEditTime,
@@ -67,6 +68,8 @@ export function TaskDetailSheet({
   onConfirmTimer: (t: Task) => Promise<number>;
   /** Move the time left by whole minutes (±15). */
   onAdjust: (t: Task, deltaMin: number) => Promise<void>;
+  /** Set the time left to an exact whole number of minutes. */
+  onSetRemaining: (t: Task, minutes: number) => Promise<void>;
   onSetRecurrence: (t: Task, r: Recurrence | null) => Promise<void>;
   onEdit: (t: Task, patch: TaskEdit) => Promise<void>;
   /** Open the scheduled-time editor (when the task has a scheduled slot). */
@@ -82,7 +85,7 @@ export function TaskDetailSheet({
       {/* keyed by task: every time a bubble is opened the modal starts on the Timer view */}
       {task && (
         <div className={`hue-${hue}`}>
-          <Body key={task.id} {...{ task, now, onClose, onComplete, onDelete, onStartTimer, onStopTimer, onConfirmTimer, onAdjust, onSetRecurrence, onEdit, onEditTime, splitting, onToggleSubtask, onSaveSubtasks, onSplit }} />
+          <Body key={task.id} {...{ task, now, onClose, onComplete, onDelete, onStartTimer, onStopTimer, onConfirmTimer, onAdjust, onSetRemaining, onSetRecurrence, onEdit, onEditTime, splitting, onToggleSubtask, onSaveSubtasks, onSplit }} />
         </div>
       )}
     </Sheet>
@@ -92,7 +95,7 @@ export function TaskDetailSheet({
 type BodyProps = Omit<Parameters<typeof TaskDetailSheet>[0], "task"> & { task: Task };
 
 function Body({
-  task, now, onClose, onComplete, onDelete, onStartTimer, onStopTimer, onConfirmTimer, onAdjust, onSetRecurrence, onEdit, onEditTime,
+  task, now, onClose, onComplete, onDelete, onStartTimer, onStopTimer, onConfirmTimer, onAdjust, onSetRemaining, onSetRecurrence, onEdit, onEditTime,
   splitting, onToggleSubtask, onSaveSubtasks, onSplit,
 }: BodyProps) {
   const { t, lang } = useLang();
@@ -186,6 +189,7 @@ function Body({
         busy={busy}
         onComplete={() => void run((x) => onComplete(x))}
         onAdjust={onAdjust}
+        onSetRemaining={onSetRemaining}
         onStart={onStartTimer}
         onPause={onStopTimer}
         onConfirm={onConfirmTimer}
@@ -199,14 +203,45 @@ function Body({
   );
 }
 
+/** The time left, in whole minutes: click and type any integer, saved on blur or Enter. */
+function RemainingInput({ task, onSet }: { task: Task; onSet: (t: Task, minutes: number) => Promise<void> }) {
+  const { t } = useLang();
+  const current = remainingMinutes(task);
+  const [draft, setDraft] = useState<string | null>(null); // null = show the live value
+  const commit = async () => {
+    const text = draft;
+    setDraft(null);
+    if (text === null || text.trim() === "") return;
+    if (!/^\d+$/.test(text.trim())) return; // whole minutes only: no decimals, no seconds
+    const n = Number(text.trim());
+    if (n !== current) await onSet(task, n).catch(() => {});
+  };
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-muted">
+      <span className="sr-only">{t("Time left")} ({t("min")})</span>
+      <input
+        type="number" inputMode="numeric" step={1} min={0} max={1440}
+        value={draft ?? String(current)}
+        onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) => e.target.select()}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setDraft(null); }}
+        className="glass h-9 w-16 rounded-xl text-center text-base tabular-nums text-foreground outline-none focus:border-[rgb(var(--glow-a))]"
+      />
+      {t("min")}
+    </label>
+  );
+}
+
 /** Step 1: whole-minute summary, the live MM:SS timer, Start / Pause, Stop & confirm, ±15 min and Complete. */
 function ProgressTimer({
-  task, busy, onComplete, onAdjust, onStart, onPause, onConfirm,
+  task, busy, onComplete, onAdjust, onSetRemaining, onStart, onPause, onConfirm,
 }: {
   task: Task;
   busy: boolean;
   onComplete: () => void;
   onAdjust: (t: Task, deltaMin: number) => Promise<void>;
+  onSetRemaining: (t: Task, minutes: number) => Promise<void>;
   onStart: (t: Task) => Promise<void>;
   onPause: (t: Task) => Promise<void>;
   onConfirm: (t: Task) => Promise<number>;
@@ -281,15 +316,15 @@ function ProgressTimer({
         <p role="status" className="text-center text-xs text-muted">{t("Credited {n} min", { n: credited })}</p>
       )}
 
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex gap-1.5">
-          <button type="button" disabled={pending} onClick={() => act(() => onAdjust(task, -STEP_MIN))} className={small} aria-label={t("{n}m", { n: `−${STEP_MIN}` })}>
-            <Minus className="h-3 w-3" />{STEP_MIN} {t("min")}
-          </button>
-          <button type="button" disabled={pending} onClick={() => act(() => onAdjust(task, STEP_MIN))} className={small} aria-label={t("{n}m", { n: `+${STEP_MIN}` })}>
-            <Plus className="h-3 w-3" />{STEP_MIN} {t("min")}
-          </button>
-        </span>
+      {/* time left: −15 / a whole-minute number you can type / +15 */}
+      <div className="flex items-center justify-center gap-2">
+        <button type="button" disabled={pending} onClick={() => act(() => onAdjust(task, -STEP_MIN))} className={small} aria-label={t("{n}m", { n: `−${STEP_MIN}` })}>
+          <Minus className="h-3 w-3" />{STEP_MIN} {t("min")}
+        </button>
+        <RemainingInput task={task} onSet={onSetRemaining} />
+        <button type="button" disabled={pending} onClick={() => act(() => onAdjust(task, STEP_MIN))} className={small} aria-label={t("{n}m", { n: `+${STEP_MIN}` })}>
+          <Plus className="h-3 w-3" />{STEP_MIN} {t("min")}
+        </button>
       </div>
 
       <button type="button" disabled={busy} onClick={onComplete}

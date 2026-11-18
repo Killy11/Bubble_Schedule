@@ -148,6 +148,7 @@ export function ChatPanel({
 
   return (
     <div
+      data-tour="ai-chat"
       className="flex h-full flex-col"
       onDragOver={(e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
