@@ -315,4 +315,9 @@ export const UK: Record<string, string> = {
   "Attach a file": "Прикріпити файл",
   "Remove file": "Прибрати файл",
   "Estimate this file": "Оціни цей файл",
+
+  // Support prompt
+  "Hi! We are a young team developing this planner. We really need your support to grow the project, launch new features, and make BubbleSchedule even better for you.": "Привіт! Ми молода команда, яка розвиває цей планувальник. Нам дуже потрібна ваша підтримка, щоб розвивати проєкт, запускати нові функції та робити BubbleSchedule ще кращим для вас.",
+  "❤️ Support": "❤️ Підтримати",
+  "Maybe later": "Пізніше",
 };

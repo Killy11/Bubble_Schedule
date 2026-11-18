@@ -10,6 +10,8 @@ import { useToast } from "@/context/ToastProvider";
 import { useLang } from "@/context/LanguageProvider";
 import { Celebrations, type BurstSpec } from "@/components/Celebration";
 import { FeedbackSheet } from "@/components/FeedbackSheet";
+import { SupportPrompt } from "@/components/SupportPrompt";
+import { SUPPORT_URL } from "@/lib/support";
 import { OverdueSheet } from "@/components/bubbles/OverdueSheet";
 import { deadlineMs, isLiveTask, isOverdueTask } from "@/lib/deadline";
 import { pacingOf } from "@/lib/pacing";
@@ -82,6 +84,7 @@ export function DashboardShell() {
   const [bursts, setBursts] = useState<BurstSpec[]>([]);
   const canvasHost = useRef<HTMLDivElement>(null);
   const [tourOpen, setTourOpen] = useState(false);
+  const [supportPromptOpen, setSupportPromptOpen] = useState(false);
   // New tasks (form, chat) default to Balanced; the form's Focus intensity picks per task.
   const defaultPacing = "balanced" as const;
   const [tourDismissed, setTourDismissed] = useState(() => readLocal(ONBOARDED_KEY) === "1");
@@ -204,6 +207,22 @@ export function DashboardShell() {
   // First-run tutorial: a brand-new account (no tasks yet) that hasn't seen it.
   const autoTour =
     !!profile && !profile.hasCompletedOnboarding && !tasksLoading && tasks.length === 0 && !tourDismissed;
+  // One support prompt per open browser tab (sessionStorage), once the dashboard is ready and no tutorial is showing.
+  const dashboardReady = !!uid && !tasksLoading;
+  useEffect(() => {
+    if (!dashboardReady || tourOpen || autoTour) return;
+    const id = setTimeout(() => {
+      try {
+        if (sessionStorage.getItem("bubble_support_prompt_shown")) return;
+        sessionStorage.setItem("bubble_support_prompt_shown", "1");
+      } catch {
+        return; // storage blocked: skip rather than nag on every load
+      }
+      setSupportPromptOpen(true);
+    }, 1200);
+    return () => clearTimeout(id);
+  }, [dashboardReady, tourOpen, autoTour]);
+
   const closeTour = () => {
     setTourOpen(false);
     setTourDismissed(true);
@@ -505,6 +524,14 @@ export function DashboardShell() {
       </nav>
 
       <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onOpenFeedback={() => setFeedbackOpen(true)} />
+      <SupportPrompt
+        open={supportPromptOpen}
+        onClose={() => setSupportPromptOpen(false)}
+        onSupport={() => {
+          setSupportPromptOpen(false);
+          window.open(SUPPORT_URL, "_blank", "noopener,noreferrer"); // same destination as the header ♥ Support button
+        }}
+      />
       <FeedbackSheet open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
       <TaskFormSheet open={formOpen} onClose={() => setFormOpen(false)} onSubmit={addTask} history={history} defaultPacing={defaultPacing} />
       <RescheduleSheet

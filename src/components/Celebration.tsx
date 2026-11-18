@@ -15,13 +15,13 @@ const CONFETTI_COLORS = ["#f43f5e", "#f59e0b", "#facc15", "#22c55e", "#38bdf8", 
 
 /**
  * Popper size and how far it is tucked behind its corner. The offset hangs the base so far outside the
- * canvas that only the top third (nozzle and rim) peeks in at full extension.
+ * canvas that only the upper ~45–50% (cone and nozzle) peeks in at full extension; the base stays hidden.
  */
 function popperLayout() {
   const phone = typeof window !== "undefined" && window.innerWidth < 640;
   const w = phone ? 96 : 144;
   const h = Math.round(w * 1.3);
-  return { w, h, off: Math.round(h * 0.53) }; // ≈ -bottom-14 / -left-14 on phones, ≈ -bottom-24 on desktop
+  return { w, h, off: Math.round(h * 0.42) }; // ≈ -bottom-14 on phones, ≈ -bottom-20 on desktop: about half the popper peeks in
 }
 
 /** Rotating encouragement (keys are translated by the language provider). */
