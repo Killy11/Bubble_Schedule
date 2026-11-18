@@ -96,6 +96,7 @@ export function ChatPanel({
   const [files, setFiles] = useState<File[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [listening, setListening] = useState(false); // dictating: keep the newest words in view
   const [sent, setSent] = useState(0); // bumps on submit, which also stops dictation
   const endRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -116,7 +117,9 @@ export function ChatPanel({
     const h = Math.min(el.scrollHeight, MAX_TEXTAREA_PX);
     el.style.height = `${h}px`;
     el.style.overflowY = el.scrollHeight > MAX_TEXTAREA_PX ? "auto" : "hidden";
-  }, [text]);
+    // Dictation updates the text programmatically (every interim and final result): follow it to the last line.
+    if (listening) el.scrollTop = el.scrollHeight;
+  }, [text, listening]);
 
   function addFiles(list: File[]) {
     if (list.length === 0) return;
@@ -227,7 +230,7 @@ export function ChatPanel({
             className="glass min-h-10 min-w-0 flex-1 resize-none rounded-2xl px-4 py-2.5 text-sm leading-5 outline-none placeholder:text-muted focus:border-[rgb(var(--glow-a))]"
             style={{ overflowY: "hidden" }}
           />
-          <MicButton value={text} onChange={(v) => setText(v.slice(0, 1000))} stopKey={sent} fixedLang={lang === "uk" ? "uk-UA" : "en-US"} />
+          <MicButton value={text} onChange={(v) => setText(v.slice(0, 1000))} stopKey={sent} onListeningChange={setListening} fixedLang={lang === "uk" ? "uk-UA" : "en-US"} />
           {pending ? (
             <button
               type="button"

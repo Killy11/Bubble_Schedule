@@ -11,7 +11,7 @@ import { useLang } from "@/context/LanguageProvider";
 import { Celebrations, type BurstSpec } from "@/components/Celebration";
 import { FeedbackSheet } from "@/components/FeedbackSheet";
 import { SupportPrompt } from "@/components/SupportPrompt";
-import { playBubblePop, preloadBubblePop } from "@/lib/bubblePopSound";
+import { playBubblePop, preloadBubblePop, stopBubblePop } from "@/lib/bubblePopSound";
 import { useSupport } from "@/context/SupportProvider";
 import { OverdueSheet } from "@/components/bubbles/OverdueSheet";
 import { deadlineMs, isLiveTask, isOverdueTask } from "@/lib/deadline";
@@ -86,6 +86,15 @@ export function DashboardShell() {
   const [bursts, setBursts] = useState<BurstSpec[]>([]);
   const canvasHost = useRef<HTMLDivElement>(null);
   const lastCelebration = useRef(0);
+  // Tasks that already celebrated: a task celebrates once per completion, and only when the user (or the AI) completes it
+  // (never because a snapshot flipped its status). Undo / Restore removes it, so completing it again celebrates again.
+  const celebratedIds = useRef(new Set<string>());
+  /** Stop everything celebratory right now (Undo): bursts, particles, poppers, sound. */
+  const cancelCelebration = () => {
+    setBursts([]); // unmounting a burst clears its timers and resets its confetti canvas
+    lastCelebration.current = 0;
+    stopBubblePop();
+  };
   const [tourOpen, setTourOpen] = useState(false);
   const [supportPromptOpen, setSupportPromptOpen] = useState(false);
   // New tasks (form, chat) default to Balanced; the form's Focus intensity picks per task.
@@ -291,6 +300,7 @@ export function DashboardShell() {
   }
 
   async function restoreCompleted(task: Task) {
+    celebratedIds.current.delete(task.id);
     await restoreTask(task);
     await markTaskBlocksPlanned(task.id).catch(() => {});
     toast({ title: t("Task restored"), body: task.title });
@@ -325,7 +335,8 @@ export function DashboardShell() {
     // (its box is 0×0 then), so nothing plays there.
     const box = canvasHost.current?.getBoundingClientRect();
     // One celebration per ~3 s: bulk or rapid completions never stack poppers or overlapping particle bursts.
-    if (celebrate && box && box.width > 0 && box.height > 0 && Date.now() - lastCelebration.current > 3000) {
+    if (celebrate && !celebratedIds.current.has(task.id) && box && box.width > 0 && box.height > 0 && Date.now() - lastCelebration.current > 3000) {
+      celebratedIds.current.add(task.id);
       lastCelebration.current = Date.now();
       setBursts((b) => [...b, { id: Date.now() + Math.random(), w: Math.round(box.width), h: Math.round(box.height) }]);
     }
@@ -338,6 +349,8 @@ export function DashboardShell() {
         action: {
           label: t("Undo"),
           onClick: () => {
+            cancelCelebration();
+            celebratedIds.current.delete(task.id);
             Promise.all([undoComplete(undo), markTaskBlocksPlanned(task.id)]).catch((e) => {
               console.warn("undo failed:", e);
               toast({ title: t("Couldn't undo") });

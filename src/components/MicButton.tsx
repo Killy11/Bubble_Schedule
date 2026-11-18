@@ -13,6 +13,7 @@ export function MicButton({
   size = "md",
   fixedLang,
   stopKey,
+  onListeningChange,
 }: {
   value: string;
   onChange: (text: string) => void;
@@ -21,6 +22,8 @@ export function MicButton({
   fixedLang?: SpeechLang;
   /** Change this value (e.g. when the message is submitted) to stop listening right away. */
   stopKey?: unknown;
+  /** Called when dictation starts or ends. */
+  onListeningChange?: (listening: boolean) => void;
 }) {
   const { toast } = useToast();
   const { t } = useLang();
@@ -31,6 +34,10 @@ export function MicButton({
     onTranscript: onChange,
     onError: (message) => toast({ title: t("Voice input"), body: t(message) }),
   });
+  useEffect(() => {
+    onListeningChange?.(listening);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listening]);
   useEffect(() => {
     stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps

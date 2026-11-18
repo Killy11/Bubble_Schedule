@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 
 const FIRE_AT = 0.45; // seconds after mount: the poppers go off
+const MAX_MS = 4500; // a celebration never lasts longer than this
 const FLOAT_S = 3.0; // how long the bubbles live after the bang
 const POPPER_MS = 2200; // slide in, fire, slide back out
 
@@ -204,6 +205,12 @@ function PopperView({ p, uid }: { p: Popper; uid: string }) {
 function Burst({ id, w, h, onDone }: { id: number; w: number; h: number; onDone: () => void }) {
   const reduced = useReducedMotion();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // `onDone` is a new function on every parent render. It must NOT be an effect dependency: re-running the effect
+  // would fire the confetti again each time the dashboard re-renders (a snapshot update, an Undo...).
+  const onDoneRef = useRef(onDone);
+  useEffect(() => {
+    onDoneRef.current = onDone;
+  });
   const [setup] = useState(() => {
     const poppers = makePoppers(w, h);
     return {
@@ -218,17 +225,18 @@ function Burst({ id, w, h, onDone }: { id: number; w: number; h: number; onDone:
   // bottom of the canvas (the poppers may retract long before that).
   useEffect(() => {
     if (reduced) {
-      const id = setTimeout(onDone, 50);
+      const id = setTimeout(() => onDoneRef.current(), 50);
       return () => clearTimeout(id);
     }
     let cancelled = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
     const flags = { dom: false, confetti: false };
     const tryDone = () => {
-      if (!cancelled && flags.dom && flags.confetti) onDone();
+      if (!cancelled && flags.dom && flags.confetti) onDoneRef.current();
     };
     timers.push(setTimeout(() => { flags.dom = true; tryDone(); }, (FIRE_AT + FLOAT_S + 0.6) * 1000));
-    timers.push(setTimeout(() => { flags.dom = true; flags.confetti = true; tryDone(); }, 12_000)); // safety net
+    // Hard failsafe: whatever happens, the celebration is over and the canvas cleared after 4.5 s.
+    timers.push(setTimeout(() => { shoot?.reset(); flags.dom = true; flags.confetti = true; tryDone(); }, MAX_MS));
 
     let shoot: ReturnType<typeof import("canvas-confetti").create> | null = null;
     void import("canvas-confetti").then(({ default: lib }) => {
@@ -240,8 +248,8 @@ function Burst({ id, w, h, onDone }: { id: number; w: number; h: number; onDone:
       const fire = (o: Parameters<typeof confetti>[0]) => runs.push(confetti(o));
       // Pieces drop 3·gravity px per tick once the burst has slowed, so give each enough ticks to cross the whole
       // canvas height (plus the climb) before it expires: they fall to the bottom edge instead of vanishing mid-air.
-      const GRAVITY = 1.3;
-      const ticks = Math.min(560, Math.round((setup.vh + 700) / (GRAVITY * 3)) + 40);
+      const GRAVITY = 1.8;
+      const ticks = 270; // 4.5 s at 60 fps: matches the failsafe, and the pieces are down well before that
       const base = { disableForReducedMotion: true, colors: CONFETTI_COLORS, gravity: GRAVITY, ticks, decay: 0.91 };
       const star = confetti.shapeFromText({ text: "✨", scalar: 2 });
       timers.push(
@@ -250,9 +258,9 @@ function Burst({ id, w, h, onDone }: { id: number; w: number; h: number; onDone:
             const origin = { x: p.nozzle.x / setup.vw, y: p.nozzle.y / setup.vh };
             const angle = 90 - p.theta;
             const drift = p.theta > 0 ? 0.35 : -0.35; // gentle sideways flutter, outward from each popper
-            fire({ ...base, particleCount: 90, spread: 62, angle, origin, startVelocity: 62, scalar: 1.1, drift });
-            fire({ ...base, particleCount: 36, spread: 34, angle, origin, startVelocity: 72, scalar: 1.7, shapes: ["square"], drift }); // ribbons
-            fire({ ...base, particleCount: 14, spread: 70, angle, origin, startVelocity: 50, shapes: [star], scalar: 2, colors: undefined, drift });
+            fire({ ...base, particleCount: 90, spread: 62, angle, origin, startVelocity: 48, scalar: 1.1, drift });
+            fire({ ...base, particleCount: 36, spread: 34, angle, origin, startVelocity: 54, scalar: 1.7, shapes: ["square"], drift }); // ribbons
+            fire({ ...base, particleCount: 14, spread: 70, angle, origin, startVelocity: 40, shapes: [star], scalar: 2, colors: undefined, drift });
           }
           // A shower from the top of the canvas.
           let n = 0;
@@ -272,7 +280,7 @@ function Burst({ id, w, h, onDone }: { id: number; w: number; h: number; onDone:
       timers.forEach(clearTimeout);
       shoot?.reset();
     };
-  }, [reduced, setup, onDone]);
+  }, [reduced, setup]);
 
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 z-30 overflow-hidden">
