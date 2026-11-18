@@ -63,7 +63,7 @@ export function TaskFormSheet({
 }) {
   const { t } = useLang();
   return (
-    <Sheet open={open} onClose={onClose} title={editTask ? editTask.title : t("New bubble")} tourId="create">
+    <Sheet open={open} onClose={onClose} title={editTask ? editTask.title : t("New bubble")} tourId="create" closeOnBackdropClick={false}>
       {/* Remounts on each open, so the form resets and gets a fresh default deadline. */}
       {open && <Form key={editTask?.id ?? "new"} onClose={onClose} onSubmit={onSubmit} history={history} defaultPacing={defaultPacing} editTask={editTask} />}
     </Sheet>

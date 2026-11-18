@@ -14,6 +14,7 @@ export function Sheet({
   children,
   tourId,
   closeTourId,
+  closeOnBackdropClick = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -23,6 +24,8 @@ export function Sheet({
   tourId?: string;
   /** `data-tour` value for the ✕ close button, so the tour can point at it. */
   closeTourId?: string;
+  /** false: a click, drag or release outside the card does nothing (task windows: no lost progress). The ✕ and Escape still close it. */
+  closeOnBackdropClick?: boolean;
 }) {
   const { t } = useLang();
   useEffect(() => {
@@ -40,7 +43,7 @@ export function Sheet({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={() => { if (!isTutorialActive()) onClose(); }} // a running tutorial never lets a stray click close the dialog
+          onClick={() => { if (closeOnBackdropClick && !isTutorialActive()) onClose(); }} // a running tutorial never lets a stray click close the dialog
         >
           <motion.div
             role="dialog"

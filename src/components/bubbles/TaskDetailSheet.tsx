@@ -77,7 +77,7 @@ export function TaskDetailSheet({
 }) {
   const hue = task ? bubbleHue(task, now) : "green";
   return (
-    <Sheet open={!!task} onClose={onClose} title={task?.title ?? ""} tourId="task" closeTourId="close-task-modal">
+    <Sheet open={!!task} onClose={onClose} title={task?.title ?? ""} tourId="task" closeTourId="close-task-modal" closeOnBackdropClick={false}>
       {/* keyed by task: every time a bubble is opened the modal starts on the Timer view */}
       {task && (
         <div className={`hue-${hue}`}>
