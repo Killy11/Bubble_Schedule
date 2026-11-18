@@ -3,21 +3,25 @@
 import { Mic, Square } from "lucide-react";
 import { useLang } from "@/context/LanguageProvider";
 import { useToast } from "@/context/ToastProvider";
-import { useSpeechInput, useSpeechLang } from "@/hooks/useSpeechInput";
+import { useSpeechInput, useSpeechLang, type SpeechLang } from "@/hooks/useSpeechInput";
 
 /** Mic + language switch (UA / EN). Dictates into the text value owned by the parent. */
 export function MicButton({
   value,
   onChange,
   size = "md",
+  fixedLang,
 }: {
   value: string;
   onChange: (text: string) => void;
   size?: "sm" | "md";
+  /** Use this language and hide the UA / EN switch (e.g. follow the UI language). */
+  fixedLang?: SpeechLang;
 }) {
   const { toast } = useToast();
   const { t } = useLang();
-  const [lang, setLang] = useSpeechLang();
+  const [savedLang, setLang] = useSpeechLang();
+  const lang = fixedLang ?? savedLang;
   const { supported, listening, start, stop } = useSpeechInput({
     lang,
     onTranscript: onChange,
@@ -27,7 +31,7 @@ export function MicButton({
 
   return (
     <div className="flex shrink-0 items-center gap-1.5">
-      <button
+      {!fixedLang && <button
         type="button"
         onClick={() => setLang(lang === "uk-UA" ? "en-US" : "uk-UA")}
         disabled={listening}
@@ -36,7 +40,7 @@ export function MicButton({
         className="glass h-7 rounded-full px-2 text-[10px] font-semibold tracking-wide text-muted transition hover:text-foreground disabled:opacity-50"
       >
         {lang === "uk-UA" ? "UA" : "EN"}
-      </button>
+      </button>}
       <button
         type="button"
         onClick={() => (listening ? stop() : start(value))}

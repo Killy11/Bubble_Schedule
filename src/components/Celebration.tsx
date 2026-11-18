@@ -2,9 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { useLang } from "@/context/LanguageProvider";
 
-const DURATION_MS = 3800;
 const FIRE_AT = 0.45; // seconds after mount: the poppers go off
 const FLOAT_S = 3.0; // how long the bubbles live after the bang
 const POPPER_MS = 2200; // slide in, fire, slide back out
@@ -26,14 +24,6 @@ function popperSize() {
   return typeof window !== "undefined" && window.innerWidth < 640 ? 92 : 128;
 }
 
-
-/** Rotating encouragement (keys are translated by the language provider). */
-const MESSAGES = [
-  "🎉 Bubble popped! Crushed it!",
-  "✨ Nice one! Another bubble down!",
-  "🚀 Great job! Keep the momentum!",
-  "🏆 Task complete! You're on fire!",
-];
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -210,9 +200,8 @@ function PopperView({ p, uid }: { p: Popper; uid: string }) {
   );
 }
 
-/** Celebration inside the bubble canvas: poppers tucked in its bottom corners, glossy bubbles, confetti, and a cheer badge. */
+/** Celebration inside the bubble canvas: poppers tucked in its bottom corners, glossy bubbles and confetti. Purely visual. */
 function Burst({ id, w, h, onDone }: { id: number; w: number; h: number; onDone: () => void }) {
-  const { t } = useLang();
   const reduced = useReducedMotion();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [setup] = useState(() => {
@@ -222,44 +211,59 @@ function Burst({ id, w, h, onDone }: { id: number; w: number; h: number; onDone:
       vh: h,
       poppers,
       flights: poppers.flatMap((p) => Array.from({ length: 16 }, () => flight(p))), // 32 bubbles
-      message: MESSAGES[Math.floor(Math.random() * MESSAGES.length)],
     };
   });
 
+  // The burst stays mounted until BOTH the bubbles have popped and every confetti piece has fallen out of the
+  // bottom of the canvas (the poppers may retract long before that).
   useEffect(() => {
-    const done = setTimeout(onDone, DURATION_MS);
-    return () => clearTimeout(done);
-  }, [onDone]);
-
-  // Confetti, ribbons and sparkles fired from each nozzle at the moment of the bang.
-  useEffect(() => {
-    if (reduced) return;
+    if (reduced) {
+      const id = setTimeout(onDone, 50);
+      return () => clearTimeout(id);
+    }
     let cancelled = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
+    const flags = { dom: false, confetti: false };
+    const tryDone = () => {
+      if (!cancelled && flags.dom && flags.confetti) onDone();
+    };
+    timers.push(setTimeout(() => { flags.dom = true; tryDone(); }, (FIRE_AT + FLOAT_S + 0.6) * 1000));
+    timers.push(setTimeout(() => { flags.dom = true; flags.confetti = true; tryDone(); }, 12_000)); // safety net
+
     let shoot: ReturnType<typeof import("canvas-confetti").create> | null = null;
     void import("canvas-confetti").then(({ default: lib }) => {
       if (cancelled || !canvasRef.current) return;
       // Our own canvas, so the confetti is clipped to the bubble canvas instead of covering the whole window.
       const confetti = Object.assign(lib.create(canvasRef.current, { resize: true, disableForReducedMotion: true }), { shapeFromText: lib.shapeFromText });
       shoot = confetti;
-      const base = { disableForReducedMotion: true, colors: CONFETTI_COLORS };
+      const runs: Array<Promise<unknown> | null> = [];
+      const fire = (o: Parameters<typeof confetti>[0]) => runs.push(confetti(o));
+      // Pieces drop 3·gravity px per tick once the burst has slowed, so give each enough ticks to cross the whole
+      // canvas height (plus the climb) before it expires: they fall to the bottom edge instead of vanishing mid-air.
+      const GRAVITY = 1.3;
+      const ticks = Math.min(560, Math.round((setup.vh + 700) / (GRAVITY * 3)) + 40);
+      const base = { disableForReducedMotion: true, colors: CONFETTI_COLORS, gravity: GRAVITY, ticks, decay: 0.91 };
       const star = confetti.shapeFromText({ text: "✨", scalar: 2 });
       timers.push(
         setTimeout(() => {
           for (const p of setup.poppers) {
             const origin = { x: p.nozzle.x / setup.vw, y: p.nozzle.y / setup.vh };
             const angle = 90 - p.theta;
-            confetti({ ...base, particleCount: 90, spread: 62, angle, origin, startVelocity: 72, gravity: 0.9, ticks: 280, scalar: 1.1 });
-            confetti({ ...base, particleCount: 36, spread: 34, angle, origin, startVelocity: 88, gravity: 0.55, ticks: 340, scalar: 1.7, shapes: ["square"] }); // ribbons
-            confetti({ ...base, particleCount: 14, spread: 70, angle, origin, startVelocity: 55, shapes: [star], scalar: 2, ticks: 260, colors: undefined });
+            const drift = p.theta > 0 ? 0.35 : -0.35; // gentle sideways flutter, outward from each popper
+            fire({ ...base, particleCount: 90, spread: 62, angle, origin, startVelocity: 62, scalar: 1.1, drift });
+            fire({ ...base, particleCount: 36, spread: 34, angle, origin, startVelocity: 72, scalar: 1.7, shapes: ["square"], drift }); // ribbons
+            fire({ ...base, particleCount: 14, spread: 70, angle, origin, startVelocity: 50, shapes: [star], scalar: 2, colors: undefined, drift });
           }
-          // A shower over the whole screen.
+          // A shower from the top of the canvas.
           let n = 0;
           const rain = setInterval(() => {
-            confetti({ ...base, particleCount: 7, angle: 270, spread: 130, startVelocity: 22, gravity: 0.7, ticks: 240, origin: { x: Math.random(), y: -0.05 } });
-            if (++n >= 9) clearInterval(rain);
+            fire({ ...base, particleCount: 7, angle: 270, spread: 130, startVelocity: 18, origin: { x: Math.random(), y: -0.05 } });
+            if (++n >= 9) {
+              clearInterval(rain);
+              void Promise.allSettled(runs).then(() => { flags.confetti = true; tryDone(); }); // resolves once all have fallen
+            }
           }, 130);
-          timers.push(setTimeout(() => clearInterval(rain), 1500));
+          timers.push(setTimeout(() => clearInterval(rain), 1600));
         }, FIRE_AT * 1000),
       );
     });
@@ -268,7 +272,7 @@ function Burst({ id, w, h, onDone }: { id: number; w: number; h: number; onDone:
       timers.forEach(clearTimeout);
       shoot?.reset();
     };
-  }, [reduced, setup]);
+  }, [reduced, setup, onDone]);
 
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 z-30 overflow-hidden">
@@ -290,14 +294,6 @@ function Burst({ id, w, h, onDone }: { id: number; w: number; h: number; onDone:
           ))}
         </>
       )}
-      <motion.div
-        className="glass absolute left-1/2 top-[max(1rem,env(safe-area-inset-top))] -translate-x-1/2 whitespace-nowrap rounded-full bg-background/80 px-6 py-3 text-base font-semibold shadow-2xl"
-        initial={{ y: -80, scale: 0.6, opacity: 0, rotate: -6 }}
-        animate={{ y: [-80, 0, 0, -30], scale: [0.6, 1.08, 1, 0.9], opacity: [0, 1, 1, 0], rotate: [-6, 2, 0, 0] }}
-        transition={{ duration: 3, delay: FIRE_AT, times: [0, 0.14, 0.82, 1], ease: "easeOut" }}
-      >
-        {t(setup.message)}
-      </motion.div>
     </div>
   );
 }

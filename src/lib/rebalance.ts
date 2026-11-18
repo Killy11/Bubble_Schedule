@@ -11,8 +11,8 @@ export function planningOrder(tasks: readonly Task[], nowMs: number): Task[] {
   return [...tasks].sort((a, b) => comparePriority(a, b, nowMs)); // red, yellow, green, no deadline; then earliest due
 }
 
-/** Tasks without a deadline are planned as if due in a week (soft: nothing ever turns overdue). */
-export const NO_DEADLINE_PLAN_DAYS = 7;
+/** Tasks without a deadline are spread over a rolling 3-month window (soft: nothing ever turns overdue). */
+export const NO_DEADLINE_PLAN_DAYS = 90;
 
 export interface PlanResult {
   /** taskId → (subtaskId → new slot, or null when it doesn't fit before the deadline) */

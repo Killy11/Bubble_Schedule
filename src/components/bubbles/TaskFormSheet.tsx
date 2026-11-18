@@ -11,7 +11,7 @@ import { RecurrencePicker } from "./RecurrencePicker";
 import { useLang } from "@/context/LanguageProvider";
 import { DECOMPOSE_AT_MIN } from "@/lib/subtasks";
 import { detectPacing, parseSplitRequest } from "@/lib/pacing";
-import type { NewTaskInput } from "@/hooks/useTasks";
+import { TaskLimitError, type NewTaskInput } from "@/hooks/useTasks";
 import { suggestDuration } from "@/lib/history";
 import type { HistoryRecord, Pacing, Recurrence } from "@/types";
 import { DurationFields } from "@/components/DurationFields";
@@ -140,8 +140,8 @@ function Form({
         requestedParts: partsPick ?? parseSplitRequest(title) ?? requestedParts,
       });
       onClose();
-    } catch {
-      setError(t("Couldn't save. Please try again."));
+    } catch (e) {
+      setError(e instanceof TaskLimitError ? t(e.message) : t("Couldn't save. Please try again."));
       setBusy(false);
     }
   }

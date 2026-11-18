@@ -23,6 +23,16 @@ import { oneDayFlagFor, withinOneDay } from "@/lib/oneDay";
 import { deadlineMs, hasDeadline } from "@/lib/deadline";
 import type { Pacing, Recurrence, Subtask, Task } from "@/types";
 
+/** A user may keep at most this many active (uncompleted) tasks. */
+export const MAX_ACTIVE_TASKS = 100;
+
+/** Thrown when adding tasks would pass MAX_ACTIVE_TASKS. The message is the English UI text (translate with t()). */
+export class TaskLimitError extends Error {
+  constructor() {
+    super("Active task limit (100) reached. Complete or remove some current tasks before adding more.");
+  }
+}
+
 export interface NewTaskInput {
   title: string;
   deadline?: string; // ISO; omitted = no deadline
@@ -79,35 +89,53 @@ export function useTasks(
     );
   }, [uid]);
 
-  const addTask = useCallback(
-    async (input: NewTaskInput) => {
-      if (!uid) return;
-      const ref = doc(collection(db, "users", uid, "tasks")).withConverter(taskConverter);
+  const tasksRef = useRef(tasks);
+  useEffect(() => {
+    tasksRef.current = tasks;
+  });
+
+  /**
+   * Create several tasks at once: ONE Firestore batch (so listeners see one update, not N) and the 100-active-task
+   * limit checked up front. Nothing is written if the limit would be exceeded.
+   */
+  const addTasks = useCallback(
+    async (inputs: NewTaskInput[]) => {
+      if (!uid || inputs.length === 0) return;
+      const active = tasksRef.current.filter((t) => t.status === "active").length;
+      if (active + inputs.length > MAX_ACTIVE_TASKS) throw new TaskLimitError();
       const nowIso = new Date().toISOString();
-      const recurrence = cleanRecurrence(input.recurrence);
-      const task: Task = {
-        id: ref.id,
-        title: input.title.trim(),
-        deadline: input.deadline || undefined,
-        description: input.description?.trim() || undefined,
-        durationMin: input.durationMin,
-        loggedMinutes: 0,
-        aiEstimate: input.historyEstimate
-          ? { durationMin: input.historyEstimate.durationMin, reasoning: input.historyEstimate.reasoning, estimatedAt: nowIso }
-          : undefined,
-        oneDayNotified: (input.deadline && oneDayFlagFor(input.deadline, Date.now())) || undefined,
-        recurrence,
-        pacing: input.pacing,
-        requestedParts: input.requestedParts,
-        seriesId: recurrence ? ref.id : undefined,
-        status: "active",
-        createdAt: nowIso,
-        updatedAt: nowIso,
-      };
-      await setDoc(ref, task);
+      for (let i = 0; i < inputs.length; i += 400) {
+        const batch = writeBatch(db);
+        for (const input of inputs.slice(i, i + 400)) {
+          const ref = doc(collection(db, "users", uid, "tasks")).withConverter(taskConverter);
+          const recurrence = cleanRecurrence(input.recurrence);
+          const task: Task = {
+            id: ref.id,
+            title: input.title.trim(),
+            deadline: input.deadline || undefined,
+            description: input.description?.trim() || undefined,
+            durationMin: input.durationMin,
+            loggedMinutes: 0,
+            aiEstimate: input.historyEstimate
+              ? { durationMin: input.historyEstimate.durationMin, reasoning: input.historyEstimate.reasoning, estimatedAt: nowIso }
+              : undefined,
+            oneDayNotified: (input.deadline && oneDayFlagFor(input.deadline, Date.now())) || undefined,
+            recurrence,
+            pacing: input.pacing,
+            requestedParts: input.requestedParts,
+            seriesId: recurrence ? ref.id : undefined,
+            status: "active",
+            createdAt: nowIso,
+            updatedAt: nowIso,
+          };
+          batch.set(ref, task);
+        }
+        await batch.commit();
+      }
     },
     [uid],
   );
+  const addTask = useCallback((input: NewTaskInput) => addTasks([input]), [addTasks]);
 
   const deleteTask = useCallback(
     async (task: Task) => {
@@ -515,6 +543,7 @@ export function useTasks(
     loading,
     error,
     addTask,
+    addTasks,
     deleteTask,
     deleteMany,
     restoreDeleted,

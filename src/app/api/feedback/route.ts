@@ -4,6 +4,7 @@ import { getSessionUid } from "@/lib/firebase/serverAuth";
 
 export const maxDuration = 15;
 const MAX_PER_HOUR = 5;
+const MAX_IMAGES = 3;
 const CATEGORIES = new Set(["bug", "feature", "general"]);
 const err = (error: string, status: number) => NextResponse.json({ error }, { status });
 
@@ -12,7 +13,7 @@ export async function POST(request: Request) {
   const uid = await getSessionUid();
   if (!uid) return err("Not signed in", 401);
 
-  let body: { category?: unknown; message?: unknown };
+  let body: { category?: unknown; message?: unknown; images?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -21,6 +22,10 @@ export async function POST(request: Request) {
   const message = typeof body.message === "string" ? body.message.trim().slice(0, 2000) : "";
   const category = typeof body.category === "string" && CATEGORIES.has(body.category) ? body.category : "general";
   if (!message) return err("Message is required", 400);
+  // Up to 3 client-compressed JPEG data URLs. Each is stored as its own small document (a Firestore document is limited to 1 MiB).
+  const images = (Array.isArray(body.images) ? body.images : [])
+    .filter((x): x is string => typeof x === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(x) && x.length <= 700_000)
+    .slice(0, MAX_IMAGES);
 
   try {
     // Rate limit: single-field query (no composite index needed); the time window is checked in memory.
@@ -33,7 +38,11 @@ export async function POST(request: Request) {
     }).length;
     if (recent >= MAX_PER_HOUR) return err("Too many feedback messages. Try again later.", 429);
 
-    await db.collection("feedback").add({ category, message, userId: uid, createdAt: new Date() });
+    const ref = db.collection("feedback").doc();
+    const batch = db.batch();
+    batch.set(ref, { category, message, userId: uid, attachmentCount: images.length, createdAt: new Date() });
+    images.forEach((dataUrl, i) => batch.set(ref.collection("attachments").doc(String(i)), { dataUrl, index: i }));
+    await batch.commit();
   } catch (e) {
     console.error("feedback: save failed", e);
     return err("Couldn't save feedback", 500);

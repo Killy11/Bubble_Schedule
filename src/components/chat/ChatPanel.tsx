@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useEffect, useRef, useState } from "react";
-import { Loader2, Paperclip, SendHorizontal, Sparkles, X } from "lucide-react";
+import { Loader2, Paperclip, SendHorizontal, Sparkles, Square, X } from "lucide-react";
 import { ESTIMATE_ACCEPT } from "@/lib/estimate";
 import { MicButton } from "@/components/MicButton";
 import { useLang } from "@/context/LanguageProvider";
@@ -15,6 +15,9 @@ const MessageList = memo(function MessageList({ messages }: { messages: ChatMess
     <>
       {messages.map((m) => {
         const mine = m.role === "user";
+        if (m.kind === "note") {
+          return <p key={m.id} className="text-center text-xs italic text-muted">{m.content}</p>; // e.g. "Response stopped"
+        }
         return (
           <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
             <div
@@ -41,6 +44,7 @@ export function ChatPanel({
   hasTasks,
   onSend,
   onAsk,
+  onStop,
 }: {
   messages: ChatMessage[];
   pending: boolean;
@@ -49,6 +53,8 @@ export function ChatPanel({
   onSend: (trigger: ScheduleRequest["trigger"], text?: string) => void;
   /** Free text: the assistant decides whether to add, change or re-plan tasks, or just answer. */
   onAsk: (text: string, file?: File) => void;
+  /** Cancel the request in flight. */
+  onStop: () => void;
 }) {
   const { t } = useLang();
   // The draft lives here, in this component only: a keystroke re-renders this input and nothing above it.
@@ -131,14 +137,26 @@ export function ChatPanel({
             className="glass min-w-0 flex-1 rounded-full px-4 py-2.5 text-sm outline-none placeholder:text-muted focus:border-[rgb(var(--glow-a))]"
           />
           <MicButton value={text} onChange={(v) => setText(v.slice(0, 1000))} />
-          <button
-            type="submit"
-            disabled={pending || (!text.trim() && !file)}
-            aria-label={t("Send")}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background transition hover:opacity-90 disabled:opacity-40"
-          >
-            <SendHorizontal className="h-4 w-4" />
-          </button>
+          {pending ? (
+            <button
+              type="button"
+              onClick={onStop}
+              title={t("Stop")}
+              aria-label={t("Stop")}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/10 text-zinc-100 transition-all hover:border-rose-400/40 hover:bg-rose-500/20"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!text.trim() && !file}
+              aria-label={t("Send")}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition hover:opacity-90 disabled:opacity-40"
+            >
+              <SendHorizontal className="h-4 w-4" />
+            </button>
+          )}
         </form>
       </div>
     </div>

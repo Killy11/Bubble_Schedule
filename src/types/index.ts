@@ -171,7 +171,7 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
-  kind: "text" | "auto-schedule-request" | "schedule-update";
+  kind: "text" | "auto-schedule-request" | "schedule-update" | "note";
   scheduleVersion?: number;
   changeSummary?: ChangeSummary;
   status: "sent" | "pending" | "error";

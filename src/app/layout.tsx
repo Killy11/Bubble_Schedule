@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Fredoka, Geist, Geist_Mono } from "next/font/google";
 import { LanguageProvider } from "@/context/LanguageProvider";
+import { SupportProvider } from "@/context/SupportProvider";
 import { ThemeProvider } from "@/context/ThemeProvider";
 import { AuthProvider } from "@/context/AuthProvider";
 import { InstallProvider } from "@/context/InstallProvider";
@@ -61,9 +62,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <LanguageProvider>
             <AuthProvider>
               <ToastProvider>
+               <SupportProvider>
                 <NotificationProvider>
                   <InstallProvider>{children}</InstallProvider>
                 </NotificationProvider>
+               </SupportProvider>
               </ToastProvider>
             </AuthProvider>
           </LanguageProvider>

@@ -11,7 +11,7 @@ import { useLang } from "@/context/LanguageProvider";
 import { Celebrations, type BurstSpec } from "@/components/Celebration";
 import { FeedbackSheet } from "@/components/FeedbackSheet";
 import { SupportPrompt } from "@/components/SupportPrompt";
-import { SUPPORT_URL } from "@/lib/support";
+import { useSupport } from "@/context/SupportProvider";
 import { OverdueSheet } from "@/components/bubbles/OverdueSheet";
 import { deadlineMs, isLiveTask, isOverdueTask } from "@/lib/deadline";
 import { pacingOf } from "@/lib/pacing";
@@ -72,6 +72,7 @@ export function DashboardShell() {
   const { profile, timezone } = useUserProfile(uid);
   const today = dateKeyInTz(now, timezone);
   const { toast } = useToast();
+  const { openSupport } = useSupport();
   const reducedMotion = useReducedMotion();
   const history = useHistory(uid);
 
@@ -83,6 +84,7 @@ export function DashboardShell() {
   const [popping, setPopping] = useState<ReadonlySet<string>>(new Set());
   const [bursts, setBursts] = useState<BurstSpec[]>([]);
   const canvasHost = useRef<HTMLDivElement>(null);
+  const lastCelebration = useRef(0);
   const [tourOpen, setTourOpen] = useState(false);
   const [supportPromptOpen, setSupportPromptOpen] = useState(false);
   // New tasks (form, chat) default to Balanced; the form's Focus intensity picks per task.
@@ -122,7 +124,7 @@ export function DashboardShell() {
   );
 
   const {
-    tasks, loading: tasksLoading, error, addTask, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, logMinutes,
+    tasks, loading: tasksLoading, error, addTask, addTasks, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, logMinutes,
     startTimer, stopTimer, setRecurrence, updateTask, saveSubtasks, toggleSubtask, reschedule,
   } = useTasks(uid, timezone, now, handleOverdue, handleOneDay);
 
@@ -157,7 +159,13 @@ export function DashboardShell() {
       return;
     }
     lastUnplaced.current = key;
-    const names = unplaced.slice(0, 2).map((t) => `“${t.title}”`).join(", ");
+    const names = unplaced.slice(0, 2).map((x) => `“${x.title}”`).join(", ");
+    // Tasks without a deadline only fail when the whole 3-month window is full; dated ones when their deadline can't be met.
+    const undated = unplaced.filter((x) => !tasks.find((tk) => tk.id === x.id)?.deadline);
+    if (undated.length > 0 && undated.length === unplaced.length) {
+      toast({ title: t("Too many tasks to fit within the next 3 months. Try reducing the count or freeing up schedule slots."), durationMs: 10000 });
+      return;
+    }
     toast({
       title: unplaced.length === 1 ? t("A task can't fit before its deadline") : t("{n} tasks can't fit before their deadlines", { n: unplaced.length }),
       body: `${names}${unplaced.length > 2 ? "…" : ""}`,
@@ -165,18 +173,21 @@ export function DashboardShell() {
   });
 
   // Tasks made without a duration (e.g. from chat) get one from similar tasks the user finished before.
-  const addTaskSmart = useCallback(
-    (input: NewTaskInput) => {
-      const s = input.durationMin ? null : suggestDuration(input.title, history);
-      const withPacing = { ...input, pacing: input.pacing ?? defaultPacing };
-      return addTask(s ? { ...withPacing, historyEstimate: { durationMin: s.minutes, reasoning: describeSuggestion(s) } } : withPacing);
-    },
-    [addTask, history, defaultPacing],
+  const addTasksSmart = useCallback(
+    (inputs: NewTaskInput[]) =>
+      addTasks(
+        inputs.map((input) => {
+          const s = input.durationMin ? null : suggestDuration(input.title, history);
+          const withPacing = { ...input, pacing: input.pacing ?? defaultPacing };
+          return s ? { ...withPacing, historyEstimate: { durationMin: s.minutes, reasoning: describeSuggestion(s) } } : withPacing;
+        }),
+      ),
+    [addTasks, history, defaultPacing],
   );
   // AI edits go through the same task functions as the UI, so the canvas and the timeline change together.
   const applyRef = useRef<(actions: AssistantAction[]) => Promise<void>>(async () => {});
   const applyActions = useCallback((actions: AssistantAction[]) => applyRef.current(actions), []);
-  const { messages, pending, send, ask } = useChat(uid, today, addTaskSmart, defaultPacing, applyActions);
+  const { messages, pending, send, ask, stop } = useChat(uid, today, addTasksSmart, defaultPacing, applyActions);
 
   const [tab, setTab] = useState<Tab>("bubbles");
   const [formOpen, setFormOpen] = useState(false);
@@ -307,7 +318,9 @@ export function DashboardShell() {
     // Plays inside the bubble canvas only. On a phone that canvas is hidden while Schedule / Chat is open
     // (its box is 0×0 then), so nothing plays there.
     const box = canvasHost.current?.getBoundingClientRect();
-    if (celebrate && box && box.width > 0 && box.height > 0) {
+    // One celebration per ~3 s: bulk or rapid completions never stack poppers or overlapping particle bursts.
+    if (celebrate && box && box.width > 0 && box.height > 0 && Date.now() - lastCelebration.current > 3000) {
+      lastCelebration.current = Date.now();
       setBursts((b) => [...b, { id: Date.now() + Math.random(), w: Math.round(box.width), h: Math.round(box.height) }]);
     }
     if (undo) {
@@ -502,7 +515,7 @@ export function DashboardShell() {
                 }}
               />
             ) : (
-              <ChatPanel messages={messages} pending={pending} hasTasks={active.length > 0} onSend={send} onAsk={ask} />
+              <ChatPanel messages={messages} pending={pending} hasTasks={active.length > 0} onSend={send} onAsk={ask} onStop={stop} />
             )}
           </div>
         </aside>
@@ -529,7 +542,7 @@ export function DashboardShell() {
         onClose={() => setSupportPromptOpen(false)}
         onSupport={() => {
           setSupportPromptOpen(false);
-          window.open(SUPPORT_URL, "_blank", "noopener,noreferrer"); // same destination as the header ♥ Support button
+          openSupport(); // the same Support modal as the header button
         }}
       />
       <FeedbackSheet open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />

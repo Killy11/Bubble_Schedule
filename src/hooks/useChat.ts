@@ -1,17 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { collection, doc, limit, onSnapshot, orderBy, query, setDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { messageConverter } from "@/lib/firebase/converters";
-import type { NewTaskInput } from "@/hooks/useTasks";
+import { TaskLimitError, type NewTaskInput } from "@/hooks/useTasks";
 import { detectPacing, parseSplitRequest } from "@/lib/pacing";
 import { estimateFile, focusToPacing } from "@/lib/estimate";
 import type { ChatMessage, DateKey, Pacing } from "@/types";
 import type { AssistantAction, AssistantRequest, AssistantResponse, ScheduleRequest } from "@/types/api";
 
-async function postJson<T>(url: string, body: unknown): Promise<T> {
+async function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(url, {
+    signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -28,13 +29,16 @@ import { useLang } from "@/context/LanguageProvider";
 export function useChat(
   uid: string | undefined,
   targetDate: DateKey,
-  addTask: (input: NewTaskInput) => Promise<void>,
+  /** Creates all tasks in one batched write. */
+  addTasks: (inputs: NewTaskInput[]) => Promise<void>,
   /** Pacing for tasks created from chat when the message doesn't say otherwise. */
   defaultPacing: Pacing,
   /** Apply AI edits (reschedule, change duration, complete, delete) to the shared task state. */
   applyActions: (actions: AssistantAction[]) => Promise<void>,
 ) {
-  const { lang } = useLang();
+  const { lang, t } = useLang();
+  // The request in flight, so Stop can cancel it.
+  const abortRef = useRef<AbortController | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
 
@@ -70,26 +74,45 @@ export function useChat(
   const runSchedule = useCallback(
     async (trigger: ScheduleRequest["trigger"], message?: string) => {
       const body: ScheduleRequest = { trigger, message, targetDate, nowISO: new Date().toISOString(), lang };
-      await postJson("/api/schedule", body);
+      await postJson("/api/schedule", body, abortRef.current?.signal);
     },
     [targetDate, lang],
   );
 
-  /** Wrap an action: pending flag + a visible error message in the chat if anything throws. */
+  /**
+   * Wrap an action: pending flag, an AbortController for Stop, and a visible error message in the chat if
+   * anything throws. A cancelled request is not an error: it leaves a quiet "Response stopped" note.
+   */
   const guarded = useCallback(
     async (action: () => Promise<void>) => {
-      if (!uid || pending) return;
+      if (!uid || pending) return; // no duplicate requests while one is running
+      const controller = new AbortController();
+      abortRef.current = controller;
       setPending(true);
       try {
         await action();
       } catch (e) {
-        await post("system", `Something went wrong: ${e instanceof Error ? e.message : "unknown error"}`, "text", "error").catch(() => {});
+        if (controller.signal.aborted || (e instanceof DOMException && e.name === "AbortError")) {
+          await post("system", lang === "uk" ? "Відповідь зупинено" : "Response stopped", "note", "sent").catch(() => {});
+        } else {
+          const msg = e instanceof TaskLimitError ? t(e.message) : `${t("Something went wrong. Please try again.")} (${e instanceof Error ? t(e.message) : ""})`;
+          await post("system", msg, "text", "error").catch(() => {});
+        }
       } finally {
-        setPending(false);
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+          setPending(false);
+        }
       }
     },
-    [uid, pending, post],
+    [uid, pending, post, lang, t],
   );
+
+  /** Stop generating: cancel the request and free the composer immediately. */
+  const stop = useCallback(() => {
+    abortRef.current?.abort(); // kept in the ref: any later step of the cancelled action sees an aborted signal
+    setPending(false);
+  }, []);
 
   /** Direct scheduling: the Auto-schedule button and the preset suggestion chips (no intent step). */
   const send = useCallback(
@@ -120,26 +143,26 @@ export function useChat(
         if (!message) return;
         await post("user", file ? `📎 ${file.name}\n${message}` : message, "text", "sent");
         // An attached assignment is read once by /api/estimate-task; its estimate rides along with the message.
-        const est = file ? await estimateFile(file, lang, message) : null;
+        const est = file ? await estimateFile(file, lang, message, abortRef.current?.signal) : null;
         const result = await postJson<AssistantResponse>("/api/assistant", {
           message: est
             ? `${message}\n[Attached file "${file!.name}": ${est.reasoning} Estimated ${est.estimatedMinutes} minutes.]`
             : message,
           nowISO: new Date().toISOString(),
-        } satisfies AssistantRequest);
+        } satisfies AssistantRequest, abortRef.current?.signal);
 
         if (est && result.intent !== "modify_tasks") {
           // The file becomes the bubble: the assistant's reading of the message (title, deadline) plus the file's estimate.
           const pacing = detectPacing(message) ?? focusToPacing(est.recommendedFocus);
           const requestedParts = parseSplitRequest(message) ?? (est.shouldSplit ? (est.suggestedParts ?? undefined) : undefined);
           const first = result.intent === "create_tasks" ? result.tasks[0] : undefined;
-          await addTask({
+          await addTasks([{
             title: first?.title || est.suggestedTitle,
             deadline: first?.deadline,
             durationMin: est.estimatedMinutes,
             pacing,
             requestedParts,
-          });
+          }]);
           await post("assistant", `${result.reply}\n✨ ${est.reasoning}`, "text", "sent");
           return;
         }
@@ -157,13 +180,12 @@ export function useChat(
         // "chill", "все підряд", "розбий на 3 частини"… in the message set how the new tasks are laid out.
         const pacing = detectPacing(message) ?? defaultPacing;
         const requestedParts = parseSplitRequest(message) ?? undefined;
-        for (const t of result.tasks) {
-          await addTask({ title: t.title, deadline: t.deadline, durationMin: t.durationMin, pacing, requestedParts });
-        }
+        // One batched write for the whole request (up to 25 tasks), so the canvas updates once.
+        await addTasks(result.tasks.map((x) => ({ title: x.title, deadline: x.deadline, durationMin: x.durationMin, pacing, requestedParts })));
         await post("assistant", result.reply, "text", "sent"); // new tasks are folded into the plan by the auto re-plan
       }),
-    [guarded, post, runSchedule, addTask, defaultPacing, applyActions, lang],
+    [guarded, post, runSchedule, addTasks, defaultPacing, applyActions, lang],
   );
 
-  return { messages, pending, send, ask };
+  return { messages, pending, send, ask, stop };
 }

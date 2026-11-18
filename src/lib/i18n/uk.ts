@@ -96,7 +96,7 @@ export const UK: Record<string, string> = {
   "Timer running": "Таймер іде",
   "Working on it now?": "Працюєте над цим зараз?",
   "Start timer": "Старт",
-  Stop: "Стоп",
+  Stop: "Зупинити",
   "Minutes spent": "Витрачено хвилин",
   "Enter 1–1440 minutes": "Введіть 1–1440 хвилин",
   "Couldn't update the timer": "Не вдалося оновити таймер",
@@ -321,4 +321,20 @@ export const UK: Record<string, string> = {
   "Hi! We are a young team developing this planner. We really need your support to grow the project, launch new features, and make BubbleSchedule even better for you.": "Привіт! Ми молода команда, яка розвиває цей планувальник. Нам дуже потрібна ваша підтримка, щоб розвивати проєкт, запускати нові функції та робити BubbleSchedule ще кращим для вас.",
   "❤️ Support": "❤️ Підтримати",
   "Maybe later": "Пізніше",
+
+  // Chat stop / limits / bulk
+  "Response stopped": "Відповідь зупинено",
+  Stopped: "Зупинено",
+  "Too many tasks to fit within the next 3 months. Try reducing the count or freeing up schedule slots.": "Забагато завдань на найближчі 3 місяці — вільні слоти закінчилися. Спробуйте зменшити кількість або звільнити час у розкладі.",
+  "Active task limit (100) reached. Complete or remove some current tasks before adding more.": "Досягнуто ліміт у 100 активних завдань. Виконайте або видаліть частину поточних, щоб додати нові.",
+
+  // Support modal
+  "❤️ Support via Monobank (UAH)": "❤️ Підтримати на Monobank (UAH)",
+  "Donations go to our Ukrainian Monobank jar in UAH (₴). International cards, Apple Pay, and Google Pay are fully supported — your bank automatically converts USD, EUR, or any local currency into UAH at its standard exchange rate.": "Підтримка приймається на українську Монобанку в гривні (UAH). Якщо ви платите з іноземної картки або у валюті (USD/EUR), сума автоматично конвертується в гривню за курсом вашого банку. Підтримуються Apple Pay, Google Pay та будь-які картки.",
+
+  // Feedback attachments
+  "Attach photo": "Додати фото",
+  "Remove photo": "Прибрати фото",
+  "Up to 3 photos.": "До 3 фото.",
+  "Couldn't read that image.": "Не вдалося прочитати зображення.",
 };

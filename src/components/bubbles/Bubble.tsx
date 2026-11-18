@@ -12,7 +12,7 @@ import { useLang } from "@/context/LanguageProvider";
 import type { Task } from "@/types";
 import type { BubblePlacement } from "@/lib/bubbles/layout";
 
-const SPRING = { type: "spring", stiffness: 70, damping: 16, mass: 1 } as const;
+const SPRING = { type: "spring", stiffness: 70, damping: 22, mass: 1 } as const; // heavily damped: neighbours ease aside
 /** Pop length; the dashboard waits this long before it writes the completion. */
 export const POP_MS = 450;
 
@@ -73,6 +73,7 @@ export function Bubble({
   popping?: boolean;
 }) {
   const reduced = useReducedMotion();
+  const enterDelay = Math.min(index, 24) * 0.035;
   const { t, lang } = useLang();
   const hue = bubbleHue(task, now);
   // Each bubble drifts on its own slow loop.
@@ -99,7 +100,13 @@ export function Bubble({
                 opacity: { duration: POP_MS / 1000, times: [0, 0.4, 1], ease: "easeIn" },
               },
             }
-          : { ...geometry, scale: 1, opacity: 1 }
+          : {
+              ...geometry,
+              scale: 1,
+              opacity: 1,
+              // Bulk adds appear one after another, from rest (no initial velocity).
+              transition: { default: SPRING, scale: { ...SPRING, delay: enterDelay }, opacity: { duration: 0.3, delay: enterDelay } },
+            }
       }
       // After a pop the bubble is already gone, so it leaves instantly; deleting one still shrinks away.
       exit={

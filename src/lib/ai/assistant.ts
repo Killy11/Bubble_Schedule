@@ -2,7 +2,7 @@ import type { AssistantAction, AssistantTask } from "@/types/api";
 import { dateKeyInTz, localNaiveToUtc, toLocalNaive } from "@/lib/time";
 
 export const MAX_TITLE = 100;
-const MAX_TASKS = 10;
+const MAX_TASKS = 25; // one bulk request may create up to 25 tasks
 
 export const ASSISTANT_SYSTEM_PROMPT = `You are the AI assistant inside BubbleSchedule, an app that shows tasks as bubbles.
 Read the user's message and decide what they want:

@@ -5,7 +5,7 @@ import { latestEndMs } from "@/lib/ai/horizon";
 import type { Interval } from "@/lib/decompose";
 
 const MIN = 60_000;
-const MAX_DAYS = 30;
+const MAX_DAYS = 90; // 3-month rolling window
 const MAX_CHILL_SPREAD_DAYS = 10;
 
 /** Active work per day, all tasks together. Locked-in work is exempt: it is an immovable sprint. */
