@@ -4,8 +4,10 @@ import { useRef, useState } from "react";
 import { Repeat } from "lucide-react";
 import { RecurrencePicker } from "./RecurrencePicker";
 import { SubtaskList } from "./SubtaskList";
-import { ArrowLeft, BellRing, Check, Clock, Loader2, Minus, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, BellRing, Check, Clock, Loader2, Minus, Music, Pause, Pencil, Play, Plus, Trash2, VolumeX } from "lucide-react";
 import { useNotifications } from "@/context/NotificationProvider";
+import { useMusicMuted } from "@/hooks/useTaskMusic";
+import { setMusicMuted } from "@/lib/taskMusic";
 import { useSecondTick } from "@/hooks/useSecondTick";
 import { formatClock, progressOf, remainingMinutes, remainingSeconds, sessionSeconds, spentMinutes, STEP_MIN, totalMinutes } from "@/lib/remaining";
 import { Sheet } from "@/components/Sheet";
@@ -216,6 +218,7 @@ function ProgressTimer({
   const hasSession = running || session >= 1;
   const timeUp = running && left <= 0 && remainingMinutes(task) > 0;
   const pct = Math.round(progressOf(task, tick) * 100);
+  const muted = useMusicMuted();
   const [pending, setPending] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const [minutes, setMinutes] = useState("15"); // minutes to log by hand
@@ -283,6 +286,12 @@ function ProgressTimer({
             <Check className="h-4 w-4" /> {t("Log minutes")}
           </button>
         </div>
+        {running && (
+          <button type="button" onClick={() => setMusicMuted(!muted)} aria-pressed={muted}
+            className="mx-auto flex items-center gap-1.5 rounded-full px-3 py-1 text-xs text-muted transition hover:text-foreground">
+            {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Music className="h-3.5 w-3.5" />} {muted ? t("Music: off") : t("Music: on")}
+          </button>
+        )}
       </section>
 
       {/* Card 2: log time without the timer */}

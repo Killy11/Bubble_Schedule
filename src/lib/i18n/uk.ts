@@ -568,4 +568,6 @@ export const UK: Record<string, string> = {
   "Your profile is right here. Tap it to open the settings.": "Ось тут знаходиться ваш Профіль. Натисніть на нього, щоб відкрити налаштування.",
   "Account and notifications": "Акаунт і сповіщення",
   "Log out of account": "Вийти з акаунту",
+  "Music: on": "Музика: увімк.",
+  "Music: off": "Музика: вимк.",
 };

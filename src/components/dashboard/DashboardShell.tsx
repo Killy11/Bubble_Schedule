@@ -15,6 +15,8 @@ import { playBubblePop, playTimerChime, preloadBubblePop, stopBubblePop } from "
 import { useLocalReminders } from "@/hooks/useLocalReminders";
 import { useSecondTick } from "@/hooks/useSecondTick";
 import { formatClock, sessionSeconds } from "@/lib/remaining";
+import { useTaskMusic } from "@/hooks/useTaskMusic";
+import { startTaskMusic, stopTaskMusic } from "@/lib/taskMusic";
 import { useTimerCompletion } from "@/hooks/useTimerCompletion";
 import { showLocalNotification } from "@/lib/localNotify";
 import { useSupport } from "@/context/SupportProvider";
@@ -346,6 +348,7 @@ export function DashboardShell() {
   // Firestore (startedAt + accumulatedSeconds), so it also survives tab switches and reloads.
   const runningTasks = active.filter((x) => !!x.startedAt);
   const timerTick = useSecondTick(runningTasks.length > 0);
+  useTaskMusic(runningTasks.length > 0); // the track plays while any timer runs
   const openTask = active.find((t) => t.id === openId) ?? null;
 
   /** Delete a bubble (and its slot in today's plan), with a 6 s way back. */
@@ -440,6 +443,8 @@ export function DashboardShell() {
 
   /** ▶ starts the countdown, ⏸ pauses it (the elapsed minutes are logged). */
   function toggleTimer(task: Task) {
+    if (task.startedAt) stopTaskMusic();
+    else startTaskMusic(); // inside the click, so the browser allows sound
     const run = task.startedAt ? stopTimer(task) : startTimer(task.id);
     void run.catch(() => toast({ title: t("Couldn't update the timer") }));
   }
@@ -716,7 +721,7 @@ export function DashboardShell() {
         onToggleSubtask={(task, sub, checked) => (checked === !sub.completed ? toggleSubtaskFlow(task, sub) : Promise.resolve())}
         onSaveSubtasks={saveSubtasks}
         onSplit={(task, n) => void split(task, n)}
-        onStartTimer={(task) => startTimer(task.id)}
+        onStartTimer={(task) => { startTaskMusic(); return startTimer(task.id); }}
         onStopTimer={stopTimer}
         onEdit={async (task, patch) => {
           await updateTask(task, patch);

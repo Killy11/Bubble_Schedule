@@ -62,6 +62,19 @@ export function useChat(
     );
   }, [uid]);
 
+  // A new day: the server folds the lasting preferences from yesterday's chat into the user's memory and clears the chat.
+  // Once per visit, only when the newest message is from an earlier day (compared in this device's time zone).
+  const rolled = useRef<string | null>(null);
+  useEffect(() => {
+    if (!uid || messages.length === 0 || rolled.current === uid) return;
+    const last = messages[messages.length - 1];
+    if (new Date(last.createdAt).toLocaleDateString("en-CA") >= targetDate) return;
+    rolled.current = uid;
+    fetch("/api/chat/rollover", { method: "POST" }).catch(() => {
+      rolled.current = null; // offline: try again on the next change
+    });
+  }, [uid, messages, targetDate]);
+
   const post = useCallback(
     async (role: ChatMessage["role"], content: string, kind: ChatMessage["kind"], status: ChatMessage["status"], attachments?: ChatMessage["attachments"]) => {
       if (!uid) return;

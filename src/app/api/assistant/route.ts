@@ -14,12 +14,15 @@ import {
 } from "@/lib/ai/assistant";
 import { FileError, readFile, type ReadFile } from "@/lib/server/files";
 import { takeHourlySlot } from "@/lib/server/rateLimit";
+import { mergeMemory, sameMemory } from "@/lib/memory";
 import { weekdayOf, dateKeyInTz, toLocalNaive } from "@/lib/time";
 import type { ChatMessage, Task, User } from "@/types";
 import type { AssistantRequest, AssistantResponse } from "@/types/api";
 
 export const maxDuration = 60; // attachments take longer to read
 const MAX_MESSAGE = 1000;
+/** Sliding window: only the last 16 messages go to the model (plus the memory and the task list). */
+const HISTORY_MESSAGES = 16;
 const MAX_FILES = 3;
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
 const MAX_FILE_REQUESTS_PER_HOUR = 30;
@@ -62,9 +65,11 @@ export async function POST(request: Request) {
   const [userSnap, taskSnap, msgSnap] = await Promise.all([
     db.doc(`users/${uid}`).get(),
     db.collection(`users/${uid}/tasks`).where("status", "==", "active").limit(60).get(),
-    db.collection(`users/${uid}/messages`).orderBy("createdAt", "desc").limit(7).get(),
+    db.collection(`users/${uid}/messages`).orderBy("createdAt", "desc").limit(HISTORY_MESSAGES + 1).get(),
   ]);
-  const tz = userSnap.exists ? (fromFirestoreData<User>(userSnap.data()).timezone ?? "UTC") : "UTC";
+  const userDoc = userSnap.exists ? fromFirestoreData<User>(userSnap.data()) : null;
+  const tz = userDoc?.timezone ?? "UTC";
+  const userMemory = Array.isArray(userDoc?.userMemory) ? userDoc.userMemory : [];
 
   const existing = taskSnap.docs
     .map((d) => ({ ...fromFirestoreData<Task>(d.data()), id: d.id }))
@@ -82,7 +87,7 @@ export async function POST(request: Request) {
       .map((d) => fromFirestoreData<ChatMessage>(d.data()))
       .reverse()
       .slice(0, -1) // the newest is the message being sent now
-      .slice(-6)
+      .slice(-HISTORY_MESSAGES)
       .map((m) => ({ role: m.role, content: m.content }));
     const today = dateKeyInTz(now, tz);
     const context = {
@@ -95,6 +100,7 @@ export async function POST(request: Request) {
         deadline: t.deadline ? toLocalNaive(t.deadline, tz) : null,
         durationMin: t.durationMin ?? null,
       })),
+      userMemory,
       recentChat: history,
       userMessage: message,
       // Files the user attached: PDFs / images ride along inline in this same request; documents arrive as text.
@@ -113,6 +119,17 @@ export async function POST(request: Request) {
       const { message, status } = describeAiError(e);
       return err(message, status);
     }
+  }
+
+  // Long-term memory: keep a new permanent habit (no duplicates, max 12) and stamp the chat with today's date.
+  try {
+    const merged = mergeMemory(userMemory, Array.isArray(raw.memoryAdditions) ? raw.memoryAdditions : []);
+    await db.doc(`users/${uid}`).update({
+      chatDate: dateKeyInTz(now, tz),
+      ...(sameMemory(userMemory, merged) ? {} : { userMemory: merged }),
+    });
+  } catch (e) {
+    console.warn("assistant: memory update failed", e);
   }
 
   const tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz) : [];

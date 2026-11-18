@@ -23,7 +23,8 @@ route through `getSessionUid`). Some routes also accept an `Authorization: Beare
 ## Data model (Cloud Firestore)
 
 ```
-users/{uid}                      profile, timezone, settings (working hours, language, quiet hours, notifications), fcmTokens
+users/{uid}                      profile, timezone, settings (working hours, language, quiet hours, notifications), fcmTokens,
+ │                                userMemory[] (AI long-term memory, max 12 short items), chatDate (day of the current chat)
  ├─ tasks/{taskId}               title, deadline?, durationMin?, loggedMinutes, pacing (chill|balanced|locked),
  │                               status (active|completed), subtasks[], recurrence?, startedAt?, accumulatedSeconds?, flags
  ├─ schedules/{dateKey}          planned blocks (the plan is stored under the day it was made and holds several days)
@@ -42,7 +43,8 @@ a signed-in user for themselves and never read from the client; `reminders` and 
 | Route | Purpose |
 |---|---|
 | `POST/DELETE /api/session` | create / clear the session cookie |
-| `POST /api/assistant` | AI assistant: create/modify/answer, optional file attachments (multipart) |
+| `POST /api/chat/rollover` | daily chat reset: folds lasting preferences from the previous day's chat into `userMemory`, then clears the chat |
+| `POST /api/assistant` | AI assistant: create/modify/answer, optional file attachments (multipart); sends only the last 16 messages + `userMemory` + the task list to the model |
 | `POST /api/schedule` | Gemini-based schedule for a day (up to 90 days for undated tasks) |
 | `POST /api/rebalance` | deterministic re-plan of all tasks (the planner in `src/lib/planner.ts`) |
 | `POST /api/decompose` | split a big task into scheduled parts |

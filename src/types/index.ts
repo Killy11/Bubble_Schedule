@@ -15,6 +15,10 @@ export interface User {
   fcmTokens?: string[];
   /** Set once the user has finished (or skipped) the first-run walkthrough. */
   hasCompletedOnboarding?: boolean;
+  /** Long-term memory for the AI assistant: up to 12 short permanent habits / preferences. */
+  userMemory?: string[];
+  /** The calendar day (YYYY-MM-DD, user timezone) the current chat belongs to. The chat is cleared when it changes. */
+  chatDate?: string;
   createdAt: ISODateTime;
   lastLoginAt: ISODateTime;
 }
