@@ -21,7 +21,10 @@ function popperLayout() {
   const phone = typeof window !== "undefined" && window.innerWidth < 640;
   const w = phone ? 96 : 144;
   const h = Math.round(w * 1.3);
-  return { w, h, off: Math.round(h * 0.42) }; // ≈ -bottom-14 on phones, ≈ -bottom-20 on desktop: about half the popper peeks in
+  // Raised ~50px (desktop) / ~38px (phone) from before: the whole upper cone and nozzle now stand in the corner,
+  // while the tip (the pivot, `off` px past both edges) stays hidden. Spawn points are derived from this same value.
+  const off = Math.max(8, Math.round(h * 0.42) - (phone ? 38 : 50));
+  return { w, h, off };
 }
 
 /** Rotating encouragement (keys are translated by the language provider). */
