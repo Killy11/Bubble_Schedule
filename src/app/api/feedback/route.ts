@@ -3,6 +3,7 @@ import { adminDb } from "@/lib/firebase/admin";
 import { getSessionUid } from "@/lib/firebase/serverAuth";
 
 export const maxDuration = 15;
+const MAX_PER_HOUR = 5;
 const CATEGORIES = new Set(["bug", "feature", "general"]);
 const err = (error: string, status: number) => NextResponse.json({ error }, { status });
 
@@ -11,7 +12,7 @@ export async function POST(request: Request) {
   const uid = await getSessionUid();
   if (!uid) return err("Not signed in", 401);
 
-  let body: { category?: unknown; message?: unknown; email?: unknown };
+  let body: { category?: unknown; message?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -19,12 +20,20 @@ export async function POST(request: Request) {
   }
   const message = typeof body.message === "string" ? body.message.trim().slice(0, 2000) : "";
   const category = typeof body.category === "string" && CATEGORIES.has(body.category) ? body.category : "general";
-  const email = typeof body.email === "string" ? body.email.trim().slice(0, 200) : "";
   if (!message) return err("Message is required", 400);
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return err("Invalid email", 400);
 
   try {
-    await adminDb().collection("feedback").add({ category, message, email, userId: uid, createdAt: new Date() });
+    // Rate limit: single-field query (no composite index needed); the time window is checked in memory.
+    const db = adminDb();
+    const mine = await db.collection("feedback").where("userId", "==", uid).get();
+    const since = Date.now() - 3_600_000;
+    const recent = mine.docs.filter((d) => {
+      const at = d.get("createdAt") as { toMillis?: () => number } | undefined;
+      return (at?.toMillis?.() ?? 0) > since;
+    }).length;
+    if (recent >= MAX_PER_HOUR) return err("Too many feedback messages. Try again later.", 429);
+
+    await db.collection("feedback").add({ category, message, userId: uid, createdAt: new Date() });
   } catch (e) {
     console.error("feedback: save failed", e);
     return err("Couldn't save feedback", 500);

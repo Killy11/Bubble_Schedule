@@ -242,7 +242,7 @@ export const UK: Record<string, string> = {
   "Feature request": "Ідея",
   "General feedback": "Загальний відгук",
   Message: "Повідомлення",
-  "Email (optional)": "Email (необов'язково)",
+  "Too many messages. Please try again in an hour.": "Забагато повідомлень. Спробуйте за годину.",
   "Write a message first.": "Спершу напишіть повідомлення.",
   "Thanks! Feedback sent.": "Дякуємо! Відгук надіслано.",
   "Couldn't send. Please try again.": "Не вдалося надіслати. Спробуйте ще раз.",

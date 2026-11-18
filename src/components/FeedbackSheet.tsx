@@ -28,7 +28,6 @@ function Form({ onClose }: { onClose: () => void }) {
   const { toast } = useToast();
   const [category, setCategory] = useState<Category>("general");
   const [message, setMessage] = useState("");
-  const [email, setEmail] = useState(user?.email ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,8 +44,13 @@ function Form({ onClose }: { onClose: () => void }) {
       const res = await fetch("/api/feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category, message: text, email: email.trim() }),
+        body: JSON.stringify({ category, message: text }),
       });
+      if (res.status === 429) {
+        setError(t("Too many messages. Please try again in an hour."));
+        setBusy(false);
+        return;
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       toast({ title: t("Thanks! Feedback sent.") });
       onClose();
@@ -86,11 +90,6 @@ function Form({ onClose }: { onClose: () => void }) {
           onChange={(e) => setMessage(e.target.value)}
           className={`${field} mt-1 resize-none text-foreground`}
         />
-      </label>
-      <label className="block text-xs text-muted">
-        {t("Email (optional)")}
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={200}
-          autoComplete="email" className={`${field} mt-1 text-foreground`} />
       </label>
       {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
       <button type="submit" disabled={busy}

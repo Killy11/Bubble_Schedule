@@ -66,10 +66,9 @@ interface Day {
 
 /**
  * Chronological planner.
- *  1. Locked-in units take the earliest free stretch that holds them whole (parts the user asked
- *     for are chained with 5-minute gaps), ignoring everyone else: they are never pushed out.
- *  2. Day by day, Balanced and Chill units fill what is left: the earliest-deadline unit that fits
- *     goes next, followed by its wave / recharge break. A day stops at its load cap, and the parts
+ *  Day by day, units go in priority order (urgency tier, then earliest due; focus intensity never
+ *  reorders): the first unit that fits goes next, followed by its pacing's break. A Locked-in task,
+ *  when its turn comes, is one unbroken block (requested parts chained with 5-minute gaps). A day stops at its load cap, and the parts
  *     of a task are spread over the days up to its deadline instead of piling on one day.
  * Returns the slot of every unit that fits (a unit that doesn't is simply missing).
  */
@@ -101,41 +100,21 @@ export function planUnits(o: {
     Math.min(latestEndMs(u.deadlineMs, nowMs, u.durationMin), u.deadlineMs - 5 * MIN);
 
   const load = days.map((d) => o.fixed.reduce((s, f) => s + overlap(f, d) / MIN, 0)); // booked minutes per day
-  const lockedPlaced: Interval[] = [];
-
-  // ── 1) Locked-in: monolithic, immovable, first claim on the calendar ──────────────────
+  // Locked-in tasks take part in the same priority-ordered sweep as everyone else (focus intensity never
+  // changes the queue). Once a locked task's turn comes it is placed as one unbroken chain.
   const lockedByTask = new Map<string, PlanUnit[]>();
   for (const u of o.units) if (u.pacing === "locked") lockedByTask.set(u.taskId, [...(lockedByTask.get(u.taskId) ?? []), u]);
-  const lockedTasks = [...lockedByTask.values()].sort((a, b) => a[0].orderIdx - b[0].orderIdx);
-  for (const chain of lockedTasks) {
-    chain.sort((a, b) => a.seq - b.seq);
-    const need = chain.reduce((s, u) => s + u.durationMin, 0) + (chain.length - 1) * (LOCKED_GAP_MIN);
-    const limit = Math.min(...chain.map(limitOf));
-    for (let d = 0; d < days.length; d++) {
-      const obstacles = [...o.fixed.map((f) => pad(f, LOCKED_GAP_MIN)), ...lockedPlaced.map((f) => pad(f, LOCKED_GAP_MIN))];
-      const windows = subtract([{ start: days[d].start, end: Math.min(days[d].end, limit) }], obstacles);
-      const w = windows.find((x) => ceil5(x.start) + need * MIN <= x.end);
-      if (!w) continue;
-      let at = ceil5(w.start);
-      for (const u of chain) {
-        const slot = { start: at, end: at + u.durationMin * MIN };
-        out.set(u.key, slot);
-        lockedPlaced.push(slot);
-        load[d] += u.durationMin;
-        at = slot.end + LOCKED_GAP_MIN * MIN;
-      }
-      break;
-    }
-  }
+  for (const chain of lockedByTask.values()) chain.sort((x, y) => x.seq - y.seq);
 
   // ── 2) Balanced + Chill, day by day ───────────────────────────────────────────────────
-  const rest = o.units.filter((u) => u.pacing !== "locked");
+  const rest = o.units;
   // Day each part should not come before, so a task is spread rather than piled onto day one.
   const earliestDay = new Map<string, number>();
   const byTask = new Map<string, PlanUnit[]>();
   for (const u of rest) byTask.set(u.taskId, [...(byTask.get(u.taskId) ?? []), u].sort((a, b) => a.seq - b.seq));
   for (const parts of byTask.values()) {
     const first = parts[0];
+    if (first.pacing === "locked") continue; // locked chains are never spread over days
     const shortest = Math.min(...parts.map((p) => p.durationMin));
     const lim = limitOf(first);
     const usable = days
@@ -162,7 +141,7 @@ export function planUnits(o: {
   }
 
   const prevKey = new Map<string, string>();
-  for (const parts of byTask.values()) parts.forEach((p, i) => i > 0 && prevKey.set(p.key, parts[i - 1].key));
+  for (const parts of byTask.values()) if (parts[0].pacing !== "locked") parts.forEach((p, i) => i > 0 && prevKey.set(p.key, parts[i - 1].key));
   const pending = [...rest].sort((a, b) => a.orderIdx - b.orderIdx || a.seq - b.seq);
   const done = new Set<string>();
   const placedRest: Interval[] = [];
@@ -174,8 +153,8 @@ export function planUnits(o: {
    */
   const sweep = (capped: boolean) => {
     for (let d = 0; d < days.length && done.size < pending.length; d++) {
-      const obstacles = [...o.fixed, ...lockedPlaced, ...placedRest].map((f) => pad(f, PAD_FIXED_MIN));
-      const windows = subtract([{ ...days[d] }], capped ? obstacles.slice(0, o.fixed.length + lockedPlaced.length) : obstacles)
+      const obstacles = [...o.fixed, ...placedRest].map((f) => pad(f, PAD_FIXED_MIN));
+      const windows = subtract([{ ...days[d] }], capped ? obstacles.slice(0, o.fixed.length) : obstacles)
         .filter((w) => w.end - w.start >= 15 * MIN);
       let cursor = 0;
       let cum = 0;
@@ -183,6 +162,30 @@ export function planUnits(o: {
         let placed = false;
         for (const u of pending) {
           if (done.has(u.key)) continue;
+          if (u.pacing === "locked") {
+            const chain = lockedByTask.get(u.taskId)!;
+            if (chain[0] !== u) continue; // placed together with its first part
+            const need = chain.reduce((sum, c) => sum + c.durationMin, 0) + (chain.length - 1) * LOCKED_GAP_MIN;
+            const cl = Math.min(...chain.map(limitOf));
+            for (const w of windows) {
+              let at = ceil5(Math.max(w.start, cursor));
+              if (at + need * MIN > Math.min(w.end, cl)) continue;
+              for (const c of chain) {
+                const slot = { start: at, end: at + c.durationMin * MIN };
+                out.set(c.key, slot);
+                placedRest.push(slot);
+                done.add(c.key);
+                load[d] += c.durationMin;
+                at = slot.end + LOCKED_GAP_MIN * MIN;
+              }
+              cursor = at;
+              cum = 0;
+              placed = true;
+              break;
+            }
+            if (placed) break;
+            continue;
+          }
           if (capped && (earliestDay.get(u.key) ?? 0) > d) continue;
           const before = prevKey.get(u.key); // parts of one task go in order
           if (before && !done.has(before)) continue;
