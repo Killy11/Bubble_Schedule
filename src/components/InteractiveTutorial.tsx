@@ -16,6 +16,10 @@ interface Step {
   title: string;
   body: string;
   extra?: ReactNode;
+  /** The user is meant to use the real app during this step: no dimming, clicks pass through. */
+  interactive?: boolean;
+  /** Move on by itself as soon as a new bubble appears. */
+  advanceOnNewBubble?: boolean;
 }
 
 /** A small static copy of the Timer & Quick Actions window, so the step can show what a tap opens. */
@@ -45,40 +49,30 @@ function TimerPreview({ t }: { t: TFn }) {
 
 const steps = (t: TFn): Step[] => [
   {
-    target: '[data-tour="bubble-canvas"]', tab: "bubbles",
-    title: t("Every bubble is a task"),
-    body: t("Bigger bubbles are longer tasks. Colour shows the deadline: red is under a day, yellow is 1–5 days, green is 5+ days or no deadline."),
+    target: '[data-tour="add-task-btn"]', tab: "bubbles", interactive: true, advanceOnNewBubble: true,
+    title: t("Create your first bubble"),
+    body: t("The canvas starts empty because every task becomes a bubble. Tap New bubble now, type a title and the minutes it needs, then save. This guide moves on by itself when your bubble appears."),
   },
   {
-    target: '[data-tour="bubble-canvas"]', tab: "bubbles",
-    title: t("Tap a bubble: timer and quick actions"),
-    body: t("A tap opens the timer first: run it, tap Credit to log whole minutes (rounded down), adjust the time left with −15 / a number / +15, tap Complete, or open Edit task."),
+    target: '[data-tour="first-bubble"]', tab: "bubbles", interactive: true,
+    title: t("Tap your new bubble"),
+    body: t("Tapping a bubble opens its timer: start the live countdown, tap ✓ to log whole minutes, change the time left with −15 / a number / +15, or tap Complete to pop it. Try it, then press Next."),
     extra: <TimerPreview t={t} />,
   },
   {
-    target: '[data-tour="add-task-btn"]', tab: "bubbles",
-    title: t("Add a task"),
-    body: t("Tap New bubble to create one by hand: a title, a duration in minutes and a deadline. Everything but the title is optional."),
-  },
-  {
     target: '[data-tour="ai-chat"]', tab: "chat",
-    title: t("AI assistant and voice"),
-    body: t("Type or tap the mic and speak: “send the report tomorrow 5pm”. The AI creates tasks, changes them and plans your day."),
+    title: t("Set a time of day with the AI chat"),
+    body: t("To put a task at a specific time of day, just type or dictate it in the chat (for example “Put this at 3 PM” or “Plan my day”)."),
   },
   {
     target: '[data-tour="schedule-view"]', tab: "schedule",
     title: t("Your daily schedule"),
-    body: t("The timeline lists what to do and when, day by day. Overdue and Completed tasks are one tap away at the top."),
+    body: t("Tasks the AI times appear here on the timeline, day by day. Overdue and Completed are one tap away at the top."),
   },
   {
     target: '[data-tour="settings-btn"]', tab: "bubbles",
     title: t("Notifications and reminders"),
     body: t("In your profile you can turn on notifications for task starts and timer endings. On iPhone, add the site to your Home Screen first (Share → Add to Home Screen)."),
-  },
-  {
-    tab: "bubbles",
-    title: t("You're ready!"),
-    body: t("That's all. You can replay this guide any time from the ? button or your profile."),
   },
 ];
 
@@ -91,17 +85,19 @@ const PAD = 6;
  * 375 px phone. `onSelectTab` switches the app's tab so each step's target is actually on screen.
  */
 export function InteractiveTutorial({
-  open, onClose, onSelectTab,
+  open, onClose, onSelectTab, bubbleCount,
 }: {
   open: boolean;
+  /** How many bubbles are on the canvas right now (used to notice the first one being created). */
+  bubbleCount: number;
   /** `completed` is true for "Get started" and also for Skip / Escape (the guide never nags again). */
   onClose: () => void;
   onSelectTab: (tab: TutorialTab) => void;
 }) {
-  return <AnimatePresence>{open && <Tour onClose={onClose} onSelectTab={onSelectTab} />}</AnimatePresence>;
+  return <AnimatePresence>{open && <Tour onClose={onClose} onSelectTab={onSelectTab} bubbleCount={bubbleCount} />}</AnimatePresence>;
 }
 
-function Tour({ onClose, onSelectTab }: { onClose: () => void; onSelectTab: (tab: TutorialTab) => void }) {
+function Tour({ onClose, onSelectTab, bubbleCount }: { onClose: () => void; onSelectTab: (tab: TutorialTab) => void; bubbleCount: number }) {
   const { t } = useLang();
   const list = useMemo(() => steps(t), [t]);
   const [i, setI] = useState(0);
@@ -110,7 +106,18 @@ function Tour({ onClose, onSelectTab }: { onClose: () => void; onSelectTab: (tab
   const [box, setBox] = useState<Box | null>(null);
   const [view, setView] = useState({ w: typeof window === "undefined" ? 375 : window.innerWidth, h: typeof window === "undefined" ? 700 : window.innerHeight });
   const cardRef = useRef<HTMLDivElement>(null);
+  const baseline = useRef(bubbleCount); // bubbles already there when the guide opened
+  const [modalOpen, setModalOpen] = useState(false); // an app dialog (e.g. New bubble) is open under the guide
   const [cardH, setCardH] = useState(240);
+
+  // Step 1 ends by itself when a new bubble shows up on the canvas.
+  useEffect(() => {
+    if (step.advanceOnNewBubble && bubbleCount > baseline.current) {
+      baseline.current = bubbleCount;
+      const id = setTimeout(() => setI((n) => Math.min(n + 1, list.length - 1)), 450); // let the new bubble settle first
+      return () => clearTimeout(id);
+    }
+  }, [bubbleCount, step.advanceOnNewBubble, list.length]);
 
   // Show the tab this step needs.
   useEffect(() => {
@@ -121,6 +128,7 @@ function Tour({ onClose, onSelectTab }: { onClose: () => void; onSelectTab: (tab
   const target = step.target;
   useEffect(() => {
     const measure = () => {
+      setModalOpen(!!document.querySelector('[role="dialog"][aria-modal="true"]:not([data-tour-card])'));
       setView((v) => (v.w === window.innerWidth && v.h === window.innerHeight ? v : { w: window.innerWidth, h: window.innerHeight }));
       const el = target ? (document.querySelector(target) as HTMLElement | null) : null;
       const r = el?.getBoundingClientRect();
@@ -149,6 +157,8 @@ function Tour({ onClose, onSelectTab }: { onClose: () => void; onSelectTab: (tab
   });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return; // typing
       if (e.key === "Escape") handlers.current.onClose();
       else if (e.key === "ArrowRight") {
         if (handlers.current.last) handlers.current.onClose();
@@ -174,13 +184,23 @@ function Tour({ onClose, onSelectTab }: { onClose: () => void; onSelectTab: (tab
     else top = Math.max(M, Math.min(box.y + box.h, view.h) - cardH - M * 4);
     left = Math.min(Math.max(M, box.x + box.w / 2 - cardW / 2), view.w - cardW - M);
   }
+  // While an app dialog is open under an interactive step, keep the card out of its way at the top of the screen.
+  if (step.interactive && modalOpen) top = M;
   top = Math.min(Math.max(M, top), Math.max(M, view.h - cardH - M));
 
   return (
-    <motion.div className="fixed inset-0 z-[90]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="dialog" aria-modal="true" aria-label={t("Help")}>
+    <motion.div data-tour-card className={`fixed inset-0 z-[90] ${step.interactive ? "pointer-events-none" : ""}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="dialog" aria-modal="true" aria-label={t("Help")}>
       {/* catches clicks so the app underneath can't be used mid-tour */}
-      <div className="absolute inset-0" />
-      {box ? (
+      {!step.interactive && <div className="absolute inset-0" />}
+      {box && step.interactive ? (
+        !modalOpen && (
+          <div
+            aria-hidden
+            className="pointer-events-none fixed animate-pulse rounded-3xl border-2 border-white/70 transition-all duration-300"
+            style={{ left: box.x, top: box.y, width: box.w, height: box.h, boxShadow: "0 0 24px 4px rgba(255,255,255,0.45)" }}
+          />
+        )
+      ) : box ? (
         <div
           aria-hidden
           className="pointer-events-none fixed rounded-3xl border border-white/40 transition-all duration-300 ease-out"
@@ -191,11 +211,12 @@ function Tour({ onClose, onSelectTab }: { onClose: () => void; onSelectTab: (tab
       )}
       <motion.div
         ref={cardRef}
+        data-tour-card
         key={i}
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.2 }}
-        className="fixed max-h-[calc(100dvh-24px)] overflow-y-auto overscroll-contain rounded-3xl border border-white/12 bg-[#111116]/95 p-5 text-zinc-100 shadow-[0_24px_80px_rgba(0,0,0,0.75)] backdrop-blur-xl"
+        className="pointer-events-auto fixed max-h-[calc(100dvh-24px)] overflow-y-auto overscroll-contain rounded-3xl border border-white/12 bg-[#111116]/95 p-5 text-zinc-100 shadow-[0_24px_80px_rgba(0,0,0,0.75)] backdrop-blur-xl"
         style={{ top, left, width: cardW }}
       >
         <div className="mb-2 flex items-center justify-between text-xs text-zinc-400">
@@ -212,7 +233,7 @@ function Tour({ onClose, onSelectTab }: { onClose: () => void; onSelectTab: (tab
             className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/[0.08] disabled:opacity-30">
             ← {t("Back")}
           </button>
-          <button type="button" autoFocus onClick={next}
+          <button type="button" onClick={next}
             className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black transition hover:opacity-90">
             {last ? t("🚀 Get started") : `${t("Next")} →`}
           </button>

@@ -90,6 +90,7 @@ export function Bubble({
 
   return (
     <motion.div
+      data-tour={index === 0 ? "first-bubble" : undefined}
       className={`absolute left-0 top-0 hue-${hue}`}
       initial={{ ...geometry, scale: 0, opacity: 0 }}
       // Position AND size are animated, so rank changes glide and logging time shrinks smoothly.

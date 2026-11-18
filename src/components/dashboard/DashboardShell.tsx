@@ -151,11 +151,11 @@ export function DashboardShell() {
 
   const {
     tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, confirmTimer, setRemaining,
-    startTimer, stopTimer, setRecurrence, updateTask, saveSubtasks, toggleSubtask, reschedule,
+    startTimer, stopTimer, updateTask, toggleSubtask, reschedule,
   } = useTasks(uid, timezone, now, handleOverdue, handleOneDay);
 
   // Big tasks are split into scheduled parts automatically (and on demand from the task modal).
-  const { working: splitting, split } = useDecompose(
+  useDecompose(
     tasks,
     !!uid && !tasksLoading,
     ({ task, subtasks, placed, total }) => {
@@ -626,7 +626,7 @@ export function DashboardShell() {
         onDelete={(task) => deleteForever([task.id])}
         onClearAll={() => deleteForever(completed.map((x) => x.id))}
       />
-      <InteractiveTutorial open={tourOpen || autoTour} onClose={closeTour} onSelectTab={setTab} />
+      <InteractiveTutorial open={tourOpen || autoTour} onClose={closeTour} onSelectTab={setTab} bubbleCount={active.length} />
       <PartDetailSheet
         task={active.find((x) => x.id === openPart?.taskId) ?? null}
         sub={active.find((x) => x.id === openPart?.taskId)?.subtasks?.find((x) => x.id === openPart?.subId) ?? null}
@@ -658,17 +658,8 @@ export function DashboardShell() {
         onConfirmTimer={confirmTimer}
         onSetRemaining={(task, m) => setRemaining(task, m)}
         onAdjust={(task, d) => adjustRemaining(task, d)}
-        onEditTime={(task) => {
-          const block = schedule?.blocks.find((b) => b.taskId === task.id && b.status !== "done");
-          if (block) { setOpenId(null); setEditBlockId(block.id); }
-        }}
         onStartTimer={(task) => startTimer(task.id)}
         onStopTimer={stopTimer}
-        onSetRecurrence={setRecurrence}
-        splitting={!!openTask && splitting.has(openTask.id)}
-        onToggleSubtask={(task, sub, checked) => (checked === !sub.completed ? toggleSubtaskFlow(task, sub) : Promise.resolve())}
-        onSaveSubtasks={saveSubtasks}
-        onSplit={(task, n) => void split(task, n)}
         onEdit={async (task, patch) => {
           await updateTask(task, patch);
           if (patch.title.trim() !== task.title) await renameTaskBlocks(task.id, patch.title.trim()).catch(() => {});

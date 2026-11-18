@@ -17,7 +17,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { historyConverter, taskConverter, toFirestoreData } from "@/lib/firebase/converters";
-import { MAX_TOTAL_MIN, sessionMinutes, sessionSeconds, totalMinutes } from "@/lib/remaining";
+import { MAX_TOTAL_MIN, remainingMinutes, sessionMinutes, sessionSeconds, totalMinutes } from "@/lib/remaining";
 import { cleanRecurrence, nextOccurrence } from "@/lib/recurrence";
 import { makeHistoryRecord } from "@/lib/history";
 import { oneDayFlagFor, withinOneDay } from "@/lib/oneDay";
@@ -88,6 +88,7 @@ export function useTasks(
     );
   }, [uid]);
 
+  const adjusting = useRef(new Set<string>()); // tasks with a time-left write in flight
   const tasksRef = useRef(tasks);
   useEffect(() => {
     tasksRef.current = tasks;
@@ -415,10 +416,21 @@ export function useTasks(
   const adjustRemaining = useCallback(
     async (task: Task, deltaMin: number) => {
       if (!uid) return;
-      const spent = task.loggedMinutes ?? 0;
-      const next = Math.min(MAX_TOTAL_MIN, Math.max(spent, totalMinutes(task) + deltaMin)); // time left stays ≥ 0
-      if (next === totalMinutes(task) && task.durationMin !== undefined) return;
-      await updateDoc(doc(db, "users", uid, "tasks", task.id), { durationMin: next, updatedAt: new Date() });
+      // One click = one change of exactly `deltaMin` on the TIME LEFT. The new value is worked out from the time left
+      // the user is looking at and written as an absolute duration (spent + new time left), never as an increment on
+      // top of a value that may already have been changed; and a second call for the same task is ignored while the
+      // first write is in flight, so a doubled tap or handler can never apply the step twice.
+      if (adjusting.current.has(task.id)) return;
+      const current = remainingMinutes(task);
+      const nextRemaining = Math.max(0, current + deltaMin);
+      const total = Math.min(MAX_TOTAL_MIN, (task.loggedMinutes ?? 0) + nextRemaining);
+      if (total === totalMinutes(task) && task.durationMin !== undefined) return;
+      adjusting.current.add(task.id);
+      try {
+        await updateDoc(doc(db, "users", uid, "tasks", task.id), { durationMin: total, updatedAt: new Date() });
+      } finally {
+        adjusting.current.delete(task.id);
+      }
     },
     [uid],
   );
@@ -426,10 +438,16 @@ export function useTasks(
   /** Set the time left to an exact number of whole minutes (typed by the user). */
   const setRemaining = useCallback(
     async (task: Task, minutes: number) => {
-      if (!uid || !Number.isInteger(minutes) || minutes < 0) return;
-      const next = Math.min(MAX_TOTAL_MIN, (task.loggedMinutes ?? 0) + minutes);
-      if (next === totalMinutes(task) && task.durationMin !== undefined) return;
-      await updateDoc(doc(db, "users", uid, "tasks", task.id), { durationMin: next, updatedAt: new Date() });
+      if (!uid || !Number.isFinite(minutes) || adjusting.current.has(task.id)) return;
+      const next = Math.max(0, Math.floor(minutes));
+      const total = Math.min(MAX_TOTAL_MIN, (task.loggedMinutes ?? 0) + next);
+      if (total === totalMinutes(task) && task.durationMin !== undefined) return;
+      adjusting.current.add(task.id);
+      try {
+        await updateDoc(doc(db, "users", uid, "tasks", task.id), { durationMin: total, updatedAt: new Date() });
+      } finally {
+        adjusting.current.delete(task.id);
+      }
     },
     [uid],
   );
@@ -438,7 +456,7 @@ export function useTasks(
   const updateTask = useCallback(
     async (
       task: Task,
-      patch: { title: string; deadline: string | null; durationMin: number | null; pacing: Pacing; description?: string | null },
+      patch: { title: string; deadline: string | null; durationMin: number | null; pacing: Pacing },
     ) => {
       if (!uid) return;
       const deadlineChanged = (patch.deadline ? Date.parse(patch.deadline) : null) !== (task.deadline ? Date.parse(task.deadline) : null);
@@ -446,7 +464,6 @@ export function useTasks(
         title: patch.title.trim(),
         deadline: patch.deadline ? new Date(patch.deadline) : deleteField(),
         durationMin: patch.durationMin ?? deleteField(),
-        ...(patch.description !== undefined ? { description: patch.description?.trim() || deleteField() } : {}),
         pacing: patch.pacing,
         // A new deadline deserves fresh "due soon" / "expired" alerts.
         ...(deadlineChanged

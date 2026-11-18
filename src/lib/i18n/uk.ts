@@ -408,4 +408,16 @@ export const UK: Record<string, string> = {
   "Step {a} of {b}": "Крок {a} з {b}",
   "🚀 Get started": "🚀 Почати роботу",
   "🎓 Show the interactive guide": "🎓 Показати інтерактивний гід",
+
+  // Hands-on tutorial
+  "Create your first bubble": "Створіть першу бульбашку",
+  "The canvas starts empty because every task becomes a bubble. Tap New bubble now, type a title and the minutes it needs, then save. This guide moves on by itself when your bubble appears.": "Полотно порожнє, бо кожне завдання стає бульбашкою. Натисніть «Нова бульбашка», введіть назву та кількість хвилин і збережіть. Гід перейде далі сам, щойно з'явиться ваша бульбашка.",
+  "Tap your new bubble": "Торкніться нової бульбашки",
+  "Tapping a bubble opens its timer: start the live countdown, tap ✓ to log whole minutes, change the time left with −15 / a number / +15, or tap Complete to pop it. Try it, then press Next.": "Дотик до бульбашки відкриває її таймер: запустіть відлік, натисніть ✓, щоб записати цілі хвилини, змініть залишок кнопками −15 / числом / +15 або натисніть «Виконано», щоб луснути її. Спробуйте, потім натисніть «Далі».",
+  "Set a time of day with the AI chat": "Час доби — через ШІ-чат",
+  "To put a task at a specific time of day, just type or dictate it in the chat (for example “Put this at 3 PM” or “Plan my day”).": "Щоб поставити завдання на конкретний час дня, просто напиши або надиктуй голосом у чат (наприклад: «Постав це на 15:00» або «Сплануй мій день»).",
+  "Tasks the AI times appear here on the timeline, day by day. Overdue and Completed are one tap away at the top.": "Завдання, яким ШІ призначив час, з'являються тут на стрічці, день за днем. Прострочені та виконані — одним дотиком угорі.",
+  "Task title": "Назва завдання",
+  "Minutes left": "Залишилось хвилин",
+  "Enter whole minutes.": "Введіть цілі хвилини.",
 };
