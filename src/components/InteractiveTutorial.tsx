@@ -15,7 +15,7 @@ interface Step {
   /** Which tab must be showing (phones show one panel at a time; on desktop it also picks the side panel). */
   tab: TutorialTab;
   title: string;
-  body: string;
+  body?: string;
   extra?: ReactNode;
   /** The user is meant to use the real app during this step: no dimming, clicks pass through. */
   interactive?: boolean;
@@ -45,37 +45,11 @@ const steps = (t: TFn, isDesktop: boolean, hasBubble: boolean): Step[] => [
     body: t("Tap the central bubble with the plus to create your first task."),
   },
   {
-    id: "title", target: '[data-tour="field-title"]', tab: "bubbles", interactive: true, insideModal: true, requires: "create",
-    title: t("Task title"),
-    body: t("Write what needs to be done (for example “Workout” or “Report”)."),
-  },
-  {
-    id: "duration", target: '[data-tour="field-duration"]', tab: "bubbles", interactive: true, insideModal: true, requires: "create",
-    title: t("Duration"),
-    body: t("Duration in minutes: the more minutes, the bigger the bubble on the canvas."),
-  },
-  {
-    id: "mode", target: '[data-tour="field-mode"]', tab: "bubbles", interactive: true, insideModal: true, requires: "create",
-    title: t("Focus mode"),
-    body: t("Locked In (maximum focus), Normal (usual pace) or Chill (an easy task)."),
-  },
-  {
-    id: "repeat", target: '[data-tour="field-repeat"]', tab: "bubbles", interactive: true, insideModal: true, requires: "create",
-    title: t("Repeat"),
-    body: t("Turn on a daily or weekly repeat if it is a regular task."),
-  },
-  {
-    id: "deadline", target: '[data-tour="field-deadline"]', tab: "bubbles", interactive: true, insideModal: true, requires: "create",
-    title: t("Deadline"),
-    body: t("The closer the deadline, the brighter the bubble glows."),
-  },
-  {
-    id: "submit", target: '[data-tour="field-submit"]', tab: "bubbles", interactive: true, insideModal: true, mandatory: true, requires: "create",
-    title: hasBubble ? t("Save your changes") : t("Create it"),
-    // After the bubble exists, coming back here reopens it for editing: the button then says Save.
-    body: hasBubble
-      ? t("Edit the fields if you like and tap “Save” (or “Next →”) to go back to the bubble.")
-      : t("Tap “Create” to put the bubble on the canvas."),
+    // One step for the whole Create window: no field-by-field walkthrough, the labels explain themselves.
+    id: "submit", target: '[data-tour-modal="create"]', tab: "bubbles", interactive: true, insideModal: true, mandatory: true, requires: "create",
+    title: t("Create your first task"),
+    // After the bubble exists, coming back here reopens it for editing (the button then says Save).
+    body: hasBubble ? t("Tap “Save” (or “Next →”) to go back to the bubble.") : undefined,
   },
   {
     id: "bubble", target: '[data-tour="tutorial-target-bubble"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "task",
@@ -83,14 +57,9 @@ const steps = (t: TFn, isDesktop: boolean, hasBubble: boolean): Step[] => [
     body: t("Now tap right on the bubble you created to open its time controls."),
   },
   {
-    id: "timer", target: '[data-tour="timer-clock"]', tab: "bubbles", interactive: true, insideModal: true, requires: "task",
-    title: t("Live timer"),
-    body: t("The live timer counts in real time. “✓ Log minutes” saves the whole minutes you worked (seconds are rounded down)."),
-  },
-  {
-    id: "manual", target: '[data-tour="time-log"], [data-tour="modal-actions"]', union: true, tab: "bubbles", interactive: true, insideModal: true, requires: "task",
-    title: t("Manual time and finishing"),
-    body: t("No timer? Add minutes with −15 / +15 or by typing, then “Log 15 min”. When the task is completely done, tap “🎉 Finish task” and the bubble disappears from the canvas."),
+    id: "controls", target: '[data-tour="timer-clock"], [data-tour="time-log"], [data-tour="modal-actions"]', union: true, tab: "bubbles", interactive: true, insideModal: true, requires: "task",
+    title: t("Task controls"),
+    body: t("Run the live timer or add minutes by hand (−15 / +15, “Log”). “Edit task” changes the details, and “🎉 Finish task” removes the bubble from the canvas when the task is completely done."),
   },
   {
     id: "close", target: '[data-tour="close-task-modal"]', tab: "bubbles", interactive: true, insideModal: true, mandatory: true, advanceOnModalClose: "task", requires: "task",
@@ -433,7 +402,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onSyncDialogs, createdTaskId,
           )}
         </div>
         <h2 className="text-base font-semibold tracking-tight">{step.title}</h2>
-        <p className="mt-1.5 text-sm leading-relaxed text-zinc-300">{step.body}</p>
+        {step.body && <p className="mt-1.5 text-sm leading-relaxed text-zinc-300">{step.body}</p>}
         {step.extra}
         <div className="mt-4 flex items-center justify-between gap-2">
           <button type="button" onClick={() => setI((n) => Math.max(0, n - 1))} disabled={i === 0} aria-label={t("Back")}

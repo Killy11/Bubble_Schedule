@@ -577,4 +577,8 @@ export const UK: Record<string, string> = {
   "✓ Copied": "✓ Скопійовано",
   "Download QR (PNG)": "Завантажити QR (PNG)",
   "Send...": "Надіслати...",
+  "Create your first task": "Створіть свою першу таску",
+  "Tap “Save” (or “Next →”) to go back to the bubble.": "Натисніть «Зберегти» (або «Далі →»), щоб повернутися до бульбашки.",
+  "Task controls": "Керування завданням",
+  "Run the live timer or add minutes by hand (−15 / +15, “Log”). “Edit task” changes the details, and “🎉 Finish task” removes the bubble from the canvas when the task is completely done.": "Запустіть живий таймер або додайте хвилини вручну (−15 / +15, «Зарахувати»). «Редагувати завдання» змінює параметри, а «🎉 Завершити завдання» прибирає бульбашку з полотна, коли справа повністю готова.",
 };
