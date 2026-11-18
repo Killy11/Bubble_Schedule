@@ -536,7 +536,6 @@ export function DashboardShell() {
         onOpenProfile={() => setProfileOpen(true)}
         onOpenHelp={startTutorial}
         onOpenFeedback={() => setFeedbackOpen(true)}
-        onOpenShare={() => setShareOpen(true)}
       />
 
       {runningTasks[0] && (
@@ -637,7 +636,8 @@ export function DashboardShell() {
         ))}
       </nav>
 
-      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onSignOut={async () => {
+      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onShare={() => { setProfileOpen(false); setShareOpen(true); }}
+        onSignOut={async () => {
           await signOut();
           router.replace("/login");
         }} />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BellRing, Check, Clock, Download, Globe, Loader2, LogOut, Mail, Moon, Share } from "lucide-react";
+import { BellRing, Check, Clock, Download, Globe, Loader2, LogOut, Mail, Moon, Share, Share2 } from "lucide-react";
 import { doc, updateDoc } from "firebase/firestore";
 import { Sheet } from "@/components/Sheet";
 import { db } from "@/lib/firebase/client";
@@ -181,7 +181,7 @@ function WorkingHours({ uid, start: s0, end: e0, quietCustom }: { uid: string; s
   );
 }
 
-export function ProfileSheet({ open, onClose, onSignOut }: { open: boolean; onClose: () => void; onSignOut: () => Promise<void> }) {
+export function ProfileSheet({ open, onClose, onShare, onSignOut }: { open: boolean; onClose: () => void; onShare: () => void; onSignOut: () => Promise<void> }) {
   const [signingOut, setSigningOut] = useState(false);
   const { t, lang, setLang } = useLang();
   const { user } = useAuth();
@@ -290,6 +290,9 @@ export function ProfileSheet({ open, onClose, onSignOut }: { open: boolean; onCl
           )}
 
           <SupportButton variant="block" />
+          <button type="button" onClick={onShare} className={`${primaryBtn} glass hover:brightness-125`}>
+            <Share2 className="h-4 w-4" /> {t("Share")}
+          </button>
           <button
             type="button"
             disabled={signingOut}

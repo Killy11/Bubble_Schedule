@@ -1,6 +1,6 @@
 "use client";
 
-import { HelpCircle, MessageSquarePlus, Share2 } from "lucide-react";
+import { HelpCircle, MessageSquarePlus } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SupportButton } from "@/components/SupportButton";
@@ -12,14 +12,12 @@ export function Header({
   onOpenProfile,
   onOpenHelp,
   onOpenFeedback,
-  onOpenShare,
 }: {
   name: string;
   photoURL?: string | null;
   onOpenProfile: () => void;
   onOpenHelp: () => void;
   onOpenFeedback: () => void;
-  onOpenShare: () => void;
 }) {
   const { t } = useLang();
   return (
@@ -45,17 +43,6 @@ export function Header({
           >
             <MessageSquarePlus className="h-4 w-4" />
             <span className="hidden xl:inline">{t("Feedback")}</span>
-          </button>
-          <button
-            type="button"
-            onClick={onOpenShare}
-            data-tour="share-btn"
-            aria-label={t("Share BubbleSchedule")}
-            title={t("Share BubbleSchedule")}
-            className="glass flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-full text-xs text-muted transition hover:text-foreground lg:px-3"
-          >
-            <Share2 className="h-4 w-4" />
-            <span className="hidden lg:inline">{t("Share")}</span>
           </button>
           <button
             type="button"
