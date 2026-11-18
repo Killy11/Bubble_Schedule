@@ -12,6 +12,7 @@ import { Sheet } from "@/components/Sheet";
 import { DeadlineField } from "@/components/DeadlineField";
 import { useLang } from "@/context/LanguageProvider";
 import { PacingSelector } from "@/components/PacingSelector";
+import { isTutorialActive } from "@/lib/tutorialLock";
 import { pacingOf } from "@/lib/pacing";
 import { formatDeadline } from "@/lib/time";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
@@ -375,7 +376,15 @@ function EditForm({
   }
 
   return (
-    <form ref={formRef} onSubmit={submit} className="space-y-4">
+    <form
+      ref={formRef}
+      onSubmit={submit}
+      // During the tutorial Enter in a field must not submit the form.
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && isTutorialActive() && (e.target as HTMLElement).tagName === "INPUT") e.preventDefault();
+      }}
+      className="space-y-4"
+    >
       <label className="block text-xs text-muted" data-tour="field-title">
         <span className="flex justify-between"><span>{t("Task title")}</span><span aria-live="polite">{title.length}/100</span></span>
         <input required maxLength={100} value={title} onChange={(e) => setTitle(e.target.value)} className={`${field} mt-1 text-foreground`} />

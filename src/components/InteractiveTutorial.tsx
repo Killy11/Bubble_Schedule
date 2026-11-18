@@ -24,8 +24,8 @@ interface Step {
   insideModal?: boolean;
   /** Move on by itself when the dialog with this tour id opens ("create" or "task"). */
   advanceOnModal?: string;
-  /** Close any open app dialog on entering this step. */
-  closeDialogs?: boolean;
+  /** The dialog this step needs on screen. Entering the step (forward or back) puts the app in that state. */
+  requires?: "create" | "task";
   /** The user must do the thing themselves: there is no Next button, only a quiet Skip. */
   mandatory?: boolean;
   /** Move on by itself when the dialog with this tour id closes. */
@@ -40,57 +40,57 @@ interface Step {
 
 const steps = (t: TFn, isDesktop: boolean): Step[] => [
   {
-    id: "add", target: '[data-tour="add-task-btn"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "create",
-    title: t("Let's start with your first bubble!"),
-    body: t("Tap the + button to create your first bubble."),
+    id: "add", target: '[data-tour="add-task-bubble"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "create",
+    title: t("Your first task"),
+    body: t("Tap the central bubble with the plus to create your first task."),
   },
   {
-    id: "title", target: '[data-tour="field-title"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("1. Task title"),
-    body: t("Write what you are going to do. For example “Prepare the presentation” or “Workout”."),
+    id: "title", target: '[data-tour="field-title"]', tab: "bubbles", interactive: true, insideModal: true, requires: "create",
+    title: t("Task title"),
+    body: t("Write what needs to be done (for example “Workout” or “Report”)."),
   },
   {
-    id: "duration", target: '[data-tour="field-duration"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("2. Duration in minutes"),
-    body: t("Enter how many minutes it takes (for example 45). The more minutes, the BIGGER the bubble on screen."),
+    id: "duration", target: '[data-tour="field-duration"]', tab: "bubbles", interactive: true, insideModal: true, requires: "create",
+    title: t("Duration"),
+    body: t("Duration in minutes: the more minutes, the bigger the bubble on the canvas."),
   },
   {
-    id: "mode", target: '[data-tour="field-mode"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("3. Focus mode"),
-    body: t("Pick how you work: Locked In (deep focus), Normal (usual pace) or Chill (an easy task, no rush)."),
+    id: "mode", target: '[data-tour="field-mode"]', tab: "bubbles", interactive: true, insideModal: true, requires: "create",
+    title: t("Focus mode"),
+    body: t("Locked In (maximum focus), Normal (usual pace) or Chill (an easy task)."),
   },
   {
-    id: "deadline", target: '[data-tour="field-deadline"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("4. Deadline"),
-    body: t("Set a deadline (for example tonight or tomorrow). The closer the deadline, the brighter the bubble glows."),
+    id: "repeat", target: '[data-tour="field-repeat"]', tab: "bubbles", interactive: true, insideModal: true, requires: "create",
+    title: t("Repeat"),
+    body: t("Turn on a daily or weekly repeat if it is a regular task."),
   },
   {
-    id: "submit", target: '[data-tour="field-submit"]', tab: "bubbles", interactive: true, insideModal: true, mandatory: true,
+    id: "deadline", target: '[data-tour="field-deadline"]', tab: "bubbles", interactive: true, insideModal: true, requires: "create",
+    title: t("Deadline"),
+    body: t("The closer the deadline, the brighter the bubble glows."),
+  },
+  {
+    id: "submit", target: '[data-tour="field-submit"]', tab: "bubbles", interactive: true, insideModal: true, mandatory: true, requires: "create",
     title: t("Create it"),
-    body: t("Done! Tap “Create”: your first bubble appears on the canvas."),
+    body: t("Tap “Create” to put the bubble on the canvas."),
   },
   {
-    id: "bubble", target: '[data-tour="tutorial-target-bubble"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "task", closeDialogs: true,
+    id: "bubble", target: '[data-tour="tutorial-target-bubble"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "task",
     title: t("Tap your bubble"),
-    body: t("Tap right on the bubble you created to open its timer window."),
+    body: t("Now tap right on the bubble you created to open its time controls."),
   },
   {
-    id: "timer", target: '[data-tour="timer-clock"]', tab: "bubbles", interactive: true, insideModal: true,
+    id: "timer", target: '[data-tour="timer-clock"]', tab: "bubbles", interactive: true, insideModal: true, requires: "task",
     title: t("Live timer"),
-    body: t("▶ Start tracks your work in real time. ✓ Log minutes adds the time you worked, rounded down to whole minutes (03:40 counts as 3)."),
+    body: t("The live timer counts in real time. “✓ Log minutes” saves the whole minutes you worked (seconds are rounded down)."),
   },
   {
-    id: "manual", target: '[data-tour="time-log"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("Log time manually"),
-    body: t("Worked without the timer? Pick the minutes with −15 / +15 and tap “Log N min”. When the time spent reaches the total, the bubble pops by itself."),
+    id: "manual", target: '[data-tour="time-log"], [data-tour="modal-actions"]', union: true, tab: "bubbles", interactive: true, insideModal: true, requires: "task",
+    title: t("Manual time and finishing"),
+    body: t("No timer? Add minutes with −15 / +15 or by typing, then “Log 15 min”. When the task is completely done, tap “🎉 Finish task” and the bubble disappears from the canvas."),
   },
   {
-    id: "actions", target: '[data-tour="modal-actions"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("Log, edit and finish"),
-    body: t("“Log N min” adds the time you worked to your progress, and the bubble stays on the canvas. “🎉 Finish task”: tap it when the task is completely done, to remove the bubble from the canvas. “Edit task” changes the title, duration, mode and deadline."),
-  },
-  {
-    id: "close", target: '[data-tour="close-task-modal"]', tab: "bubbles", interactive: true, insideModal: true, mandatory: true, advanceOnModalClose: "task",
+    id: "close", target: '[data-tour="close-task-modal"]', tab: "bubbles", interactive: true, insideModal: true, mandatory: true, advanceOnModalClose: "task", requires: "task",
     title: t("Close the window"),
     body: t("Tap the ✕ to close the task window."),
   },
@@ -98,45 +98,45 @@ const steps = (t: TFn, isDesktop: boolean): Step[] => [
     ? {
         id: "tabs", target: '[data-tour="desktop-panels"]', tab: "bubbles",
         title: t("Your workspace"),
-        body: t("On a computer the canvas with your bubbles is always open, and the Schedule and the AI chat are always next to it."),
+        body: t("On a computer the bubbles are always on screen, with the Schedule and the AI chat open next to them."),
       }
     : {
         id: "tabs", target: '[data-tour="mobile-nav"]', tab: "bubbles",
         title: t("Three tabs"),
-        body: t("At the bottom of the screen there are 3 main tabs to switch between: Bubbles, Schedule and AI Chat."),
+        body: t("At the bottom there are 3 tabs to switch between: Bubbles, Schedule and AI Chat."),
       },
-  {
-    id: "chat", target: '[data-tour="ai-chat"]', tab: "chat", interactive: true, pinTop: true, closeDialogs: true,
-    title: t("Try the AI chat"),
-    body: t("Write or dictate a message right now, for example “Put my task at 4 PM” or “Add coffee for 15 min”, send it and watch the AI answer. Press Next when you're done."),
-  },
   {
     id: "schedule", target: '[data-tour="schedule-view"]', tab: "schedule",
     title: t("Your schedule"),
-    body: t("Your tasks appear on the timeline by themselves and the schedule updates whenever you add or change a task. To move something to another time, just ask the AI chat."),
+    body: t("In the Schedule your tasks are placed by the hour automatically. To change a time, just write it to the AI chat."),
+  },
+  {
+    id: "chat", target: '[data-tour="ai-chat"]', tab: "chat", interactive: true, pinTop: true,
+    title: t("Try the AI chat"),
+    body: t("The assistant plans your day by text or voice. Try writing to her right now, for example: “Put the task at 4 PM”."),
   },
   {
     id: "account", tab: "bubbles", drawer: "profile", insideModal: true, union: true,
     target: '[data-tour-modal="profile"] [data-tour="profile-header"], [data-tour-modal="profile"] [data-tour="profile-notifications"]',
     title: t("Your account"),
-    body: t("Here you see your account, and you can turn on notifications for task starts and for the timer finishing."),
+    body: t("In your profile you manage the account and turn on notifications for task starts and the timer ending."),
   },
   {
     id: "theme", tab: "bubbles", drawer: "profile", insideModal: true, union: true,
     target: '[data-tour-modal="profile"] [data-tour="theme-toggle"], [data-tour-modal="profile"] [data-tour="feedback-btn"]',
     title: t("Theme and feedback"),
-    body: t("Here you can switch between the light and the dark theme, and write us an idea or a remark with the “Feedback” button."),
+    body: t("Switch between the light and dark theme here, and send us an idea or a remark through “Feedback”."),
   },
   {
     id: "support", tab: "bubbles", drawer: "profile", insideModal: true,
     target: '[data-tour-modal="profile"] [data-tour="support-btn"]',
     title: t("Support us"),
-    body: t("There is also a “Support” button here: if you like the app, please support us!"),
+    body: t("If the app is useful to you, support us with the “Support” button."),
   },
   {
     id: "help", target: '[data-tour="help-btn"]', tab: "bubbles",
-    title: t("You can always come back"),
-    body: t("And don't worry: if you forget something or it is unclear, you can always tap here, or in your profile, to watch the tutorial again!"),
+    title: t("Replay any time"),
+    body: t("If you forget something, tap “?” at any moment to go through the tutorial again."),
   },
 ];
 
@@ -149,12 +149,14 @@ const PAD = 8;
  * 375 px phone. `onSelectTab` switches the app's tab so each step's target is actually on screen.
  */
 export function InteractiveTutorial({
-  open, onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileOpen,
+  open, onClose, onSelectTab, bubbleCount, onSyncDialogs, createdTaskId, onSetProfileOpen,
 }: {
+  /** Put the app in the dialog state a step needs: the Create window (editing the tour's own task if it exists), the Task window, or none. */
+  onSyncDialogs: (kind: "create" | "task" | null) => void;
+  /** Id of the bubble created during this tutorial, if any. */
+  createdTaskId: string | null;
   /** Open or close the profile drawer (used by the steps that point at controls inside it). */
   onSetProfileOpen: (open: boolean) => void;
-  /** Close any open app dialog (the tour leaves the Task window when it moves on). */
-  onCloseDialogs: () => void;
   open: boolean;
   /** How many bubbles are on the canvas right now (used to notice the first one being created). */
   bubbleCount: number;
@@ -165,12 +167,12 @@ export function InteractiveTutorial({
   if (typeof document === "undefined") return null;
   // A portal on <body> with z-[9999]: always above the app's own dialogs.
   return createPortal(
-    <AnimatePresence>{open && <Tour onClose={onClose} onSelectTab={onSelectTab} bubbleCount={bubbleCount} onCloseDialogs={onCloseDialogs} onSetProfileOpen={onSetProfileOpen} />}</AnimatePresence>,
+    <AnimatePresence>{open && <Tour onClose={onClose} onSelectTab={onSelectTab} bubbleCount={bubbleCount} onSyncDialogs={onSyncDialogs} createdTaskId={createdTaskId} onSetProfileOpen={onSetProfileOpen} />}</AnimatePresence>,
     document.body,
   );
 }
 
-function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileOpen }: { onClose: () => void; onSelectTab: (tab: TutorialTab) => void; bubbleCount: number; onCloseDialogs: () => void; onSetProfileOpen: (open: boolean) => void }) {
+function Tour({ onClose, onSelectTab, bubbleCount, onSyncDialogs, createdTaskId, onSetProfileOpen }: { onClose: () => void; onSelectTab: (tab: TutorialTab) => void; bubbleCount: number; onSyncDialogs: (kind: "create" | "task" | null) => void; createdTaskId: string | null; onSetProfileOpen: (open: boolean) => void }) {
   const { t } = useLang();
   // The layout switches at Tailwind's lg (1024 px): that is where the canvas, Schedule and chat share the screen.
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches);
@@ -210,12 +212,25 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileO
       }
     }
   }, [bubbleCount, bubbleIdx, i]);
-  // A step that waits for a dialog moves on the moment it opens.
+  // A step that waits for a dialog moves on the moment it OPENS. Coming back to such a step while the dialog is still
+  // open (or closing) must not skip it again, so it is "armed" only after the dialog has been seen closed.
+  const modalIdRef = useRef(modalId);
   useEffect(() => {
-    if (step.advanceOnModal && modalId === step.advanceOnModal) {
-      const id = setTimeout(() => setI((n) => Math.min(n + 1, list.length - 1)), 350);
-      return () => clearTimeout(id);
+    modalIdRef.current = modalId;
+  });
+  const armed = useRef(true);
+  useEffect(() => {
+    armed.current = modalIdRef.current !== step.advanceOnModal;
+  }, [i, step.advanceOnModal]);
+  useEffect(() => {
+    if (!step.advanceOnModal) return;
+    if (modalId !== step.advanceOnModal) {
+      armed.current = true;
+      return;
     }
+    if (!armed.current) return;
+    const id = setTimeout(() => setI((n) => Math.min(n + 1, list.length - 1)), 350);
+    return () => clearTimeout(id);
   }, [modalId, step.advanceOnModal, list.length]);
   // A step that waits for a dialog to close moves on the moment it does (not while it is still open).
   const sawModal = useRef(false);
@@ -227,10 +242,12 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileO
     if (modalId === step.advanceOnModalClose) sawModal.current = true;
     else if (sawModal.current || modalId === null) setI((n) => Math.min(n + 1, list.length - 1));
   }, [modalId, step.advanceOnModalClose, list.length]);
-  // Leaving the bubble's window behind for the chat / schedule steps.
+  // Declarative dialog state: whenever the step changes (Next OR Back) the app is put in the state that step needs, so
+  // stepping back reopens the Create window (on the tour's own task) or the Task window, and stepping on closes them.
+  const needs = step.requires ?? null;
   useEffect(() => {
-    if (step.closeDialogs) onCloseDialogs();
-  }, [step.closeDialogs, onCloseDialogs]);
+    onSyncDialogs(needs);
+  }, [i, needs, onSyncDialogs]);
 
   // Steps that point at a control inside the profile drawer open it; every other step keeps it closed.
   const drawer = step.drawer;
@@ -301,7 +318,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileO
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return; // typing
       // Escape does nothing: the tutorial ends only with Skip or its last step.
       if (e.key === "ArrowRight") {
-        if (handlers.current.mandatory) return;
+        if (handlers.current.mandatory) return; // (arrow keys only; Enter is never used)
         if (handlers.current.last) handlers.current.onClose();
         else setI((n) => n + 1);
       }
@@ -400,11 +417,11 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileO
         <p className="mt-1.5 text-sm leading-relaxed text-zinc-300">{step.body}</p>
         {step.extra}
         <div className="mt-4 flex items-center justify-between gap-2">
-          <button type="button" onClick={() => setI((n) => Math.max(0, n - 1))} disabled={i === 0}
+          <button type="button" onClick={() => setI((n) => Math.max(0, n - 1))} disabled={i === 0} aria-label={t("Back")}
             className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/[0.08] disabled:opacity-30">
             ← {t("Back")}
           </button>
-          {!step.mandatory && (
+          {(!step.mandatory || (step.id === "submit" && !!createdTaskId)) && (
             <button type="button" onClick={next}
               className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black transition hover:opacity-90">
               {last ? t("🚀 Get started") : `${t("Next")} →`}

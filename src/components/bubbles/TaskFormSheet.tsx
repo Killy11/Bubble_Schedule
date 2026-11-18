@@ -11,10 +11,10 @@ import { RecurrencePicker } from "./RecurrencePicker";
 import { isTutorialActive } from "@/lib/tutorialLock";
 import { useLang } from "@/context/LanguageProvider";
 import { DECOMPOSE_AT_MIN } from "@/lib/subtasks";
-import { detectPacing, parseSplitRequest } from "@/lib/pacing";
+import { detectPacing, pacingOf, parseSplitRequest } from "@/lib/pacing";
 import { TaskLimitError, type NewTaskInput } from "@/hooks/useTasks";
 import { suggestDuration } from "@/lib/history";
-import type { HistoryRecord, Pacing, Recurrence } from "@/types";
+import type { HistoryRecord, Pacing, Recurrence, Task } from "@/types";
 import { DurationFields } from "@/components/DurationFields";
 import { clampDuration, splitMinutes, totalMinutes } from "@/lib/duration";
 
@@ -31,6 +31,12 @@ function useDebounced<T>(value: T, ms: number): T {
   return v;
 }
 
+const toLocalInput = (iso: string): string => {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
 function defaultDeadline(): string {
   const d = new Date();
   d.setHours(18, 0, 0, 0);
@@ -45,18 +51,21 @@ export function TaskFormSheet({
   onSubmit,
   history,
   defaultPacing,
+  editTask = null,
 }: {
   open: boolean;
   onClose: () => void;
   onSubmit: (input: NewTaskInput) => Promise<void>;
   history: readonly HistoryRecord[];
   defaultPacing: Pacing;
+  /** Edit this existing task in place instead of creating a new one. */
+  editTask?: Task | null;
 }) {
   const { t } = useLang();
   return (
-    <Sheet open={open} onClose={onClose} title={t("New bubble")} tourId="create">
+    <Sheet open={open} onClose={onClose} title={editTask ? editTask.title : t("New bubble")} tourId="create">
       {/* Remounts on each open, so the form resets and gets a fresh default deadline. */}
-      {open && <Form onClose={onClose} onSubmit={onSubmit} history={history} defaultPacing={defaultPacing} />}
+      {open && <Form key={editTask?.id ?? "new"} onClose={onClose} onSubmit={onSubmit} history={history} defaultPacing={defaultPacing} editTask={editTask} />}
     </Sheet>
   );
 }
@@ -66,21 +75,23 @@ function Form({
   onSubmit,
   history,
   defaultPacing,
+  editTask,
 }: {
+  editTask: Task | null;
   onClose: () => void;
   onSubmit: (i: NewTaskInput) => Promise<void>;
   history: readonly HistoryRecord[];
   defaultPacing: Pacing;
 }) {
   const { t, lang } = useLang();
-  const [title, setTitle] = useState("");
-  const [deadline, setDeadline] = useState(defaultDeadline);
-  const [noDeadline, setNoDeadline] = useState(false);
-  const [hours, setHours] = useState("");
-  const [mins, setMins] = useState("");
-  const [durationTouched, setDurationTouched] = useState(false);
-  const [recurrence, setRecurrence] = useState<Recurrence | null>(null);
-  const [pacingPick, setPacingPick] = useState<Pacing | null>(null);
+  const [title, setTitle] = useState(editTask?.title ?? "");
+  const [deadline, setDeadline] = useState(() => (editTask?.deadline ? toLocalInput(editTask.deadline) : defaultDeadline()));
+  const [noDeadline, setNoDeadline] = useState(!!editTask && !editTask.deadline);
+  const [hours, setHours] = useState(() => (editTask?.durationMin ? splitMinutes(editTask.durationMin).hours : ""));
+  const [mins, setMins] = useState(() => (editTask?.durationMin ? splitMinutes(editTask.durationMin).minutes : ""));
+  const [durationTouched, setDurationTouched] = useState(!!editTask?.durationMin);
+  const [recurrence, setRecurrence] = useState<Recurrence | null>(editTask?.recurrence ?? null);
+  const [pacingPick, setPacingPick] = useState<Pacing | null>(editTask ? pacingOf(editTask) : null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Assignment file analysis
@@ -223,17 +234,17 @@ function Form({
         <span className="mb-1 block">{t("Focus intensity")}</span>
         <PacingSelector value={pacing} onChange={setPacingPick} />
       </div>
-      <DeadlineField value={deadline} none={noDeadline} onValue={setDeadline} onNone={setNoDeadline} />
       {!noDeadline && (
-        <div className="text-xs text-muted">
+        <div data-tour="field-repeat" className="text-xs text-muted">
           <span className="mb-1 block">{t("Repeat")}</span>
           <RecurrencePicker value={recurrence} onChange={setRecurrence} anchorDow={anchorDow} />
         </div>
       )}
+      <DeadlineField value={deadline} none={noDeadline} onValue={setDeadline} onNone={setNoDeadline} />
       {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
       <button type="submit" disabled={busy} data-tour="field-submit"
         className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60">
-        {busy && <Loader2 className="h-4 w-4 animate-spin" />} {t("Add bubble")}
+        {busy && <Loader2 className="h-4 w-4 animate-spin" />} {editTask ? t("Save") : t("Add bubble")}
       </button>
     </form>
   );

@@ -99,6 +99,24 @@ export function DashboardShell() {
     setOpenId(null);
     setFormOpen(false);
   }, []);
+  /** The tutorial's dialog sync (Next and Back): Create window on the tour's own task, the Task window, or none. */
+  const tutorialBubbleRef = useRef<string | null>(null);
+  const syncDialogs = useCallback((kind: "create" | "task" | null) => {
+    const created = tutorialBubbleRef.current;
+    if (kind === "create") {
+      setOpenId(null);
+      setFormEditId(created); // back on the form after the bubble exists: edit that bubble, don't make a second one
+      setFormOpen(true);
+    } else if (kind === "task") {
+      setFormOpen(false);
+      setFormEditId(null);
+      if (created) setOpenId(created);
+    } else {
+      setFormOpen(false);
+      setFormEditId(null);
+      setOpenId(null);
+    }
+  }, []);
   /** Stop everything celebratory right now (Undo): bursts, particles, poppers, sound. */
   const cancelCelebration = () => {
     setBursts([]); // unmounting a burst clears its timers and resets its confetti canvas
@@ -247,6 +265,8 @@ export function DashboardShell() {
 
   const [tab, setTab] = useState<Tab>("bubbles");
   const [formOpen, setFormOpen] = useState(false);
+  /** When set, the Create window edits this task (the tutorial reopens it after the user steps back). */
+  const [formEditId, setFormEditId] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [openPart, setOpenPart] = useState<{ taskId: string; subId: string } | null>(null);
@@ -319,6 +339,9 @@ export function DashboardShell() {
   const tutorialBubbleId = tutorialBaseline
     ? [...active].filter((x) => !tutorialBaseline.has(x.id)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0]?.id ?? null
     : null;
+  useEffect(() => {
+    tutorialBubbleRef.current = tutorialBubbleId;
+  });
   // A timer that is running stays visible on every tab and with every window closed. Its state lives on the task in
   // Firestore (startedAt + accumulatedSeconds), so it also survives tab switches and reloads.
   const runningTasks = active.filter((x) => !!x.startedAt);
@@ -549,7 +572,6 @@ export function DashboardShell() {
             <div className="flex gap-2">
               <button
                 onClick={() => setFormOpen(true)}
-                data-tour="add-task-btn"
                 className="flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background transition hover:opacity-90"
               >
                 <Plus className="h-3.5 w-3.5" /> {t("New bubble")}
@@ -567,13 +589,11 @@ export function DashboardShell() {
                 poppingIds={popping}
                 onOpen={setOpenId} // a tap opens the Task modal; complete and the timer live there
                 tutorialBubbleId={tutorialBubbleId}
+                onCreate={() => { setFormEditId(null); setFormOpen(true); }}
               />
             )}
             {!tasksLoading && active.length === 0 && !error && (
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-4 text-center">
-                <Orb hue="green" size={96} className="opacity-70" />
-                <p className="text-sm text-muted">{t("Tap New bubble to start")}</p>
-              </div>
+              <p className="pointer-events-none absolute inset-x-0 top-1/2 mt-14 px-6 text-center text-sm text-muted">{t("Tap + to add your first task")}</p>
             )}
           </div>
         </section>
@@ -648,7 +668,21 @@ export function DashboardShell() {
         }}
       />
       <FeedbackSheet open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
-      <TaskFormSheet open={formOpen} onClose={() => setFormOpen(false)} onSubmit={addTask} history={history} defaultPacing={defaultPacing} />
+      <TaskFormSheet
+        open={formOpen}
+        onClose={() => { setFormOpen(false); setFormEditId(null); }}
+        editTask={tasks.find((x) => x.id === formEditId) ?? null}
+        onSubmit={async (input) => {
+          const target = tasks.find((x) => x.id === formEditId);
+          if (!target) return addTask(input);
+          // Reopened by the tutorial: save into the SAME bubble instead of making a second one.
+          await updateTask(target, { title: input.title, deadline: input.deadline ?? null, durationMin: input.durationMin ?? null, pacing: input.pacing ?? pacingOf(target) });
+          await setRecurrence(target, input.recurrence ?? null);
+          if (input.title.trim() !== target.title) await renameTaskBlocks(target.id, input.title.trim()).catch(() => {});
+        }}
+        history={history}
+        defaultPacing={defaultPacing}
+      />
       <RescheduleSheet
         task={rescheduleTask}
         now={now}
@@ -672,7 +706,7 @@ export function DashboardShell() {
         onClearAll={() => deleteForever(completed.map((x) => x.id))}
       />
       <TutorialWelcome open={autoTour && !tourOpen} onYes={() => answerWelcome(true)} onNo={() => answerWelcome(false)} />
-      <InteractiveTutorial open={tourOpen} onClose={closeTour} onSelectTab={setTab} bubbleCount={active.length} onCloseDialogs={closeDialogs} onSetProfileOpen={setProfileOpen} />
+      <InteractiveTutorial open={tourOpen} onClose={closeTour} onSelectTab={setTab} bubbleCount={active.length} onSyncDialogs={syncDialogs} createdTaskId={tutorialBubbleId} onSetProfileOpen={setProfileOpen} />
       <PartDetailSheet
         task={active.find((x) => x.id === openPart?.taskId) ?? null}
         sub={active.find((x) => x.id === openPart?.taskId)?.subtasks?.find((x) => x.id === openPart?.subId) ?? null}

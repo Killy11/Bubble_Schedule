@@ -6,7 +6,9 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { Bubble } from "./Bubble";
 import { bubbleDiameter } from "@/lib/bubbles/sizing";
 import { taskWeight } from "@/lib/bubbles/weight";
-import { layoutBubbles } from "@/lib/bubbles/layout";
+import { ADD_BUBBLE_D, layoutBubbles } from "@/lib/bubbles/layout";
+import { useLang } from "@/context/LanguageProvider";
+import { Plus } from "lucide-react";
 import type { Task } from "@/types";
 
 /** Bubbles drawn on the canvas at most; every active task is still in the Schedule. */
@@ -17,17 +19,21 @@ export function BubbleCanvas({
   now,
   onOpen,
   tutorialBubbleId,
+  onCreate,
   poppingIds,
 }: {
   tasks: Task[];
   now: number;
   /** A tap or click on a bubble opens the Task modal. */
   onOpen: (id: string) => void;
+  /** The permanent "+" bubble in the centre: opens the Create window. */
+  onCreate: () => void;
   /** Id of the bubble created during the tutorial. */
   tutorialBubbleId?: string | null;
   /** Bubbles playing their pop animation (task being completed). */
   poppingIds?: ReadonlySet<string>;
 }) {
+  const { t } = useLang();
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   // Bubbles are sized in JS, so the Tailwind `sm` breakpoint (640px) is mirrored here:
@@ -58,6 +64,27 @@ export function BubbleCanvas({
   const placeById = new Map(placements.map((p) => [p.id, p]));
   return (
     <div ref={ref} className="relative h-full min-h-0 w-full overflow-hidden touch-none">
+      {/* The permanent "+" bubble: fixed 80 px, always at the centre; task bubbles pack around it. */}
+      {size.w > 0 && (
+        <button
+          type="button"
+          data-tour="add-task-bubble"
+          onClick={onCreate}
+          aria-label={t("New bubble")}
+          title={t("New bubble")}
+          className="glass absolute flex items-center justify-center rounded-full text-foreground outline-none transition hover:scale-105 focus-visible:ring-2 focus-visible:ring-foreground/40"
+          style={{
+            width: ADD_BUBBLE_D,
+            height: ADD_BUBBLE_D,
+            left: size.w / 2 - ADD_BUBBLE_D / 2,
+            top: size.h / 2 - ADD_BUBBLE_D / 2,
+            boxShadow: "0 0 22px 2px rgb(var(--glow-a) / 0.35), inset 0 0 16px rgb(var(--glow-a) / 0.25)",
+            borderColor: "rgb(var(--glow-a) / 0.6)",
+          }}
+        >
+          <Plus className="h-8 w-8" strokeWidth={1.75} />
+        </button>
+      )}
       <AnimatePresence>
         {shown.map((t, i) => {
           const place = placeById.get(t.id);

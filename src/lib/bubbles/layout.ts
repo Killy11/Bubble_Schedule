@@ -24,6 +24,9 @@ const GOLDEN = 2.399963;
  * searched down to the largest value that does, so all bubbles shrink proportionally together.
  * Deterministic, so positions only change when rankings or sizes do.
  */
+/** Diameter of the permanent "+" bubble in the middle of the canvas (px). Never scaled. */
+export const ADD_BUBBLE_D = 80;
+
 export function layoutBubbles(items: BubbleSpec[], w: number, h: number): BubblePlacement[] {
   if (!items.length || w < 40 || h < 40) return [];
   const ordered = [...items].sort((a, b) => b.weight - a.weight || a.id.localeCompare(b.id));
@@ -50,7 +53,9 @@ function pack(items: BubbleSpec[], scale: number, w: number, h: number) {
   const sx = w >= h ? Math.min(w / h, 1.8) : 1;
   const sy = h > w ? Math.min(h / w, 1.8) : 1;
   const maxRho = Math.hypot(w, h) / 2;
-  const placed: Array<{ id: string; x: number; y: number; r: number }> = [];
+  // The "+" bubble is an immovable anchor at the centre: every task bubble packs around it, so none can cover it.
+  const anchor = { id: "__add__", x: cx, y: cy, r: ADD_BUBBLE_D / 2 };
+  const placed: Array<{ id: string; x: number; y: number; r: number }> = [anchor];
 
   const fits = (x: number, y: number, r: number) =>
     x - r >= PAD && x + r <= w - PAD && y - r >= PAD && y + r <= h - PAD &&
@@ -58,11 +63,6 @@ function pack(items: BubbleSpec[], scale: number, w: number, h: number) {
 
   for (let i = 0; i < items.length; i++) {
     const r = (items[i].d * scale) / 2;
-    if (i === 0) {
-      if (!fits(cx, cy, r)) return { placed: [], complete: false };
-      placed.push({ id: items[i].id, x: cx, y: cy, r });
-      continue;
-    }
     let spot: { x: number; y: number } | null = null;
     for (let rho = placed[0].r + r + GAP; rho <= maxRho * 1.6 && !spot; rho += 4) {
       const n = Math.max(16, Math.ceil((2 * Math.PI * rho) / 14));
@@ -81,4 +81,4 @@ function pack(items: BubbleSpec[], scale: number, w: number, h: number) {
 }
 
 const toPlacements = (p: Array<{ id: string; x: number; y: number; r: number }>): BubblePlacement[] =>
-  p.map((n) => ({ id: n.id, x: n.x - n.r, y: n.y - n.r, d: n.r * 2 }));
+  p.filter((n) => n.id !== "__add__").map((n) => ({ id: n.id, x: n.x - n.r, y: n.y - n.r, d: n.r * 2 }));
