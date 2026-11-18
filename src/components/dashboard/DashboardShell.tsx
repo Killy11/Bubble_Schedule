@@ -564,16 +564,6 @@ export function DashboardShell() {
       <main data-tour="desktop-panels" className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 gap-4 overflow-hidden p-4 pb-24 lg:pb-4">
         {/* Bubble canvas */}
         <section className={`${tab === "bubbles" ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 flex-col lg:flex`}>
-          <div className="mb-3 flex items-center justify-end">
-            <div className="flex gap-2">
-              <button
-                onClick={() => setFormOpen(true)}
-                className="flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-xs font-medium text-background transition hover:opacity-90"
-              >
-                <Plus className="h-3.5 w-3.5" /> {t("New bubble")}
-              </button>
-            </div>
-          </div>
           <div ref={canvasHost} data-tour="bubble-canvas" className="relative min-h-0 flex-1 overflow-hidden">
             <Celebrations bursts={bursts} onDone={(id) => setBursts((b) => b.filter((x) => x.id !== id))} />
             {error ? (
