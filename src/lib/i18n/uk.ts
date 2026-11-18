@@ -374,4 +374,19 @@ export const UK: Record<string, string> = {
   "Log time spent": "Додати витрачений час",
   "Enter a time like 14:23, 45s or 12.5": "Введіть час, напр. 14:23, 45s або 12.5",
   "Enter a time from 1 second to 24 hours": "Введіть час від 1 секунди до 24 годин",
+
+  // Two-step task modal
+  "Spent: {n} min": "Витрачено: {n} хв",
+  "Left: {n} min": "Залишилось: {n} хв",
+  Elapsed: "Минуло",
+  Credit: "Зарахувати",
+  "Stop & credit": "Зупинити й зарахувати",
+  "Credited {n} min": "Зараховано: {n} хв",
+  min: "хв",
+  "Edit task": "Редагувати завдання",
+  Notes: "Нотатки",
+  "Time's up!": "Час вийшов!",
+  "🔔 Enable timer completion notifications": "🔔 Увімкнути сповіщення про завершення таймера",
+  "⏰ Time's up": "⏰ Час вийшов!",
+  "Timer for “{title}” has finished": "Таймер для завдання «{title}» завершився",
 };

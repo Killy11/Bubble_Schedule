@@ -85,10 +85,8 @@ export interface Task {
   description?: string;
   durationMin?: number; // OPTIONAL, user-provided
   loggedMinutes: number; // whole minutes already spent (defaults to 0); shrinks the bubble
-  /** Exact time spent / left / planned, in seconds. `loggedMinutes` and `durationMin` are kept in step (floor / ceil). */
-  spentSeconds?: number;
-  remainingSeconds?: number;
-  durationSeconds?: number;
+  /** Seconds of the open timer session while it is paused. The running part is `now − startedAt`. Cleared by "Stop & confirm". */
+  accumulatedSeconds?: number;
   aiEstimate?: {
     durationMin?: number;
     reasoning?: string;

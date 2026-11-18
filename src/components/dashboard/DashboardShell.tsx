@@ -11,8 +11,9 @@ import { useLang } from "@/context/LanguageProvider";
 import { Celebrations, type BurstSpec } from "@/components/Celebration";
 import { FeedbackSheet } from "@/components/FeedbackSheet";
 import { SupportPrompt } from "@/components/SupportPrompt";
-import { playBubblePop, preloadBubblePop, stopBubblePop } from "@/lib/bubblePopSound";
+import { playBubblePop, playTimerChime, preloadBubblePop, stopBubblePop } from "@/lib/bubblePopSound";
 import { useLocalReminders } from "@/hooks/useLocalReminders";
+import { useTimerCompletion } from "@/hooks/useTimerCompletion";
 import { showLocalNotification } from "@/lib/localNotify";
 import { useSupport } from "@/context/SupportProvider";
 import { OverdueSheet } from "@/components/bubbles/OverdueSheet";
@@ -149,8 +150,8 @@ export function DashboardShell() {
   );
 
   const {
-    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, logSeconds,
-    startTimer, stopTimer, resetTimer, setRecurrence, updateTask, saveSubtasks, toggleSubtask, reschedule,
+    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, confirmTimer,
+    startTimer, stopTimer, setRecurrence, updateTask, saveSubtasks, toggleSubtask, reschedule,
   } = useTasks(uid, timezone, now, handleOverdue, handleOneDay);
 
   // Big tasks are split into scheduled parts automatically (and on demand from the task modal).
@@ -174,6 +175,19 @@ export function DashboardShell() {
   const {
     schedule, markTaskBlocksDone, markTaskBlocksPlanned, removeTaskBlocks, restoreBlocks, renameTaskBlocks, editBlock,
   } = useSchedule(uid, today);
+
+  // A running timer reached 00:00: chime, a system notification (tagged by task, so never twice), and an in-app prompt.
+  useTimerCompletion(tasks, (task) => {
+    playTimerChime();
+    void showLocalNotification(t("⏰ Time's up"), t("Timer for “{title}” has finished", { title: task.title }), `timer_${task.id}`);
+    toast({
+      title: t("⏰ Time's up"),
+      body: t("Timer for “{title}” has finished", { title: task.title }),
+      durationMs: 15000,
+      onClick: () => setOpenId(task.id), // the modal shows Done / +15 min
+      action: { label: t("Done"), onClick: () => void completeTask(task) },
+    });
+  });
 
   // "Starting in 5 min" while the app is open: toast when visible, a system notification when the tab is hidden.
   useLocalReminders(uid, tasks, schedule, today, ({ taskId, title, start }) => {
@@ -639,9 +653,12 @@ export function DashboardShell() {
         onClose={() => setOpenId(null)}
         onComplete={completeTask}
         onDelete={removeTask}
-        onLogTime={(task, sec) => logSeconds(task, sec)}
+        onConfirmTimer={confirmTimer}
         onAdjust={(task, d) => adjustRemaining(task, d)}
-        onResetTimer={resetTimer}
+        onEditTime={(task) => {
+          const block = schedule?.blocks.find((b) => b.taskId === task.id && b.status !== "done");
+          if (block) { setOpenId(null); setEditBlockId(block.id); }
+        }}
         onStartTimer={(task) => startTimer(task.id)}
         onStopTimer={stopTimer}
         onSetRecurrence={setRecurrence}

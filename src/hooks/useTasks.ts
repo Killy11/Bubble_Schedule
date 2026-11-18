@@ -17,7 +17,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { historyConverter, taskConverter, toFirestoreData } from "@/lib/firebase/converters";
-import { savedSpentSeconds, secondsPatch, spentSeconds, totalSeconds, MAX_TOTAL_SEC, MIN_REMAINING_SEC } from "@/lib/remaining";
+import { MAX_TOTAL_MIN, MIN_REMAINING_MIN, sessionMinutes, sessionSeconds, totalMinutes } from "@/lib/remaining";
 import { cleanRecurrence, nextOccurrence } from "@/lib/recurrence";
 import { makeHistoryRecord } from "@/lib/history";
 import { oneDayFlagFor, withinOneDay } from "@/lib/oneDay";
@@ -192,8 +192,8 @@ export function useTasks(
     async (task: Task, opts: { actualMin?: number } = {}): Promise<CompleteUndo | null> => {
       if (!uid) return null;
       const nowDate = new Date();
-      const trackedSec = spentSeconds(task, nowDate.getTime()); // exact, including a running timer
-      const tracked = trackedSec / 60;
+      // Minutes already logged, plus whole minutes of an open timer session (rounded down).
+      const tracked = (task.loggedMinutes ?? 0) + sessionMinutes(task, nowDate.getTime());
       const picked = opts.actualMin ?? (tracked > 0 ? tracked : undefined);
       const actual = picked && Number.isFinite(picked) ? Math.max(1, Math.min(1440, Math.round(picked))) : undefined;
 
@@ -203,7 +203,7 @@ export function useTasks(
         updatedAt: nowDate,
         startedAt: deleteField(),
         ...(actual ? { loggedMinutes: actual } : {}),
-        ...(opts.actualMin === undefined && trackedSec > 0 ? { spentSeconds: Math.round(trackedSec), remainingSeconds: 0 } : {}),
+        accumulatedSeconds: deleteField(),
         // Finishing the task finishes all its parts.
         ...(task.subtasks?.length
           ? { subtasks: toFirestoreData(task.subtasks.map((s) => ({ ...s, completed: true }))) }
@@ -238,6 +238,7 @@ export function useTasks(
         completedAt: deleteField(),
         loggedMinutes: before.loggedMinutes ?? 0,
         startedAt: before.startedAt ? new Date(before.startedAt) : deleteField(),
+        accumulatedSeconds: before.accumulatedSeconds ?? deleteField(),
         ...(before.subtasks ? { subtasks: toFirestoreData(before.subtasks) } : {}),
         ...(before.nextSpawned ? {} : { nextSpawned: deleteField() }),
         updatedAt: new Date(),
@@ -308,22 +309,20 @@ export function useTasks(
   );
 
   /**
-   * Add time spent, in exact seconds. Writes only the task doc: it never calls /api/schedule and never touches
+   * Add whole minutes spent. Writes only the task doc: it never calls /api/schedule and never touches
    * the schedule, so logging time can't move existing blocks.
    */
-  const logSeconds = useCallback(
-    async (task: Task, seconds: number) => {
+  const logMinutes = useCallback(
+    async (task: Task, minutes: number) => {
       if (!uid) return;
-      const sec = Math.round(seconds);
-      if (!Number.isFinite(sec) || sec < 1 || sec > MAX_TOTAL_SEC) throw new Error("Enter a time from 1 second to 24 hours");
-      await updateDoc(doc(db, "users", uid, "tasks", task.id), {
-        ...secondsPatch(totalSeconds(task), savedSpentSeconds(task) + sec),
-        updatedAt: new Date(),
-      });
+      const m = Math.round(minutes);
+      if (!Number.isFinite(m) || m < 1 || m > 1440) throw new Error("Enter 1–1440 minutes");
+      await updateDoc(doc(db, "users", uid, "tasks", task.id), { loggedMinutes: increment(m), updatedAt: new Date() });
     },
     [uid],
   );
 
+  /** Start (or resume) the timer: only `startedAt` is written; paused time stays in `accumulatedSeconds`. */
   const startTimer = useCallback(
     async (id: string) => {
       if (uid) await updateDoc(doc(db, "users", uid, "tasks", id), { startedAt: new Date(), updatedAt: new Date() });
@@ -331,29 +330,34 @@ export function useTasks(
     [uid],
   );
 
-  /** Pause the timer: the exact elapsed seconds are added to the time spent (and survive a reload). */
+  /** Pause: the elapsed seconds move into `accumulatedSeconds`; nothing is credited yet. */
   const stopTimer = useCallback(
     async (task: Task) => {
       if (!uid || !task.startedAt) return;
-      const spent = spentSeconds(task, Date.now());
       await updateDoc(doc(db, "users", uid, "tasks", task.id), {
         startedAt: deleteField(),
-        ...secondsPatch(totalSeconds(task), spent),
+        accumulatedSeconds: Math.round(sessionSeconds(task, Date.now())),
         updatedAt: new Date(),
       });
     },
     [uid],
   );
 
-  /** Reset: back to zero time spent, timer stopped. */
-  const resetTimer = useCallback(
-    async (task: Task) => {
-      if (!uid) return;
+  /**
+   * Stop & confirm: end the session, credit its WHOLE minutes (rounded down: 03:40 → 3, 00:40 → 0) to the time spent
+   * (the time left follows, never below 0) and clear the session. Returns the minutes credited.
+   */
+  const confirmTimer = useCallback(
+    async (task: Task): Promise<number> => {
+      if (!uid) return 0;
+      const minutes = sessionMinutes(task, Date.now());
       await updateDoc(doc(db, "users", uid, "tasks", task.id), {
         startedAt: deleteField(),
-        ...secondsPatch(totalSeconds(task), 0),
+        accumulatedSeconds: deleteField(),
+        ...(minutes > 0 ? { loggedMinutes: increment(minutes) } : {}),
         updatedAt: new Date(),
       });
+      return minutes;
     },
     [uid],
   );
@@ -405,21 +409,16 @@ export function useTasks(
   );
 
   /**
-   * Add or take away planned time in quick steps (the "remaining" time moves by `deltaMin`). Never leaves less than
-   * 5 minutes to go, counting a running timer. Seconds are kept exact; `durationMin` follows (rounded up) so the plan does too.
+   * Add or take away planned time in 15-minute steps (the time left moves by `deltaMin`). Whole minutes only; never
+   * less than 5 minutes left. Writes `durationMin`, so the bubble resizes and the plan follows.
    */
   const adjustRemaining = useCallback(
     async (task: Task, deltaMin: number) => {
       if (!uid) return;
-      const total = totalSeconds(task);
-      const spent = spentSeconds(task, Date.now());
-      const next = Math.min(MAX_TOTAL_SEC, Math.max(Math.ceil(spent) + MIN_REMAINING_SEC, total + deltaMin * 60));
-      if (next === total) return;
-      // The running part of the timer stays in `startedAt`; only the saved part is stored.
-      await updateDoc(doc(db, "users", uid, "tasks", task.id), {
-        ...secondsPatch(next, savedSpentSeconds(task)),
-        updatedAt: new Date(),
-      });
+      const total = totalMinutes(task);
+      const next = Math.min(MAX_TOTAL_MIN, Math.max((task.loggedMinutes ?? 0) + MIN_REMAINING_MIN, total + deltaMin));
+      if (next === total && task.durationMin !== undefined) return;
+      await updateDoc(doc(db, "users", uid, "tasks", task.id), { durationMin: next, updatedAt: new Date() });
     },
     [uid],
   );
@@ -428,7 +427,7 @@ export function useTasks(
   const updateTask = useCallback(
     async (
       task: Task,
-      patch: { title: string; deadline: string | null; durationMin: number | null; pacing: Pacing },
+      patch: { title: string; deadline: string | null; durationMin: number | null; pacing: Pacing; description?: string | null },
     ) => {
       if (!uid) return;
       const deadlineChanged = (patch.deadline ? Date.parse(patch.deadline) : null) !== (task.deadline ? Date.parse(task.deadline) : null);
@@ -436,10 +435,7 @@ export function useTasks(
         title: patch.title.trim(),
         deadline: patch.deadline ? new Date(patch.deadline) : deleteField(),
         durationMin: patch.durationMin ?? deleteField(),
-        // A changed duration restarts the exact-seconds value; an unchanged one keeps it.
-        ...(patch.durationMin !== (task.durationMin ?? null)
-          ? { durationSeconds: patch.durationMin ? patch.durationMin * 60 : deleteField(), remainingSeconds: deleteField() }
-          : {}),
+        ...(patch.description !== undefined ? { description: patch.description?.trim() || deleteField() } : {}),
         pacing: patch.pacing,
         // A new deadline deserves fresh "due soon" / "expired" alerts.
         ...(deadlineChanged
@@ -588,8 +584,8 @@ export function useTasks(
     restoreTask,
     undoComplete,
     complete,
-    logSeconds,
-    resetTimer,
+    logMinutes,
+    confirmTimer,
     startTimer,
     stopTimer,
     setRecurrence,

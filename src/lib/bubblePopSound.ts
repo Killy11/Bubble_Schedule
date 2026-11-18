@@ -177,3 +177,36 @@ export function playBubblePop(): void {
   }
   synthPop();
 }
+
+/** A clear three-note bell for "timer finished" (shares the audio context; every failure is swallowed). */
+export function playTimerChime(): void {
+  if (typeof window === "undefined") return;
+  try {
+    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return;
+    ctx ??= new AC();
+    void ctx.resume().catch(() => {});
+    const c = ctx;
+    const t0 = c.currentTime + 0.02;
+    const master = c.createGain();
+    master.gain.value = 0.8;
+    master.connect(c.destination);
+    [880, 1108.73, 1318.51].forEach((f, i) => {
+      const at = t0 + i * 0.22;
+      for (const [mult, level] of [[1, 0.4], [2.01, 0.12]] as const) {
+        const o = c.createOscillator();
+        const g = c.createGain();
+        o.type = "sine";
+        o.frequency.value = f * mult;
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(level, at + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + 1.1);
+        o.connect(g).connect(master);
+        o.start(at);
+        o.stop(at + 1.15);
+      }
+    });
+  } catch {
+    /* no audio available */
+  }
+}
