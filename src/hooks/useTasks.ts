@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { historyConverter, taskConverter, toFirestoreData } from "@/lib/firebase/converters";
+import { effectiveDuration } from "@/lib/bubbles/effective";
 import { cleanRecurrence, nextOccurrence } from "@/lib/recurrence";
 import { makeHistoryRecord } from "@/lib/history";
 import { oneDayFlagFor, withinOneDay } from "@/lib/oneDay";
@@ -390,6 +391,23 @@ export function useTasks(
     [uid],
   );
 
+  /**
+   * Add or take away planned time in quick steps (the "remaining" time moves by `deltaMin`). Never leaves less than
+   * 5 minutes to go, counting a running timer. Writes only `durationMin`, so the bubble resizes and the plan follows.
+   */
+  const adjustRemaining = useCallback(
+    async (task: Task, deltaMin: number) => {
+      if (!uid) return;
+      const running = task.startedAt ? Math.floor((Date.now() - Date.parse(task.startedAt)) / 60_000) : 0;
+      const used = (task.loggedMinutes ?? 0) + running;
+      const total = effectiveDuration(task) ?? 30;
+      const next = Math.min(1440, Math.max(used + 5, total + deltaMin));
+      if (next === total && task.durationMin !== undefined) return;
+      await updateDoc(doc(db, "users", uid, "tasks", task.id), { durationMin: next, updatedAt: new Date() });
+    },
+    [uid],
+  );
+
   /** Edit the basic fields. `durationMin` null = back to "let the AI guess". */
   const updateTask = useCallback(
     async (
@@ -557,6 +575,7 @@ export function useTasks(
     saveSubtasks,
     toggleSubtask,
     updateTask,
+    adjustRemaining,
     reschedule,
   };
 }

@@ -1,6 +1,9 @@
 "use client";
 
-import { CheckCircle2, AlertCircle, Check, Pencil, Pin, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, AlertCircle, Check, Minus, Pause, Pencil, Pin, Play, Plus, Sparkles } from "lucide-react";
+import { useSecondTick } from "@/hooks/useSecondTick";
+import { formatClock, remainingMinutes, remainingMs, STEP_MIN } from "@/lib/remaining";
 import { useLang } from "@/context/LanguageProvider";
 import { formatDeadline, formatTime } from "@/lib/time";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
@@ -30,6 +33,8 @@ export function SchedulePanel({
   onOpenPart,
   onEditBlockTime,
   onToggleSubtask,
+  onAdjust,
+  onToggleTimer,
 }: {
   schedule: Schedule | null;
   /** Live tasks only: active and not overdue. Completed and overdue ones are not on the timeline. */
@@ -46,6 +51,9 @@ export function SchedulePanel({
   onOpenPart: (taskId: string, subId: string) => void;
   onEditBlockTime: (blockId: string) => void;
   onToggleSubtask: (task: Task, sub: Subtask) => void;
+  /** Add / take away planned time in 15-minute steps, without opening the editor. */
+  onAdjust: (task: Task, deltaMin: number) => void;
+  onToggleTimer: (task: Task) => void;
 }) {
   const { t, lang } = useLang();
   const change = schedule?.lastChange;
@@ -153,6 +161,8 @@ export function SchedulePanel({
                   onOpen={() => (e.kind === "part" ? onOpenPart(e.task.id, e.sub.id) : onOpenTask(e.task.id))}
                   onEditTime={e.kind === "block" ? () => onEditBlockTime(e.block.id) : undefined}
                   onComplete={() => (e.kind === "part" ? onToggleSubtask(e.task, e.sub) : onComplete(e.task.id))}
+                  onAdjust={(d) => onAdjust(e.task, d)}
+                  onToggleTimer={() => onToggleTimer(e.task)}
                 />
               ))}
             </ol>
@@ -170,14 +180,23 @@ function Card({
   onOpen,
   onEditTime,
   onComplete,
+  onAdjust,
+  onToggleTimer,
 }: {
   entry: Entry;
   now: number;
   onOpen: () => void;
   onEditTime?: () => void;
   onComplete: () => void;
+  onAdjust: (deltaMin: number) => void;
+  onToggleTimer: () => void;
 }) {
   const { t, lang } = useLang();
+  const [timeOpen, setTimeOpen] = useState(false); // the inline −15m / +15m / ▶ controls
+  const running = !!e.task.startedAt;
+  const tick = useSecondTick(running);
+  const hasParts = !!e.task.subtasks?.length;
+  const leftLabel = running ? formatClock(remainingMs(e.task, tick)) : formatDuration(remainingMinutes(e.task), t);
   const current = e.start <= now && now < e.end;
   const hue: Hue = bubbleHue(e.task, now);
   const title = e.kind === "part" ? e.sub.title : e.block.title;
@@ -195,23 +214,68 @@ function Card({
       <span
         className={`hue-dot absolute rounded-full ${current ? "-left-[27px] top-[14px] h-3.5 w-3.5" : "-left-[25px] top-4 h-2.5 w-2.5"}`}
       />
-      <div className="glass flex items-start gap-3 rounded-2xl p-3" style={{ borderLeft: "3px solid rgb(var(--c) / 0.75)" }}>
+      <div className="glass flex items-start gap-2 rounded-2xl p-2.5" style={{ borderLeft: "3px solid rgb(var(--c) / 0.75)" }}>
+        {/* direct complete: the circle on the left */}
         <button
           type="button"
-          onClick={onOpen}
-          aria-label={`${title}, ${formatTime(new Date(e.start).toISOString())} – ${formatTime(new Date(e.end).toISOString())}`}
-          className="min-w-0 flex-1 text-left"
+          onClick={onComplete}
+          aria-label={`${t("Complete")}: ${title}`}
+          title={t("Complete")}
+          className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line text-muted transition hover:border-[rgb(var(--c))] hover:bg-[rgb(var(--c)/0.12)] hover:text-[rgb(var(--c))]"
         >
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-            <span>
-              {formatTime(new Date(e.start).toISOString())} – {formatTime(new Date(e.end).toISOString())} · {formatDuration(minutes, t)}
-            </span>
-            {pinned && <Pin aria-label={t("Pinned")} className="h-3 w-3 text-foreground" />}
-            <span className="hue-badge">{t(HUE_META[hue].label)}</span>
-          </p>
-          <p title={title} className="line-clamp-2 break-words text-sm font-medium">{title}</p>
-          {subtitle && <p className="truncate text-xs text-muted">{subtitle}</p>}
+          <Check className="h-4 w-4" />
         </button>
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            onClick={onOpen}
+            aria-label={`${title}, ${formatTime(new Date(e.start).toISOString())} – ${formatTime(new Date(e.end).toISOString())}`}
+            className="block w-full min-w-0 text-left"
+          >
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+              <span>
+                {formatTime(new Date(e.start).toISOString())} – {formatTime(new Date(e.end).toISOString())}
+              </span>
+              {pinned && <Pin aria-label={t("Pinned")} className="h-3 w-3 text-foreground" />}
+              <span className="hue-badge">{t(HUE_META[hue].label)}</span>
+            </p>
+            <p title={title} className="line-clamp-2 break-words text-sm font-medium">{title}</p>
+            {subtitle && <p className="truncate text-xs text-muted">{subtitle}</p>}
+          </button>
+          {/* time left: tap it for quick adjust and the countdown, no editor needed */}
+          {e.kind === "part" || hasParts ? (
+            <p className="mt-1 text-xs text-muted tabular-nums">{formatDuration(minutes, t)}</p>
+          ) : (
+            <div className="mt-1.5">
+              <button
+                type="button"
+                onClick={() => setTimeOpen((v) => !v)}
+                aria-expanded={timeOpen}
+                className={`rounded-full border px-2.5 py-0.5 text-xs tabular-nums transition hover:text-foreground ${
+                  running ? "border-[rgb(var(--c)/0.6)] text-foreground" : "border-line text-muted"
+                }`}
+              >
+                {running ? "⏱ " : ""}{t("{d} left", { d: leftLabel })}
+              </button>
+              {timeOpen && (
+                <span className="ml-1.5 inline-flex items-center gap-0.5 align-middle">
+                  <button type="button" onClick={() => onAdjust(-STEP_MIN)} aria-label={t("{n}m", { n: `−${STEP_MIN}` })}
+                    className="flex h-7 items-center rounded-full border border-line px-2 text-xs transition hover:bg-foreground/10">
+                    <Minus className="h-3 w-3" />{STEP_MIN}
+                  </button>
+                  <button type="button" onClick={() => onAdjust(STEP_MIN)} aria-label={t("{n}m", { n: `+${STEP_MIN}` })}
+                    className="flex h-7 items-center rounded-full border border-line px-2 text-xs transition hover:bg-foreground/10">
+                    <Plus className="h-3 w-3" />{STEP_MIN}
+                  </button>
+                  <button type="button" onClick={onToggleTimer} aria-label={running ? t("Pause") : t("Start timer")} aria-pressed={running}
+                    className="flex h-7 w-7 items-center justify-center rounded-full border border-line transition hover:bg-foreground/10">
+                    {running ? <Pause className="h-3 w-3 fill-current" /> : <Play className="h-3 w-3 fill-current" />}
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
+        </div>
 
         <span className="flex shrink-0 items-center gap-1">
           {onEditTime && (
@@ -225,14 +289,6 @@ function Card({
               <Pencil className="h-3.5 w-3.5" />
             </button>
           )}
-          <button
-            type="button"
-            onClick={onComplete}
-            aria-label={`${t("Complete")}: ${title}`}
-            className="rounded-full border border-line p-1.5 text-muted transition hover:border-[rgb(var(--glow-a))] hover:text-[rgb(var(--glow-a))]"
-          >
-            <Check className="h-4 w-4" />
-          </button>
         </span>
       </div>
     </li>

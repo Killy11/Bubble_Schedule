@@ -343,4 +343,10 @@ export const UK: Record<string, string> = {
   "Up to 3 files at a time.": "До 3 файлів одночасно.",
 
   "Quiet window: the 1-day deadline reminder waits until it ends. Task start alerts still come through, and scheduling isn't affected.": "Тихий період: нагадування «залишилась 1 доба» чекає на його завершення. Сповіщення про початок завдань усе одно надходять, а розклад не змінюється.",
+
+  // Quick actions
+  Done: "Виконано",
+  Pause: "Пауза",
+  "{d} left": "{d} залишилось",
+  left: "залишилось",
 };

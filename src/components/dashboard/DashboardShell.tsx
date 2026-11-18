@@ -139,7 +139,7 @@ export function DashboardShell() {
   );
 
   const {
-    tasks, loading: tasksLoading, error, addTask, addTasks, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, logMinutes,
+    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, logMinutes,
     startTimer, stopTimer, setRecurrence, updateTask, saveSubtasks, toggleSubtask, reschedule,
   } = useTasks(uid, timezone, now, handleOverdue, handleOneDay);
 
@@ -361,6 +361,12 @@ export function DashboardShell() {
     }
   }
 
+  /** ▶ starts the countdown, ⏸ pauses it (the elapsed minutes are logged). */
+  function toggleTimer(task: Task) {
+    const run = task.startedAt ? stopTimer(task) : startTimer(task.id);
+    void run.catch(() => toast({ title: t("Couldn't update the timer") }));
+  }
+
   /** Pop the bubble first, then write the completion (so the canvas and Firestore change together). */
   async function completeTask(task: Task, actualMin?: number) {
     playBubblePop(); // at the moment the bubble pops
@@ -482,13 +488,11 @@ export function DashboardShell() {
                 tasks={active}
                 now={now}
                 poppingIds={popping}
-                onOpen={(id) => {
-                  // A scheduled bubble opens its time editor (with a link to the details); others open details.
-                  const hasParts = !!active.find((x) => x.id === id)?.subtasks?.length; // parts have no single block to edit
-                  const block = hasParts ? undefined : schedule?.blocks.find((b) => b.taskId === id && b.status !== "done");
-                  if (block) setEditBlockId(block.id);
-                  else setOpenId(id);
-                }}
+                // A tap only selects a bubble (quick bar); the full editor opens from ✎ or a double-click.
+                onEdit={setOpenId}
+                onComplete={(task) => void completeTask(task)}
+                onAdjust={(task, d) => void adjustRemaining(task, d).catch(() => toast({ title: t("Couldn't save. Please try again.") }))}
+                onToggleTimer={toggleTimer}
               />
             )}
             {!tasksLoading && active.length === 0 && !error && (
@@ -530,6 +534,8 @@ export function DashboardShell() {
                 onOpenTask={setOpenId}
                 onOpenPart={(taskId, subId) => setOpenPart({ taskId, subId })}
                 onToggleSubtask={(task, sub) => void toggleSubtaskFlow(task, sub)}
+                onAdjust={(task, d) => void adjustRemaining(task, d).catch(() => toast({ title: t("Couldn't save. Please try again.") }))}
+                onToggleTimer={toggleTimer}
                 onComplete={(taskId) => {
                   const task = active.find((x) => x.id === taskId);
                   if (task) void completeTask(task);
