@@ -1,19 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { BellRing, Check, Clock, Download, Globe, Loader2, Mail, MessageSquarePlus, Moon, Share } from "lucide-react";
+import { BellRing, Check, Clock, Download, Globe, Loader2, Mail, Moon, Share } from "lucide-react";
 import { doc, updateDoc } from "firebase/firestore";
 import { Sheet } from "@/components/Sheet";
 import { db } from "@/lib/firebase/client";
 import { hhmm } from "@/lib/time";
-import { showLocalNotification } from "@/lib/localNotify";
 import { derivedQuiet, effectiveQuiet } from "@/lib/settings";
 import type { UserSettings } from "@/types";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useAuth } from "@/context/AuthProvider";
 import { useInstall } from "@/context/InstallProvider";
 import { useNotifications } from "@/context/NotificationProvider";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { SupportButton } from "@/components/SupportButton";
 import { useLang } from "@/context/LanguageProvider";
 
@@ -92,7 +90,7 @@ function QuietHours({ uid, settings }: { uid: string; settings: UserSettings }) 
   );
 }
 
-/** Notification status, the enable button, a test button, the master switch and Quiet hours. */
+/** Notifications: one On / Off switch (turning it on asks the browser for permission), plus Quiet hours when it is on. */
 function NotificationsCard({
   uid, settings, permission, enabling, error, enable, disable, iosNeedsInstall,
 }: {
@@ -105,34 +103,8 @@ function NotificationsCard({
   disable: () => Promise<void>;
   iosNeedsInstall: boolean;
 }) {
-  const { t, lang } = useLang();
-  const [testing, setTesting] = useState(false);
-  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const { t } = useLang();
   const on = settings.notificationsEnabled && permission === "granted";
-
-  /** Sends a real push to this account's devices. If that fails, a local notification still proves the device can show one. */
-  async function sendTest() {
-    setTesting(true);
-    setResult(null);
-    try {
-      const res = await fetch("/api/notifications/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lang }),
-      });
-      if (res.ok) {
-        setResult({ ok: true, text: t("Test sent. It should arrive in a few seconds.") });
-      } else {
-        const reason = ((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "";
-        const shown = await showLocalNotification(lang === "uk" ? "🔔 Тестове сповіщення" : "🔔 Test notification", lang === "uk" ? "Локальний тест: цей пристрій може показувати сповіщення." : "Local test: this device can show notifications.", `test_${uid}`);
-        setResult({ ok: false, text: `${t("Push delivery failed")}${reason ? `: ${t(reason)}` : ""}${shown ? ` (${t("Shown on this device only.")})` : ""}` });
-      }
-    } catch {
-      setResult({ ok: false, text: t("Push delivery failed") });
-    } finally {
-      setTesting(false);
-    }
-  }
 
   if (permission === "unsupported") {
     return iosNeedsInstall ? (
@@ -145,50 +117,18 @@ function NotificationsCard({
 
   return (
     <div data-tour="profile-notifications" className="space-y-2">
-      <p className="flex items-center gap-1.5 text-sm font-medium"><BellRing className="h-4 w-4" /> {t("Notifications")}</p>
-
-      {permission === "denied" ? (
-        <p role="status" className="rounded-2xl border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-500">
-          {t("🚫 Blocked in browser settings — allow notifications near the address bar")}
-        </p>
-      ) : on ? (
-        <>
-          <p role="status" className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-600 dark:text-emerald-400">
-            {t("✅ Notifications active on this device")}
-          </p>
-          <Switch
-            icon={enabling ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
-            label={t("Notifications")}
-            on
-            disabled={enabling}
-            onChange={() => void disable()}
-          />
-          <button
-            type="button"
-            onClick={sendTest}
-            disabled={testing}
-            className={`${primaryBtn} glass hover:brightness-125`}
-          >
-            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {t("🔔 Send test notification")}
-          </button>
-          {result && (
-            <p role="status" className={`text-xs ${result.ok ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>{result.text}</p>
-          )}
-          <QuietHours uid={uid} settings={settings} />
-        </>
-      ) : (
-        <button type="button" onClick={() => void enable()} disabled={enabling} className={`${primaryBtn} bg-foreground text-background hover:opacity-90`}>
-          {enabling ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />} {t("Enable notifications")}
-        </button>
+      <Switch
+        icon={enabling ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
+        label={t("Notifications")}
+        on={on}
+        disabled={enabling || permission === "denied"}
+        onChange={(next) => void (next ? enable() : disable())}
+      />
+      {permission === "denied" && (
+        <p role="status" className="text-xs text-muted">{t("Notifications are blocked in browser settings")}</p>
       )}
-
-      {iosNeedsInstall && (
-        <p className="flex items-start gap-1.5 text-xs text-muted">
-          <Share className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          {t("On iPhone, add the site to your Home Screen (Share → Add to Home Screen) to receive notifications.")}
-        </p>
-      )}
-      {error && <p role="alert" className="text-xs text-red-500">{error}</p>}
+      {error && permission !== "denied" && <p role="alert" className="text-xs text-red-500">{error}</p>}
+      {on && <QuietHours uid={uid} settings={settings} />}
     </div>
   );
 }
@@ -241,7 +181,7 @@ function WorkingHours({ uid, start: s0, end: e0, quietCustom }: { uid: string; s
   );
 }
 
-export function ProfileSheet({ open, onClose, onOpenFeedback, onShowTutorial }: { open: boolean; onClose: () => void; onOpenFeedback: () => void; onShowTutorial: () => void }) {
+export function ProfileSheet({ open, onClose, onShowTutorial }: { open: boolean; onClose: () => void; onShowTutorial: () => void }) {
   const { t, lang, setLang } = useLang();
   const { user } = useAuth();
   const { canInstall, installed, isIOS, install } = useInstall();
@@ -295,11 +235,6 @@ export function ProfileSheet({ open, onClose, onOpenFeedback, onShowTutorial }: 
               </button>
             ))}
           </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-medium">{t("Theme")}</p>
-          <ThemeToggle />
         </div>
 
         {user && (
@@ -357,14 +292,6 @@ export function ProfileSheet({ open, onClose, onOpenFeedback, onShowTutorial }: 
             {t("🎓 Show the interactive guide")}
           </button>
           <SupportButton variant="block" />
-          <button
-            type="button"
-            onClick={() => { onClose(); onOpenFeedback(); }}
-            data-tour="feedback-btn"
-            className={`${primaryBtn} glass hover:brightness-125`}
-          >
-            <MessageSquarePlus className="h-4 w-4" /> {t("Feedback")}
-          </button>
         </div>
       </div>
     </Sheet>

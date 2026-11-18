@@ -261,7 +261,7 @@ export function DashboardShell() {
   // AI edits go through the same task functions as the UI, so the canvas and the timeline change together.
   const applyRef = useRef<(actions: AssistantAction[]) => Promise<void>>(async () => {});
   const applyActions = useCallback((actions: AssistantAction[]) => applyRef.current(actions), []);
-  const { messages, pending, send, ask, stop } = useChat(uid, today, addTasksSmart, defaultPacing, applyActions);
+  const { messages, pending, ask, stop } = useChat(uid, today, addTasksSmart, defaultPacing, applyActions);
 
   const [tab, setTab] = useState<Tab>("bubbles");
   const [formOpen, setFormOpen] = useState(false);
@@ -637,7 +637,7 @@ export function DashboardShell() {
                 }}
               />
             ) : (
-              <ChatPanel messages={messages} pending={pending} hasTasks={active.length > 0} onSend={send} onAsk={ask} onStop={stop} />
+              <ChatPanel messages={messages} pending={pending} onAsk={ask} onStop={stop} />
             )}
           </div>
         </aside>
@@ -658,7 +658,7 @@ export function DashboardShell() {
         ))}
       </nav>
 
-      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onOpenFeedback={() => setFeedbackOpen(true)} onShowTutorial={startTutorial} />
+      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onShowTutorial={startTutorial} />
       <SupportPrompt
         open={supportPromptOpen}
         onClose={() => setSupportPromptOpen(false)}

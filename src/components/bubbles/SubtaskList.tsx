@@ -4,8 +4,8 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { Check, ListTree, Loader2, Pencil, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { useLang } from "@/context/LanguageProvider";
-import { DurationFields } from "@/components/DurationFields";
-import { splitMinutes, totalMinutes } from "@/lib/duration";
+import { DurationFields, snap5 } from "@/components/DurationFields";
+import { totalMinutes } from "@/lib/duration";
 import { formatDuration, formatWindow, MAX_SUBTASKS, newSubtaskId, progressLabel, subtaskProgress } from "@/lib/subtasks";
 import type { Subtask, Task } from "@/types";
 
@@ -248,8 +248,8 @@ function EditRow({
 }) {
   const { t } = useLang();
   const [title, setTitle] = useState(sub.title);
-  const [hours, setHours] = useState(() => splitMinutes(sub.durationMinutes).hours);
-  const [minutes, setMinutes] = useState(() => splitMinutes(sub.durationMinutes).minutes);
+  const [hours, setHours] = useState(() => String(Math.floor(snap5(sub.durationMinutes) / 60)));
+  const [minutes, setMinutes] = useState(() => String(snap5(sub.durationMinutes) % 60));
   const [start, setStart] = useState(toLocalInput(sub.scheduledStart));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -284,7 +284,7 @@ function EditRow({
           placeholder={t("What to do")} aria-label={t("Title")} className={`${input} w-full`} />
         <div className="flex flex-wrap gap-2">
           <div className="w-44 shrink-0">
-            <DurationFields hours={hours} minutes={minutes} onHours={setHours} onMinutes={setMinutes} hint={false} />
+            <DurationFields hours={hours} minutes={minutes} onHours={setHours} onMinutes={setMinutes} hint={false} allowBlank={false} />
           </div>
           <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)}
             aria-label={t("Start time")} className={`${input} min-w-0 flex-1`} />

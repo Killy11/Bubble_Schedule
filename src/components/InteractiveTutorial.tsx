@@ -38,7 +38,7 @@ interface Step {
   union?: boolean;
 }
 
-const steps = (t: TFn, isDesktop: boolean): Step[] => [
+const steps = (t: TFn, isDesktop: boolean, hasBubble: boolean): Step[] => [
   {
     id: "add", target: '[data-tour="add-task-bubble"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "create",
     title: t("Your first task"),
@@ -71,8 +71,11 @@ const steps = (t: TFn, isDesktop: boolean): Step[] => [
   },
   {
     id: "submit", target: '[data-tour="field-submit"]', tab: "bubbles", interactive: true, insideModal: true, mandatory: true, requires: "create",
-    title: t("Create it"),
-    body: t("Tap “Create” to put the bubble on the canvas."),
+    title: hasBubble ? t("Save your changes") : t("Create it"),
+    // After the bubble exists, coming back here reopens it for editing: the button then says Save.
+    body: hasBubble
+      ? t("Edit the fields if you like and tap “Save” (or “Next →”) to go back to the bubble.")
+      : t("Tap “Create” to put the bubble on the canvas."),
   },
   {
     id: "bubble", target: '[data-tour="tutorial-target-bubble"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "task",
@@ -112,24 +115,27 @@ const steps = (t: TFn, isDesktop: boolean): Step[] => [
   },
   {
     id: "chat", target: '[data-tour="ai-chat"]', tab: "chat", interactive: true, pinTop: true,
-    title: t("Try the AI chat"),
-    body: t("The assistant plans your day by text or voice. Try writing to her right now, for example: “Put the task at 4 PM”."),
+    title: t("Artificial intelligence"),
+    body: t("Artificial intelligence plans your day by text or voice. Try writing right now, for example: “Put the task at 4 PM”."),
+  },
+  {
+    id: "profile", target: '[data-tour="profile-btn"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "profile",
+    title: t("Your profile"),
+    body: t("Your profile is right here. Tap it to open the settings."),
   },
   {
     id: "account", tab: "bubbles", drawer: "profile", insideModal: true, union: true,
     target: '[data-tour-modal="profile"] [data-tour="profile-header"], [data-tour-modal="profile"] [data-tour="profile-notifications"]',
-    title: t("Your account"),
+    title: t("Account and notifications"),
     body: t("In your profile you manage the account and turn on notifications for task starts and the timer ending."),
   },
   {
-    id: "theme", tab: "bubbles", drawer: "profile", insideModal: true, union: true,
-    target: '[data-tour-modal="profile"] [data-tour="theme-toggle"], [data-tour-modal="profile"] [data-tour="feedback-btn"]',
+    id: "theme", target: '[data-tour="theme-toggle"], [data-tour="feedback-btn"]', union: true, tab: "bubbles",
     title: t("Theme and feedback"),
     body: t("Switch between the light and dark theme here, and send us an idea or a remark through “Feedback”."),
   },
   {
-    id: "support", tab: "bubbles", drawer: "profile", insideModal: true,
-    target: '[data-tour-modal="profile"] [data-tour="support-btn"]',
+    id: "support", target: '[data-tour="support-btn"]', tab: "bubbles",
     title: t("Support us"),
     body: t("If the app is useful to you, support us with the “Support” button."),
   },
@@ -183,7 +189,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onSyncDialogs, createdTaskId,
     window.addEventListener("resize", on);
     return () => window.removeEventListener("resize", on);
   }, []);
-  const list = useMemo(() => steps(t, isDesktop), [t, isDesktop]);
+  const list = useMemo(() => steps(t, isDesktop, !!createdTaskId), [t, isDesktop, createdTaskId]);
 
   // While the tour runs, app dialogs ignore backdrop clicks and Escape.
   useEffect(() => {
@@ -234,14 +240,16 @@ function Tour({ onClose, onSelectTab, bubbleCount, onSyncDialogs, createdTaskId,
   }, [modalId, step.advanceOnModal, list.length]);
   // A step that waits for a dialog to close moves on the moment it does (not while it is still open).
   const sawModal = useRef(false);
+  // The Create step also ends when the dialog closes after SAVING the tutorial's own bubble (no new bubble appears then).
+  const closeId = step.advanceOnModalClose ?? (step.id === "submit" && createdTaskId ? "create" : undefined);
   useEffect(() => {
-    if (!step.advanceOnModalClose) {
+    if (!closeId) {
       sawModal.current = false;
       return;
     }
-    if (modalId === step.advanceOnModalClose) sawModal.current = true;
-    else if (sawModal.current || modalId === null) setI((n) => Math.min(n + 1, list.length - 1));
-  }, [modalId, step.advanceOnModalClose, list.length]);
+    if (modalId === closeId) sawModal.current = true;
+    else if (sawModal.current || (modalId === null && step.id !== "submit")) setI((n) => Math.min(n + 1, list.length - 1));
+  }, [modalId, closeId, list.length, step.id]);
   // Declarative dialog state: whenever the step changes (Next OR Back) the app is put in the state that step needs, so
   // stepping back reopens the Create window (on the tour's own task) or the Task window, and stepping on closes them.
   const needs = step.requires ?? null;

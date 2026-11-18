@@ -495,7 +495,6 @@ export const UK: Record<string, string> = {
   "Close the window": "Закрий вікно",
   "Close the timer window (the × at the top, or tap outside it) to continue.": "Закрий вікно таймера (хрестик угорі або дотик поза вікном), щоб продовжити.",
   "Three main sections": "Три основні розділи",
-  "The app has 3 sections you can switch between at any time: 1) Bubbles (the visual canvas), 2) Schedule (the hour-by-hour plan of your day) and 3) AI Chat (your assistant).": "У програмі є 3 основні розділи, між якими можна перемикатись у будь-який момент: 1) Бульбашки (візуальне полотно), 2) Розклад (погодинний план дня) та 3) ШІ-чат (помічник Аїшка).",
   "Try the AI chat": "Спробуй ШІ-чат",
   "Write or dictate a message right now, for example “Put my task at 4 PM” or “Add coffee for 15 min”, send it and watch the AI answer. Notifications are turned on in your profile. Press the button when you're done.": "Напиши або надиктуй повідомлення просто зараз, наприклад «Постав моє завдання на 16:00» чи «Додай каву на 15 хв», надішли його й подивись, як відповість ШІ. Сповіщення вмикаються в профілі. Натисни кнопку, коли закінчиш.",
 
@@ -550,10 +549,23 @@ export const UK: Record<string, string> = {
   "On a computer the bubbles are always on screen, with the Schedule and the AI chat open next to them.": "На комп’ютері бульбашки завжди на екрані, а поруч відкриті Розклад та ШІ-чат.",
   "At the bottom there are 3 tabs to switch between: Bubbles, Schedule and AI Chat.": "Унизу є 3 вкладки для перемикання: Бульбашки, Розклад та ШІ-чат.",
   "In the Schedule your tasks are placed by the hour automatically. To change a time, just write it to the AI chat.": "У Розкладі завдання автоматично розставляються по годинах дня. Щоб змінити час — просто напишіть про це в ШІ-чат.",
-  "The assistant plans your day by text or voice. Try writing to her right now, for example: “Put the task at 4 PM”.": "Помічник Аїшка планує день текстом або голосом. Спробуйте написати їй прямо зараз, наприклад: «Постав завдання на 16:00».",
   "In your profile you manage the account and turn on notifications for task starts and the timer ending.": "У профілі керуйте акаунтом та увімкніть сповіщення про старт завдань і кінець таймера.",
   "Switch between the light and dark theme here, and send us an idea or a remark through “Feedback”.": "Тут перемикається світла або темна тема, а через «Відгуки» можна надіслати нам ідею чи зауваження.",
   "If the app is useful to you, support us with the “Support” button.": "Якщо програма вам корисна — підтримайте нас через кнопку «Підтримати».",
   "Replay any time": "Повторіть будь-коли",
   "If you forget something, tap “?” at any moment to go through the tutorial again.": "Якщо щось забудеться — натисніть «?» у будь-який момент, щоб пройти туторіал знову.",
+
+  "{n} h": "{n} год",
+  "{n} min": "{n} хв",
+  "Total duration": "Загальна тривалість",
+
+  "Artificial intelligence": "Штучний інтелект",
+  "Hi! Tell the artificial intelligence what to do, and when.": "Привіт! Скажіть штучному інтелекту, що зробити і коли.",
+  "Artificial intelligence plans your day by text or voice. Try writing right now, for example: “Put the task at 4 PM”.": "Штучний інтелект планує день текстом або голосом. Спробуйте написати прямо зараз, наприклад: «Постав завдання на 16:00».",
+
+  "Save your changes": "Збережіть зміни",
+  "Edit the fields if you like and tap “Save” (or “Next →”) to go back to the bubble.": "Відредагуйте поля за потреби та натисніть «Зберегти» (або «Далі →»), щоб повернутися до бульбашки.",
+  "Your profile": "Ваш профіль",
+  "Your profile is right here. Tap it to open the settings.": "Ось тут знаходиться ваш Профіль. Натисніть на нього, щоб відкрити налаштування.",
+  "Account and notifications": "Акаунт і сповіщення",
 };

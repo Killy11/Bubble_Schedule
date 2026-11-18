@@ -32,7 +32,7 @@ export function Header({
           In an installed Windows window with a title-bar overlay, env(titlebar-area-*) keeps it inside the safe area. */}
       <div className="mx-auto flex h-14 w-full max-w-[1600px] flex-nowrap items-center justify-between gap-3 px-4 pl-[max(1rem,env(titlebar-area-x,0px))] [min-height:max(3.5rem,env(titlebar-area-height,0px))]">
         <div className="flex h-full shrink-0 items-center">
-          <Logo size={34} />
+          <Logo size={30} />
         </div>
 
         <p className="min-w-0 flex-1 truncate text-center text-xs text-muted sm:text-sm" aria-live="polite">
@@ -47,7 +47,7 @@ export function Header({
             data-tour="feedback-btn"
             aria-label={t("Feedback")}
             title={t("Feedback")}
-            className="glass hidden h-9 items-center gap-1.5 rounded-full px-2.5 text-xs text-muted transition hover:text-foreground sm:flex" /* on phones Feedback lives in Profile */
+            className="glass flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs text-muted transition hover:text-foreground"
           >
             <MessageSquarePlus className="h-4 w-4" />
             <span className="hidden xl:inline">{t("Feedback")}</span>
@@ -66,7 +66,7 @@ export function Header({
           <button
             type="button"
             onClick={onOpenProfile}
-            data-tour="settings-btn"
+            data-tour="profile-btn"
             aria-label={t("Profile")}
             title={name}
             className="glass flex h-9 items-center gap-2 rounded-full pl-1 pr-1 text-sm text-muted transition hover:text-foreground lg:pr-3"

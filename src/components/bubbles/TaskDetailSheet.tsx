@@ -10,6 +10,7 @@ import { useSecondTick } from "@/hooks/useSecondTick";
 import { formatClock, progressOf, remainingMinutes, remainingSeconds, sessionSeconds, spentMinutes, STEP_MIN, totalMinutes } from "@/lib/remaining";
 import { Sheet } from "@/components/Sheet";
 import { DeadlineField } from "@/components/DeadlineField";
+import { DurationFields, snap5 } from "@/components/DurationFields";
 import { useLang } from "@/context/LanguageProvider";
 import { PacingSelector } from "@/components/PacingSelector";
 import { isTutorialActive } from "@/lib/tutorialLock";
@@ -340,12 +341,15 @@ function EditForm({
   const [title, setTitle] = useState(task.title);
   const [deadline, setDeadline] = useState(task.deadline ? toLocalInput(task.deadline) : "");
   const [noDeadline, setNoDeadline] = useState(!task.deadline);
-  const [total, setTotal] = useState(String(totalMinutes(task)));
-  const [left, setLeft] = useState(String(remainingMinutes(task)));
+  // Durations are picked from dropdowns in 5-minute steps (nothing typed, so the browser never rejects a value).
+  const split = (min: number) => ({ h: String(Math.floor(snap5(min) / 60)), m: String(snap5(min) % 60) });
+  const [tot, setTot] = useState(() => split(totalMinutes(task)));
+  const [lft, setLft] = useState(() => split(remainingMinutes(task)));
+  const [totalTouched, setTotalTouched] = useState(false);
   const [leftTouched, setLeftTouched] = useState(false);
+  const minsOf = (x: { h: string; m: string }) => Number(x.h) * 60 + Number(x.m);
   const [pacing, setPacing] = useState<Pacing>(pacingOf(task));
   const [error, setError] = useState<string | null>(null);
-  const whole = (v: string) => Math.max(0, Math.floor(Number(v)));
   const hue = bubbleHue(task, now);
 
   async function submit(e: React.FormEvent) {
@@ -354,9 +358,9 @@ function EditForm({
     if (!title.trim()) return setError(t("Give your bubble a title."));
     if (!noDeadline && Number.isNaN(when.getTime())) return setError(t("Pick a deadline."));
     if (!noDeadline && when.getTime() <= now) return setError(t("Pick a time in the future."));
-    if (!Number.isFinite(Number(total)) || !Number.isFinite(Number(left))) return setError(t("Enter whole minutes."));
-    const totalMin = Math.min(1440, Math.max(1, whole(total)));
-    const leftMin = Math.min(totalMin, whole(left));
+    // Untouched fields keep the exact stored minutes; changed ones use the dropdown values.
+    const totalMin = totalTouched ? Math.min(1440, Math.max(5, minsOf(tot))) : (task.durationMin ?? totalMinutes(task));
+    const leftMin = Math.min(totalMin, Math.max(0, minsOf(lft)));
     onBusy(true);
     setError(null);
     try {
@@ -390,22 +394,19 @@ function EditForm({
         <input required maxLength={100} value={title} onChange={(e) => setTitle(e.target.value)} className={`${field} mt-1 text-foreground`} />
       </label>
 
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block text-xs text-muted">
-          {t("Total duration (min)")}
-          <input type="number" inputMode="numeric" step={1} min={1} max={1440} value={total}
-            onChange={(e) => {
-              setTotal(e.target.value);
-              if (!leftTouched) setLeft(String(Math.max(0, whole(e.target.value) - spent))); // the time left follows the duration
-            }}
-            className={`${field} mt-1 text-base text-foreground`} />
-        </label>
-        <label className="block text-xs text-muted">
-          {t("Minutes left")}
-          <input type="number" inputMode="numeric" step={1} min={0} max={1440} value={left}
-            onChange={(e) => { setLeft(e.target.value); setLeftTouched(true); }}
-            className={`${field} mt-1 text-base text-foreground`} />
-        </label>
+      <div className="space-y-3">
+        <div className="text-xs text-muted">
+          <span className="mb-1 block">{t("Total duration")}</span>
+          <DurationFields hours={tot.h} minutes={tot.m} hint={false} allowBlank={false}
+            onHours={(v) => { const n = { ...tot, h: v }; setTot(n); setTotalTouched(true); if (!leftTouched) setLft(split(Math.max(0, minsOf(n) - spent))); }}
+            onMinutes={(v) => { const n = { ...tot, m: v }; setTot(n); setTotalTouched(true); if (!leftTouched) setLft(split(Math.max(0, minsOf(n) - spent))); }} />
+        </div>
+        <div className="text-xs text-muted">
+          <span className="mb-1 block">{t("Time left")}</span>
+          <DurationFields hours={lft.h} minutes={lft.m} hint={false} allowBlank={false} allowZero
+            onHours={(v) => { setLft({ ...lft, h: v }); setLeftTouched(true); }}
+            onMinutes={(v) => { setLft({ ...lft, m: v }); setLeftTouched(true); }} />
+        </div>
       </div>
 
       <div className="text-xs text-muted">

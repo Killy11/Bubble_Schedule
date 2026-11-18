@@ -1,12 +1,11 @@
 "use client";
 
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { FileText, Loader2, Paperclip, SendHorizontal, Sparkles, Square, X } from "lucide-react";
+import { FileText, Loader2, Paperclip, SendHorizontal, Square, X } from "lucide-react";
 import { MicButton } from "@/components/MicButton";
 import { useLang } from "@/context/LanguageProvider";
 import { attachmentProblem, CHAT_ACCEPT, CHAT_MAX_FILES, CHAT_MAX_TOTAL_BYTES, extOf, formatBytes } from "@/lib/attachments";
 import type { ChatMessage } from "@/types";
-import type { ScheduleRequest } from "@/types/api";
 
 /** Five visible lines of text-sm (20px) plus the vertical padding. */
 const MAX_TEXTAREA_PX = 124;
@@ -75,16 +74,11 @@ const MessageList = memo(function MessageList({ messages }: { messages: ChatMess
 export function ChatPanel({
   messages,
   pending,
-  hasTasks,
-  onSend,
   onAsk,
   onStop,
 }: {
   messages: ChatMessage[];
   pending: boolean;
-  hasTasks: boolean;
-  /** Direct scheduling (Auto-schedule button, preset chips). */
-  onSend: (trigger: ScheduleRequest["trigger"], text?: string) => void;
   /** Free text, optionally with files: the assistant adds, changes or re-plans tasks, reads the files, or answers. */
   onAsk: (text: string, files?: File[]) => void;
   /** Cancel the request in flight. */
@@ -103,7 +97,6 @@ export function ChatPanel({
   // Object URLs for image previews: made once per file set and released afterwards (not on every keystroke).
   const previews = useMemo(() => files.map((f) => (f.type.startsWith("image/") ? URL.createObjectURL(f) : undefined)), [files]);
   useEffect(() => () => previews.forEach((u) => u && URL.revokeObjectURL(u)), [previews]);
-  const suggestions = [t("I overslept, shift my morning tasks"), t("Make my day lighter")];
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -154,8 +147,9 @@ export function ChatPanel({
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false); }}
       onDrop={(e) => { e.preventDefault(); setDragging(false); addFiles([...e.dataTransfer.files]); }}
     >
+      <h2 className="shrink-0 border-b border-line px-4 py-3 text-sm font-semibold">{t("Artificial intelligence")}</h2>
       <div className={`min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4 transition ${dragging ? "ring-2 ring-inset ring-[rgb(var(--glow-a))]" : ""}`}>
-        {messages.length === 0 && <p className="pt-6 text-center text-sm text-muted">{t("Add or change tasks in plain words")}</p>}
+        {messages.length === 0 && <p className="pt-6 text-center text-sm text-muted">{t("Hi! Tell the artificial intelligence what to do, and when.")}</p>}
         <MessageList messages={messages} />
         {pending && (
           <div className="flex items-center gap-2 text-sm text-muted">
@@ -166,26 +160,6 @@ export function ChatPanel({
       </div>
 
       <div className="space-y-3 border-t border-line p-3">
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => onSend("auto-schedule")}
-            disabled={pending || !hasTasks}
-            className="flex items-center gap-1.5 rounded-full bg-foreground px-4 py-1.5 text-xs font-medium text-background transition hover:opacity-90 disabled:opacity-50"
-          >
-            <Sparkles className="h-3.5 w-3.5" /> {t("Auto-schedule")}
-          </button>
-          {suggestions.map((s) => (
-            <button
-              key={s}
-              onClick={() => onSend("user-message", s)}
-              disabled={pending || !hasTasks}
-              className="glass rounded-full px-3 py-1.5 text-xs text-muted transition hover:text-foreground disabled:opacity-50"
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-
         {files.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {files.map((f, i) => (
