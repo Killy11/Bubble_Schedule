@@ -5,6 +5,8 @@ import { BellRing, Check, Clock, Download, Globe, Loader2, Mail, MessageSquarePl
 import { doc, updateDoc } from "firebase/firestore";
 import { Sheet } from "@/components/Sheet";
 import { db } from "@/lib/firebase/client";
+import { derivedQuiet, effectiveQuiet } from "@/lib/settings";
+import type { UserSettings } from "@/types";
 import { useUserProfile } from "@/hooks/useUserProfile";
 import { useAuth } from "@/context/AuthProvider";
 import { useInstall } from "@/context/InstallProvider";
@@ -44,10 +46,50 @@ function Switch({
   );
 }
 
+/** Quiet hours: On/Off, plus start and end times that follow the schedule until the user picks their own. */
+function QuietHours({ uid, settings }: { uid: string; settings: UserSettings }) {
+  const { t } = useLang();
+  const q = effectiveQuiet(settings);
+  const derived = derivedQuiet(settings);
+  const save = (patch: Record<string, unknown>) =>
+    updateDoc(doc(db, "users", uid), Object.fromEntries(Object.entries(patch).map(([k, v]) => [`settings.${k}`, v]))).catch((e) =>
+      console.warn("quiet hours save:", e),
+    );
+  const input = "glass w-full rounded-xl px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-foreground/30 [color-scheme:dark]";
+  return (
+    <div className="space-y-2">
+      <Switch
+        icon={<Moon className="h-4 w-4" />}
+        label={t("Quiet hours")}
+        hint={`${q.start} – ${q.end}`}
+        on={q.enabled}
+        onChange={(next) => void save({ quietHoursEnabled: next, quietHoursStart: q.start, quietHoursEnd: q.end })}
+      />
+      {q.enabled && (
+        <div className="space-y-1.5 px-1">
+          <div className="flex items-center gap-2">
+            <input type="time" aria-label={t("Start")} value={q.start} className={input}
+              onChange={(e) => e.target.value && void save({ quietHoursCustom: true, quietHoursStart: e.target.value, quietHoursEnd: q.end })} />
+            <span className="text-sm text-muted">–</span>
+            <input type="time" aria-label={t("End")} value={q.end} className={input}
+              onChange={(e) => e.target.value && void save({ quietHoursCustom: true, quietHoursStart: q.start, quietHoursEnd: e.target.value })} />
+          </div>
+          {q.custom && (
+            <button type="button" className="text-xs text-muted underline-offset-2 transition hover:text-foreground hover:underline"
+              onClick={() => void save({ quietHoursCustom: false, quietHoursStart: derived.start, quietHoursEnd: derived.end })}>
+              {t("Auto from schedule")}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 
 /** Working-hours range picker; saved to users/{uid}.settings.workingHours and used by the AI planner. */
-function WorkingHours({ uid, start: s0, end: e0 }: { uid: string; start: string; end: string }) {
+function WorkingHours({ uid, start: s0, end: e0, quietCustom }: { uid: string; start: string; end: string; quietCustom: boolean }) {
   const { t } = useLang();
   const [start, setStart] = useState(s0);
   const [end, setEnd] = useState(e0);
@@ -59,7 +101,11 @@ function WorkingHours({ uid, start: s0, end: e0 }: { uid: string; start: string;
   async function save() {
     setState("saving");
     try {
-      await updateDoc(doc(db, "users", uid), { "settings.workingHours": { start, end } });
+      await updateDoc(doc(db, "users", uid), {
+        "settings.workingHours": { start, end },
+        // Quiet hours follow the schedule (end of day → start of day) until the user sets their own.
+        ...(quietCustom ? {} : { "settings.quietHoursStart": end, "settings.quietHoursEnd": start }),
+      });
       setState("saved");
     } catch {
       setState("error");
@@ -96,7 +142,6 @@ export function ProfileSheet({ open, onClose, onOpenFeedback }: { open: boolean;
   const [installing, setInstalling] = useState(false);
   const { settings } = useUserProfile(user?.uid);
   const pushOn = settings.notificationsEnabled && permission === "granted";
-  const quiet = !!settings.quietHours?.enabled;
 
   const name = user?.displayName || null;
   const email = user?.email || "—";
@@ -152,6 +197,7 @@ export function ProfileSheet({ open, onClose, onOpenFeedback }: { open: boolean;
             uid={user.uid}
             start={settings.workingHours?.start ?? "09:00"}
             end={settings.workingHours?.end ?? "21:00"}
+            quietCustom={settings.quietHoursCustom === true}
           />
         )}
 
@@ -187,25 +233,12 @@ export function ProfileSheet({ open, onClose, onOpenFeedback }: { open: boolean;
             <div className="space-y-2">
               <Switch
                 icon={enabling ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
-                label={t("Push notifications")}
+                label={t("Notifications")}
                 on={pushOn}
                 disabled={enabling || permission === "unsupported" || permission === "denied"}
                 onChange={(next) => void (next ? enable() : disable())}
               />
-              {pushOn && (
-                <Switch
-                  icon={<Moon className="h-4 w-4" />}
-                  label={t("Quiet hours")}
-                  hint="22:00 – 08:00"
-                  on={quiet}
-                  onChange={(next) => {
-                    if (user) {
-                      updateDoc(doc(db, "users", user.uid), { "settings.quietHours": { enabled: next, start: "22:00", end: "08:00" } })
-                        .catch((e) => console.warn("quiet hours save:", e));
-                    }
-                  }}
-                />
-              )}
+              {pushOn && user && <QuietHours uid={user.uid} settings={settings} />}
               {isIOS && !installed && (
                 <p className="flex items-start gap-1.5 text-xs text-muted">
                   <Share className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {t("iPhone/iPad: Share → Add to Home Screen to get notifications")}

@@ -3,6 +3,7 @@ import { FieldPath } from "firebase-admin/firestore";
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase/admin";
 import { fromFirestoreData, toFirestoreData } from "@/lib/firebase/converters";
+import { effectiveQuiet } from "@/lib/settings";
 import { COPY, sendPush, signAction, type Lang } from "@/lib/server/push";
 import { addDays, dateKeyInTz, toLocalNaive } from "@/lib/time";
 import type { Schedule, Subtask, Task, User } from "@/types";
@@ -35,11 +36,11 @@ function authorized(request: Request): boolean {
 
 const toMin = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 function inQuietHours(user: User, now: number): boolean {
-  const q = user.settings?.quietHours;
-  if (!q?.enabled) return false;
+  const q = effectiveQuiet(user.settings); // the user's own window, or the inverse of their working hours
+  if (!q.enabled) return false;
   const local = toMin(toLocalNaive(new Date(now), user.timezone || "UTC").slice(11, 16));
-  const s = toMin(q.start || "22:00");
-  const e = toMin(q.end || "08:00");
+  const s = toMin(q.start);
+  const e = toMin(q.end);
   return s > e ? local >= s || local < e : local >= s && local < e;
 }
 

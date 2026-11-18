@@ -294,7 +294,8 @@ export const UK: Record<string, string> = {
   "No longer part of the plan.": "Більше не входить до плану.",
 
   // Notifications
-  "Push notifications": "Push-сповіщення",
+  Notifications: "Сповіщення",
+  "Auto from schedule": "Авто з розкладу",
   "Quiet hours": "Тихі години",
   On: "Увімк.",
   Off: "Вимк.",

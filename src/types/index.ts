@@ -28,6 +28,12 @@ export interface UserSettings {
   /** Interface language (default English). */
   language?: "en" | "uk";
   /** Quiet hours: 24-hour deadline reminders wait until they end. Start-of-task alerts are still sent. */
+  quietHoursEnabled?: boolean;
+  /** "HH:MM". Unless `quietHoursCustom`, these follow the working hours (quiet = end of the day → start of the next). */
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
+  quietHoursCustom?: boolean;
+  /** Older nested form, still read as a fallback. */
   quietHours?: { enabled: boolean; start: string; end: string };
 }
 
