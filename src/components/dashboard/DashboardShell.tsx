@@ -284,10 +284,10 @@ export function DashboardShell() {
   /** Write a completion and offer the 6 s Undo. */
   async function finish(task: Task, actualMin?: number, celebrate = true) {
     const [undo] = await Promise.all([complete(task, { actualMin }), markTaskBlocksDone(task.id)]);
-    if (celebrate && !reducedMotion) setBursts((b) => [...b, Date.now()]);
+    if (celebrate) setBursts((b) => [...b, Date.now()]); // the overlay itself respects reduced motion
     if (undo) {
       toast({
-        title: celebrate ? t("🎉 Bubble popped! Great job!") : t("Marked as completed"),
+        title: t("Task completed"),
         body: task.title,
         placement: "bottom",
         durationMs: 6000,
@@ -324,7 +324,7 @@ export function DashboardShell() {
 
   /** "I already did this" on an overdue task: straight to Completed (it isn't on the canvas, so no pop). */
   async function markOverdueDone(task: Task) {
-    await finish(task, undefined, false);
+    await finish(task);
   }
 
   /** Reschedule (new deadline, or none) and let the auto re-plan place it again. */

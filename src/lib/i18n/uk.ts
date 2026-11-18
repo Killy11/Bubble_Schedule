@@ -195,7 +195,11 @@ export const UK: Record<string, string> = {
   "Something went wrong. Please try again.": "Щось пішло не так. Спробуйте ще раз.",
 
   // Toasts
-  "🎉 Bubble popped! Great job!": "🎉 Супер! Завдання виконано!",
+  "🎉 Bubble popped! Crushed it!": "🎉 Супер! Завдання виконано!",
+  "✨ Nice one! Another bubble down!": "✨ Чудово! Ще одна бульбашка лусне!",
+  "🚀 Great job! Keep the momentum!": "🚀 Молодець! Так тримати!",
+  "🏆 Task complete! You're on fire!": "🏆 Готово! Ти у вогні!",
+  "Task completed": "Завдання виконано",
   "Marked as completed": "Позначено виконаним",
   Undo: "Скасувати",
   View: "Переглянути",
