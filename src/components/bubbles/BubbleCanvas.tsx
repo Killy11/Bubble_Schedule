@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { Bubble } from "./Bubble";
-import { BubbleQuickBar } from "./BubbleQuickBar";
 import { bubbleDiameter } from "@/lib/bubbles/sizing";
 import { taskWeight } from "@/lib/bubbles/weight";
 import { layoutBubbles } from "@/lib/bubbles/layout";
@@ -16,24 +15,17 @@ export const MAX_BUBBLES = 50;
 export function BubbleCanvas({
   tasks,
   now,
-  onEdit,
-  onComplete,
-  onAdjust,
-  onToggleTimer,
+  onOpen,
   poppingIds,
 }: {
   tasks: Task[];
   now: number;
-  /** Open the full Edit Task modal (the ✎ in the quick bar, or a double-click). */
-  onEdit: (id: string) => void;
-  onComplete: (task: Task) => void;
-  onAdjust: (task: Task, deltaMin: number) => void;
-  onToggleTimer: (task: Task) => void;
+  /** A tap or click on a bubble opens the Task modal. */
+  onOpen: (id: string) => void;
   /** Bubbles playing their pop animation (task being completed). */
   poppingIds?: ReadonlySet<string>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   // Bubbles are sized in JS, so the Tailwind `sm` breakpoint (640px) is mirrored here:
   // smaller base size on phones; layoutBubbles then applies one global fit-scale when crowded.
@@ -61,19 +53,8 @@ export function BubbleCanvas({
   );
   const placements = useMemo(() => layoutBubbles(specs, size.w, size.h), [specs, size]);
   const placeById = new Map(placements.map((p) => [p.id, p]));
-  // The selection follows the task: it clears itself when the bubble pops, completes or leaves the canvas.
-  const selected = shown.find((t) => t.id === selectedId && !poppingIds?.has(t.id)) ?? null;
-  const selectedPlace = selected ? placeById.get(selected.id) : undefined;
-
   return (
-    <div
-      ref={ref}
-      className="relative h-full min-h-0 w-full overflow-hidden touch-none"
-      // Tapping empty canvas dismisses the quick bar (bubbles and the bar mark themselves data-keep).
-      onPointerDown={(e) => {
-        if (!(e.target as HTMLElement).closest("[data-keep]")) setSelectedId(null);
-      }}
-    >
+    <div ref={ref} className="relative h-full min-h-0 w-full overflow-hidden touch-none">
       <AnimatePresence>
         {shown.map((t, i) => {
           const place = placeById.get(t.id);
@@ -84,30 +65,11 @@ export function BubbleCanvas({
               place={place}
               now={now}
               index={i}
-              selected={selected?.id === t.id}
-              onSelect={(id) => setSelectedId((cur) => (cur === id ? null : id))}
-              onEdit={(id) => { setSelectedId(null); onEdit(id); }}
-              onComplete={() => { setSelectedId(null); onComplete(t); }}
-              onAdjust={(_id, d) => onAdjust(t, d)}
+              onOpen={onOpen}
               popping={poppingIds?.has(t.id) ?? false}
             />
           ) : null;
         })}
-      </AnimatePresence>
-      <AnimatePresence>
-        {selected && selectedPlace && (
-          <BubbleQuickBar
-            key={selected.id}
-            task={selected}
-            place={selectedPlace}
-            canvasW={size.w}
-            canvasH={size.h}
-            onComplete={() => { setSelectedId(null); onComplete(selected); }}
-            onAdjust={(d) => onAdjust(selected, d)}
-            onToggleTimer={() => onToggleTimer(selected)}
-            onEdit={() => { setSelectedId(null); onEdit(selected.id); }}
-          />
-        )}
       </AnimatePresence>
       {tasks.length > shown.length && (
         <span className="absolute bottom-2 right-3 text-[11px] text-muted">+{tasks.length - shown.length}</span>

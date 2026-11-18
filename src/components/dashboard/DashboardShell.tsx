@@ -149,8 +149,8 @@ export function DashboardShell() {
   );
 
   const {
-    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, logMinutes,
-    startTimer, stopTimer, setRecurrence, updateTask, saveSubtasks, toggleSubtask, reschedule,
+    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, logSeconds,
+    startTimer, stopTimer, resetTimer, setRecurrence, updateTask, saveSubtasks, toggleSubtask, reschedule,
   } = useTasks(uid, timezone, now, handleOverdue, handleOneDay);
 
   // Big tasks are split into scheduled parts automatically (and on demand from the task modal).
@@ -506,11 +506,7 @@ export function DashboardShell() {
                 tasks={active}
                 now={now}
                 poppingIds={popping}
-                // A tap only selects a bubble (quick bar); the full editor opens from ✎ or a double-click.
-                onEdit={setOpenId}
-                onComplete={(task) => void completeTask(task)}
-                onAdjust={(task, d) => void adjustRemaining(task, d).catch(() => toast({ title: t("Couldn't save. Please try again.") }))}
-                onToggleTimer={toggleTimer}
+                onOpen={setOpenId} // a tap opens the Task modal; complete and the timer live there
               />
             )}
             {!tasksLoading && active.length === 0 && !error && (
@@ -643,7 +639,9 @@ export function DashboardShell() {
         onClose={() => setOpenId(null)}
         onComplete={completeTask}
         onDelete={removeTask}
-        onLogTime={(task, m) => logMinutes(task.id, m)}
+        onLogTime={(task, sec) => logSeconds(task, sec)}
+        onAdjust={(task, d) => adjustRemaining(task, d)}
+        onResetTimer={resetTimer}
         onStartTimer={(task) => startTimer(task.id)}
         onStopTimer={stopTimer}
         onSetRecurrence={setRecurrence}

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Clock, Flag, Loader2, Pencil, Play, Repeat, Sparkles, Square, Trash2 } from "lucide-react";
+import { Check, Clock, Flag, Loader2, Minus, Pause, Pencil, Play, Plus, Repeat, RotateCcw, Sparkles, Trash2 } from "lucide-react";
+import { useSecondTick } from "@/hooks/useSecondTick";
+import { formatClock, parseClock, progressOf, remainingSeconds, spentSeconds, STEP_MIN } from "@/lib/remaining";
 import { Sheet } from "@/components/Sheet";
 import { RecurrencePicker } from "./RecurrencePicker";
 import { formatDuration } from "@/lib/subtasks";
@@ -47,6 +49,8 @@ export function TaskDetailSheet({
   onLogTime,
   onStartTimer,
   onStopTimer,
+  onResetTimer,
+  onAdjust,
   onSetRecurrence,
   onEdit,
   splitting,
@@ -60,9 +64,13 @@ export function TaskDetailSheet({
   /** `actualMin` is the time the user says it really took (omitted: tracked time is used). */
   onComplete: (t: Task, actualMin?: number) => Promise<void>;
   onDelete: (t: Task) => Promise<void>;
-  onLogTime: (t: Task, minutes: number) => Promise<void>;
+  /** Add time spent, in exact seconds. */
+  onLogTime: (t: Task, seconds: number) => Promise<void>;
   onStartTimer: (t: Task) => Promise<void>;
   onStopTimer: (t: Task) => Promise<void>;
+  onResetTimer: (t: Task) => Promise<void>;
+  /** Move the planned / remaining time by whole minutes (±15). */
+  onAdjust: (t: Task, deltaMin: number) => Promise<void>;
   onSetRecurrence: (t: Task, r: Recurrence | null) => Promise<void>;
   onEdit: (t: Task, patch: TaskEdit) => Promise<void>;
   splitting: boolean;
@@ -84,8 +92,7 @@ export function TaskDetailSheet({
     close(); // close first so the bubble can pop
     try { await fn(task); } finally { setBusy(false); }
   };
-  const timerMin = task?.startedAt ? Math.max(0, Math.floor((now - Date.parse(task.startedAt)) / 60_000)) : 0;
-  const tracked = (task?.loggedMinutes ?? 0) + timerMin;
+  const tracked = task ? Math.round(spentSeconds(task, now) / 60) : 0;
   const dur = task && effectiveDuration(task);
   const hue = task ? bubbleHue(task, now) : "green";
   const guessed = task && !task.durationMin && task.aiEstimate;
@@ -99,6 +106,17 @@ export function TaskDetailSheet({
               onSave={async (patch) => { await onEdit(task, patch); setEditing(false); }} />
           ) : (
           <>
+          {/* Quick complete, time spent / left and the live timer: first thing in the modal */}
+          <ProgressTimer
+            key={`progress-${task.id}`}
+            task={task}
+            busy={busy}
+            onComplete={() => void run((x) => onComplete(x))}
+            onAdjust={onAdjust}
+            onStart={onStartTimer}
+            onPause={onStopTimer}
+            onReset={onResetTimer}
+          />
           <div className="flex items-center gap-2">
             <span className="hue-badge">
               <span className="hue-dot h-2 w-2 rounded-full" /> {t(HUE_META[hue].label)}
@@ -137,15 +155,7 @@ export function TaskDetailSheet({
             onSplit={onSplit}
           />
 
-          <TimeLogger
-            key={task.id}
-            task={task}
-            total={dur || undefined}
-            timerMin={timerMin}
-            onLogTime={onLogTime}
-            onStartTimer={onStartTimer}
-            onStopTimer={onStopTimer}
-          />
+          <TimeLogger key={task.id} task={task} onLogTime={onLogTime} />
 
           {task.deadline && <section className="space-y-2">
             <p className="flex items-center gap-2 text-xs text-muted"><Repeat className="h-3.5 w-3.5" /> {t("Repeat")}</p>
@@ -189,38 +199,94 @@ export function TaskDetailSheet({
   );
 }
 
-function TimeLogger({
-  task,
-  total,
-  timerMin,
-  onLogTime,
-  onStartTimer,
-  onStopTimer,
+/** The big top section: Complete, Time spent / Time left (MM:SS), ±15m, and Start / Pause / Reset. */
+function ProgressTimer({
+  task, busy, onComplete, onAdjust, onStart, onPause, onReset,
 }: {
   task: Task;
-  total?: number;
-  timerMin: number;
-  onLogTime: (t: Task, minutes: number) => Promise<void>;
-  onStartTimer: (t: Task) => Promise<void>;
-  onStopTimer: (t: Task) => Promise<void>;
+  busy: boolean;
+  onComplete: () => void;
+  onAdjust: (t: Task, deltaMin: number) => Promise<void>;
+  onStart: (t: Task) => Promise<void>;
+  onPause: (t: Task) => Promise<void>;
+  onReset: (t: Task) => Promise<void>;
 }) {
+  const { t } = useLang();
+  const running = !!task.startedAt;
+  const tick = useSecondTick(running); // per-second only while the timer runs
+  const spent = spentSeconds(task, tick);
+  const left = remainingSeconds(task, tick);
+  const pct = Math.round(progressOf(task, tick) * 100);
+  const [pending, setPending] = useState(false);
+  const act = async (fn: () => Promise<void>) => {
+    setPending(true);
+    try { await fn(); } catch { /* the dashboard shows its own error toast */ } finally { setPending(false); }
+  };
+  const small = "flex h-9 items-center justify-center gap-1.5 rounded-full border border-line px-3 text-xs transition hover:bg-foreground/10 disabled:opacity-50";
+
+  return (
+    <section className="glass space-y-3 rounded-2xl p-4">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={onComplete}
+        className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60"
+      >
+        <Check className="h-4 w-4" /> {t("Complete")}
+      </button>
+
+      <div className="grid grid-cols-2 gap-2 text-center">
+        <div className="rounded-xl bg-foreground/5 px-2 py-2">
+          <p className="text-[11px] text-muted">{t("Time spent")}</p>
+          <p className="text-xl font-semibold tabular-nums">{formatClock(spent * 1000)}</p>
+        </div>
+        <div className="rounded-xl bg-foreground/5 px-2 py-2">
+          <p className="text-[11px] text-muted">{t("Time left")}</p>
+          <p className="text-xl font-semibold tabular-nums">{formatClock(left * 1000)}</p>
+        </div>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: "rgb(var(--c))" }} />
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="flex gap-1.5">
+          <button type="button" disabled={pending} onClick={() => act(() => onAdjust(task, -STEP_MIN))} className={small} aria-label={t("{n}m", { n: `−${STEP_MIN}` })}>
+            <Minus className="h-3 w-3" />{STEP_MIN}m
+          </button>
+          <button type="button" disabled={pending} onClick={() => act(() => onAdjust(task, STEP_MIN))} className={small} aria-label={t("{n}m", { n: `+${STEP_MIN}` })}>
+            <Plus className="h-3 w-3" />{STEP_MIN}m
+          </button>
+        </span>
+        <span className="flex gap-1.5">
+          <button type="button" disabled={pending} onClick={() => act(() => (running ? onPause(task) : onStart(task)))} aria-pressed={running}
+            className={`${small} ${running ? "" : "bg-foreground/10"}`}>
+            {running ? <><Pause className="h-3.5 w-3.5 fill-current" /> {t("Pause")}</> : <><Play className="h-3.5 w-3.5 fill-current" /> {t("Start timer")}</>}
+          </button>
+          <button type="button" disabled={pending || (spent < 1 && !running)} onClick={() => act(() => onReset(task))} className={small} aria-label={t("Reset")} title={t("Reset")}>
+            <RotateCcw className="h-3.5 w-3.5" />
+          </button>
+        </span>
+      </div>
+    </section>
+  );
+}
+
+/** Manual time logging: quick chips, or type any duration (14:23, 45s, 12.5). */
+function TimeLogger({ task, onLogTime }: { task: Task; onLogTime: (t: Task, seconds: number) => Promise<void> }) {
   const { t } = useLang();
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const logged = task.loggedMinutes ?? 0;
-  const remaining = total ? Math.max(0, total - logged) : undefined;
-  const pct = total ? Math.min(100, Math.round((logged / total) * 100)) : 0;
-
-  async function log(minutes: number) {
+  async function log(seconds: number) {
     setError(null);
     setSaving(true);
     try {
-      await onLogTime(task, minutes);
+      await onLogTime(task, seconds);
       setValue("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("Couldn't save"));
+    } catch {
+      setError(t("Couldn't save"));
     } finally {
       setSaving(false);
     }
@@ -228,63 +294,26 @@ function TimeLogger({
 
   return (
     <section className="glass space-y-3 rounded-2xl p-4">
-      <div>
-        <p className="text-sm">
-          {total
-            ? t("{a} / {b} spent · {c} left", { a: formatDuration(logged, t), b: formatDuration(total, t), c: formatDuration(remaining ?? 0, t) })
-            : t("{a} spent", { a: formatDuration(logged, t) })}
-        </p>
-        {total && (
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line" role="progressbar"
-            aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-            <div className="h-full rounded-full transition-all duration-500"
-              style={{ width: `${pct}%`, background: "rgb(var(--c))" }} />
-          </div>
-        )}
-        {total && logged > total && (
-          <p className="mt-1 text-xs text-muted">{t("Over by {d}", { d: formatDuration(logged - total, t) })}</p>
-        )}
-      </div>
-
-      <div className="flex items-center justify-between gap-2 text-sm">
-        <span className="text-muted">{task.startedAt ? `${t("Timer running")} · ${formatDuration(timerMin, t)}` : t("Working on it now?")}</span>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={async () => {
-            setError(null);
-            setSaving(true);
-            try { await (task.startedAt ? onStopTimer(task) : onStartTimer(task)); }
-            catch { setError(t("Couldn't update the timer")); }
-            finally { setSaving(false); }
-          }}
-          className="flex items-center gap-1.5 rounded-full bg-foreground px-3.5 py-1.5 text-xs font-medium text-background transition hover:opacity-90 disabled:opacity-50"
-        >
-          {task.startedAt ? <><Square className="h-3 w-3 fill-current" /> {t("Stop")}</> : <><Play className="h-3 w-3 fill-current" /> {t("Start timer")}</>}
-        </button>
-      </div>
-
+      <p className="text-xs text-muted">{t("Log time spent")}</p>
       <div className="flex flex-wrap gap-2">
         {CHIPS.map((c) => (
-          <button key={c.label} type="button" disabled={saving} onClick={() => log(c.min)}
+          <button key={c.label} type="button" disabled={saving} onClick={() => log(c.min * 60)}
             className="glass rounded-full px-3 py-1.5 text-xs text-muted transition hover:text-foreground disabled:opacity-50">
             {c.label}
           </button>
         ))}
       </div>
-
       <form
         className="flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          const n = Number(value);
-          if (!Number.isInteger(n) || n < 1 || n > 1440) return setError(t("Enter 1–1440 minutes"));
-          void log(n);
+          const sec = parseClock(value); // any time above zero is fine, down to a single second
+          if (sec === null) return setError(t("Enter a time like 14:23, 45s or 12.5"));
+          void log(sec);
         }}
       >
-        <input type="number" inputMode="numeric" min={1} max={1440} value={value}
-          onChange={(e) => setValue(e.target.value)} placeholder={t("Minutes spent")}
-          aria-label={t("Minutes spent")}
+        <input type="text" inputMode="text" value={value} onChange={(e) => setValue(e.target.value)}
+          placeholder="14:23" aria-label={t("Log time spent")}
           className="glass min-w-0 flex-1 rounded-full px-4 py-2 text-sm outline-none placeholder:text-muted focus:border-[rgb(var(--glow-a))]" />
         <button type="submit" disabled={saving || !value}
           className="flex items-center gap-1.5 rounded-full bg-foreground px-4 py-2 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-50">

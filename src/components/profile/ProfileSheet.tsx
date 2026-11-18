@@ -5,6 +5,7 @@ import { BellRing, Check, Clock, Download, Globe, Loader2, Mail, MessageSquarePl
 import { doc, updateDoc } from "firebase/firestore";
 import { Sheet } from "@/components/Sheet";
 import { db } from "@/lib/firebase/client";
+import { hhmm } from "@/lib/time";
 import { showLocalNotification } from "@/lib/localNotify";
 import { derivedQuiet, effectiveQuiet } from "@/lib/settings";
 import type { UserSettings } from "@/types";
@@ -72,10 +73,10 @@ function QuietHours({ uid, settings }: { uid: string; settings: UserSettings }) 
       {q.enabled && (
         <div className="space-y-1.5 px-1">
           <div className="flex items-center gap-2">
-            <input type="time" aria-label={t("Start")} value={q.start} className={input}
+            <input type="time" step={60} aria-label={t("Start")} value={hhmm(q.start)} className={input}
               onChange={(e) => e.target.value && void save({ quietHoursCustom: true, quietHoursStart: e.target.value, quietHoursEnd: q.end })} />
             <span className="text-sm text-muted">–</span>
-            <input type="time" aria-label={t("End")} value={q.end} className={input}
+            <input type="time" step={60} aria-label={t("End")} value={hhmm(q.end)} className={input}
               onChange={(e) => e.target.value && void save({ quietHoursCustom: true, quietHoursStart: q.start, quietHoursEnd: e.target.value })} />
           </div>
           {q.custom && (
@@ -221,9 +222,9 @@ function WorkingHours({ uid, start: s0, end: e0, quietCustom }: { uid: string; s
     <div className="space-y-2">
       <p className="flex items-center gap-1.5 text-sm font-medium"><Clock className="h-4 w-4" /> {t("Working hours")}</p>
       <div className="flex items-center gap-2">
-        <input type="time" aria-label={t("Working hours")} value={start} onChange={(e) => { setStart(e.target.value); setState("idle"); }} className={input} />
+        <input type="time" step={60} aria-label={t("Working hours")} value={hhmm(start)} onChange={(e) => { setStart(e.target.value); setState("idle"); }} className={input} />
         <span className="text-sm text-muted">–</span>
-        <input type="time" aria-label={t("Working hours")} value={end} onChange={(e) => { setEnd(e.target.value); setState("idle"); }} className={input} />
+        <input type="time" step={60} aria-label={t("Working hours")} value={hhmm(end)} onChange={(e) => { setEnd(e.target.value); setState("idle"); }} className={input} />
       </div>
       {!valid && <p className="text-xs text-red-500">{t("At least 1 hour")}</p>}
       {state === "error" && <p role="alert" className="text-xs text-red-500">{t("Couldn't save. Please try again.")}</p>}

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Loader2, Pin } from "lucide-react";
 import { Sheet } from "@/components/Sheet";
+import { hhmm } from "@/lib/time";
 import { useLang } from "@/context/LanguageProvider";
 import type { ScheduleBlock } from "@/types";
 
@@ -91,11 +92,11 @@ function Form({
       <div className="flex gap-3">
         <label className="block flex-1 space-y-1 text-xs text-muted">
           {t("Start")}
-          <input type="time" value={start} onChange={(ev) => setStart(ev.target.value)} className={field} />
+          <input type="time" step={60} value={hhmm(start)} onChange={(ev) => setStart(ev.target.value)} className={field} />
         </label>
         <label className="block flex-1 space-y-1 text-xs text-muted">
           {t("End")}
-          <input type="time" value={end} onChange={(ev) => setEnd(ev.target.value)} className={field} />
+          <input type="time" step={60} value={hhmm(end)} onChange={(ev) => setEnd(ev.target.value)} className={field} />
         </label>
       </div>
       <button

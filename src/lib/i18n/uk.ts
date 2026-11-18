@@ -366,4 +366,12 @@ export const UK: Record<string, string> = {
   "The push service rejected the message.": "Push-сервіс відхилив повідомлення.",
   "Too many tests. Try again later.": "Забагато тестів. Спробуйте пізніше.",
   "Shown on this device only.": "Показано лише на цьому пристрої.",
+
+  // Task modal timer
+  "Time spent": "Витрачено",
+  "Time left": "Залишилось",
+  Reset: "Скинути",
+  "Log time spent": "Додати витрачений час",
+  "Enter a time like 14:23, 45s or 12.5": "Введіть час, напр. 14:23, 45s або 12.5",
+  "Enter a time from 1 second to 24 hours": "Введіть час від 1 секунди до 24 годин",
 };

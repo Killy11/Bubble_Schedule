@@ -1,9 +1,9 @@
 "use client";
 
 import { motion, useReducedMotion } from "framer-motion";
-import { Check, Repeat } from "lucide-react";
+import { Repeat } from "lucide-react";
 import { useSecondTick } from "@/hooks/useSecondTick";
-import { formatClock, progressOf, remainingMs, STEP_MIN } from "@/lib/remaining";
+import { formatClock, remainingMs } from "@/lib/remaining";
 import { Orb } from "@/components/Orb";
 import { BubbleText } from "./BubbleText";
 import { bubbleHue } from "@/lib/bubbles/urgency";
@@ -64,30 +64,20 @@ export function Bubble({
   place,
   now,
   index,
-  selected = false,
-  onSelect,
-  onEdit,
-  onComplete,
-  onAdjust,
+  onOpen,
   popping = false,
 }: {
   task: Task;
   place: BubblePlacement;
   now: number;
   index: number;
-  /** Single tap / click selects (the floating quick bar shows); double-click opens the full editor. */
-  selected?: boolean;
-  onSelect: (id: string) => void;
-  onEdit: (id: string) => void;
-  onComplete: (id: string) => void;
-  onAdjust: (id: string, deltaMin: number) => void;
+  /** A tap or click opens the Task modal (complete, timer, and settings live there). */
+  onOpen: (id: string) => void;
   popping?: boolean;
 }) {
   const reduced = useReducedMotion();
   const running = !!task.startedAt;
   const tick = useSecondTick(running); // 1 s ticks only while this bubble's timer runs
-  const started = running || (task.loggedMinutes ?? 0) > 0;
-  const timeUp = running && remainingMs(task, tick) <= 0;
   const enterDelay = Math.min(index, 24) * 0.035;
   const { t, lang } = useLang();
   const hue = bubbleHue(task, now);
@@ -100,8 +90,7 @@ export function Bubble({
 
   return (
     <motion.div
-      data-keep
-      className={`group absolute left-0 top-0 hue-${hue} ${selected ? "z-10" : ""}`}
+      className={`absolute left-0 top-0 hue-${hue}`}
       initial={{ ...geometry, scale: 0, opacity: 0 }}
       // Position AND size are animated, so rank changes glide and logging time shrinks smoothly.
       animate={
@@ -135,16 +124,14 @@ export function Bubble({
       {popping && !reduced && <Burst d={place.d} />}
       <motion.button
         type="button"
-        onClick={() => onSelect(task.id)}
-        onDoubleClick={() => onEdit(task.id)}
+        onClick={() => onOpen(task.id)}
         disabled={popping}
-        aria-pressed={selected}
         aria-label={`${task.title}, ${formatDeadline(task.deadline, now, t, lang)}${repeats ? `, ${t("repeats")} ${repeats}` : ""}${parts ? `, ${progressLabel(task, now, t, lang)}` : ""}`}
         animate={{ y: [0, -amp, 0], x: [0, amp / 2, 0] }}
         transition={{ duration: dur, repeat: Infinity, ease: "easeInOut", delay: index * 0.35 }}
         whileHover={{ scale: 1.07 }}
         whileTap={{ scale: 0.95 }}
-        className={`relative block h-full w-full cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-foreground/40 ${selected ? "ring-2 ring-foreground/50" : ""}`}
+        className="relative block h-full w-full cursor-pointer rounded-full outline-none focus-visible:ring-2 focus-visible:ring-foreground/40"
       >
         <Orb hue={hue}>
           <BubbleText
@@ -157,17 +144,10 @@ export function Bubble({
             }
           />
         </Orb>
-        {started && (
-          // progress ring: how much of the planned time is used
-          <svg aria-hidden viewBox="0 0 100 100" className={`pointer-events-none absolute inset-0 -rotate-90 ${running && !reduced ? "animate-pulse" : ""}`}>
-            <circle cx="50" cy="50" r="48.5" fill="none" stroke="rgb(var(--c) / 0.18)" strokeWidth="2" />
-            <circle cx="50" cy="50" r="48.5" fill="none" stroke="rgb(var(--c))" strokeWidth="2.5" strokeLinecap="round"
-              pathLength={100} strokeDasharray={`${Math.round(progressOf(task, tick) * 100)} 100`} />
-          </svg>
-        )}
-        {running && place.d >= 72 && (
+        {running && place.d >= 64 && (
+          // a running timer: just a small live pill, no toolbars
           <span className="orb-text pointer-events-none absolute inset-x-0 bottom-[14%] text-center text-[11px] font-semibold tabular-nums text-foreground">
-            {formatClock(remainingMs(task, tick))} {place.d >= 96 ? t("left") : ""}
+            ⏱ {formatClock(remainingMs(task, tick))}
           </span>
         )}
         {repeats && place.d >= 64 && (
@@ -180,30 +160,6 @@ export function Bubble({
           </span>
         )}
       </motion.button>
-      {/* desktop hover: one-click complete right on the bubble's edge (touch uses the quick bar) */}
-      {!popping && (
-        <button
-          type="button"
-          onClick={() => onComplete(task.id)}
-          aria-label={t("Done")}
-          title={t("Done")}
-          className="absolute flex h-7 w-7 items-center justify-center rounded-full bg-foreground text-background opacity-0 shadow-lg transition [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:none)]:hidden focus-visible:opacity-100"
-          style={{ right: place.d * 0.04, top: place.d * 0.04 }}
-        >
-          <Check className="h-4 w-4" />
-        </button>
-      )}
-      {timeUp && !popping && (
-        // the timer ran out: a gentle prompt
-        <div className="glass absolute left-1/2 top-full z-10 mt-1 flex -translate-x-1/2 items-center gap-1 whitespace-nowrap rounded-full bg-background/90 p-1 text-xs shadow-lg">
-          <button type="button" onClick={() => onComplete(task.id)} className="flex items-center gap-1 rounded-full bg-foreground px-2.5 py-1 font-medium text-background">
-            <Check className="h-3.5 w-3.5" /> {t("Done")}
-          </button>
-          <button type="button" onClick={() => onAdjust(task.id, STEP_MIN)} className="rounded-full px-2.5 py-1 hover:bg-foreground/10">
-            {t("{n}m", { n: `+${STEP_MIN}` })}
-          </button>
-        </div>
-      )}
     </motion.div>
   );
 }

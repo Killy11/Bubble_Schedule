@@ -84,7 +84,11 @@ export interface Task {
   deadline?: ISODateTime;
   description?: string;
   durationMin?: number; // OPTIONAL, user-provided
-  loggedMinutes: number; // time already spent (defaults to 0); shrinks the bubble
+  loggedMinutes: number; // whole minutes already spent (defaults to 0); shrinks the bubble
+  /** Exact time spent / left / planned, in seconds. `loggedMinutes` and `durationMin` are kept in step (floor / ceil). */
+  spentSeconds?: number;
+  remainingSeconds?: number;
+  durationSeconds?: number;
   aiEstimate?: {
     durationMin?: number;
     reasoning?: string;

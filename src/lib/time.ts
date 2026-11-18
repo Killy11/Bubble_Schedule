@@ -92,3 +92,6 @@ export function addDays(key: DateKey, n: number): DateKey {
   const t = new Date(Date.UTC(y, m - 1, d + n));
   return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
 }
+
+/** Strictly "HH:MM" (drops any ":ss"), so an `<input type="time" step="60">` never shows a seconds column or fails validation. */
+export const hhmm = (v: string): string => (/^\d{2}:\d{2}/.test(v) ? v.slice(0, 5) : v);
