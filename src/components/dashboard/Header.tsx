@@ -27,10 +27,12 @@ export function Header({
   const { t } = useLang();
   const [busy, setBusy] = useState(false);
   return (
-    <header className="sticky top-0 z-30 border-b border-line bg-background/70 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
-      <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-3 px-4">
-        <div className="shrink-0">
-          <Logo size={38} />
+    <header className="sticky top-0 z-30 w-full border-b border-line bg-background/70 pt-[env(safe-area-inset-top)] backdrop-blur-xl">
+      {/* One strict row: fixed height (the logo is 34 px tall plus margin, so it can never reach the canvas below).
+          In an installed Windows window with a title-bar overlay, env(titlebar-area-*) keeps it inside the safe area. */}
+      <div className="mx-auto flex h-14 w-full max-w-[1600px] flex-nowrap items-center justify-between gap-3 px-4 pl-[max(1rem,env(titlebar-area-x,0px))] [min-height:max(3.5rem,env(titlebar-area-height,0px))]">
+        <div className="flex h-full shrink-0 items-center">
+          <Logo size={34} />
         </div>
 
         <p className="min-w-0 flex-1 truncate text-center text-xs text-muted sm:text-sm" aria-live="polite">

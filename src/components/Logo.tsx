@@ -16,20 +16,25 @@ const ORBS: Array<{ text: string; hue: Hue; d: number; left: number; top: number
 ];
 
 export function Logo({ size = 38 }: { size?: number }) {
+  // Whole-pixel geometry. With fractional sizes (38 × 1.3 = 49.4 px) Windows at 125% / 150% display scaling rounds
+  // each orb differently, so the logo's glow and orbs could poke out past the box and over the content below.
+  const px = (n: number) => Math.round(n);
+  const boxW = Math.ceil(Math.max(...ORBS.map((o) => size * (o.left + o.d))));
+  const boxH = Math.ceil(Math.max(...ORBS.map((o) => size * (o.top + o.d))));
   return (
     // isolate: the orbs blend with each other where they overlap, never with the page
     <div
       role="img"
       aria-label="BubbleSchedule"
-      className="logo relative shrink-0 bg-transparent"
-      style={{ width: size * 1.55, height: size * 1.3 }}
+      className="logo relative block shrink-0 bg-transparent"
+      style={{ width: boxW, height: boxH, minWidth: boxW, minHeight: boxH }}
     >
       {ORBS.map((o) => (
         <div
           key={o.text}
           aria-hidden
           className="absolute"
-          style={{ width: size * o.d, height: size * o.d, left: size * o.left, top: size * o.top }}
+          style={{ width: px(size * o.d), height: px(size * o.d), left: px(size * o.left), top: px(size * o.top) }}
         >
           {/* blended glass sphere */}
           <Orb hue={o.hue} className="logo-orb absolute inset-0" />
