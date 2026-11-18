@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Repeat } from "lucide-react";
 import { RecurrencePicker } from "./RecurrencePicker";
 import { SubtaskList } from "./SubtaskList";
@@ -11,6 +11,7 @@ import { formatClock, progressOf, remainingMinutes, remainingSeconds, sessionSec
 import { Sheet } from "@/components/Sheet";
 import { DeadlineField } from "@/components/DeadlineField";
 import { useLang } from "@/context/LanguageProvider";
+import { PacingSelector } from "@/components/PacingSelector";
 import { pacingOf } from "@/lib/pacing";
 import { formatDeadline } from "@/lib/time";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
@@ -44,7 +45,6 @@ export function TaskDetailSheet({
   onStopTimer,
   onConfirmTimer,
   onAdjustSpent,
-  onSetSpent,
   onSetRecurrence,
   onEdit,
   splitting,
@@ -64,8 +64,6 @@ export function TaskDetailSheet({
   onConfirmTimer: (t: Task) => Promise<number>;
   /** Log or take back time in exact 15-minute steps (spent ± 15; the time left follows). */
   onAdjustSpent: (t: Task, deltaMin: number) => Promise<void>;
-  /** Type the exact whole minutes already spent (the time left follows). */
-  onSetSpent: (t: Task, minutes: number) => Promise<void>;
   onSetRecurrence: (t: Task, r: Recurrence | null) => Promise<void>;
   onEdit: (t: Task, patch: TaskEdit) => Promise<void>;
   splitting: boolean;
@@ -79,7 +77,7 @@ export function TaskDetailSheet({
       {/* keyed by task: every time a bubble is opened the modal starts on the Timer view */}
       {task && (
         <div className={`hue-${hue}`}>
-          <Body key={task.id} {...{ task, now, onClose, onComplete, onDelete, onStartTimer, onStopTimer, onConfirmTimer, onAdjustSpent, onSetSpent, onSetRecurrence, onEdit, splitting, onToggleSubtask, onSaveSubtasks, onSplit }} />
+          <Body key={task.id} {...{ task, now, onClose, onComplete, onDelete, onStartTimer, onStopTimer, onConfirmTimer, onAdjustSpent, onSetRecurrence, onEdit, splitting, onToggleSubtask, onSaveSubtasks, onSplit }} />
         </div>
       )}
     </Sheet>
@@ -89,13 +87,15 @@ export function TaskDetailSheet({
 type BodyProps = Omit<Parameters<typeof TaskDetailSheet>[0], "task"> & { task: Task };
 
 function Body({
-  task, now, onClose, onComplete, onDelete, onStartTimer, onStopTimer, onConfirmTimer, onAdjustSpent, onSetSpent, onSetRecurrence, onEdit,
+  task, now, onClose, onComplete, onDelete, onStartTimer, onStopTimer, onConfirmTimer, onAdjustSpent, onSetRecurrence, onEdit,
   splitting, onToggleSubtask, onSaveSubtasks, onSplit,
 }: BodyProps) {
   const { t, lang } = useLang();
   // Step 1 is Timer & Progress; Step 2 (the full edit tablo) opens only from its Edit button.
   const [view, setView] = useState<"timer" | "edit">("timer");
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
   const hue = bubbleHue(task, now);
 
   const run = async (fn: (t: Task) => Promise<void>) => {
@@ -106,12 +106,13 @@ function Body({
 
   if (view === "edit") {
     return (
-      <div className="space-y-5">
+      <div className="flex flex-col gap-5">
         <button type="button" onClick={() => setView("timer")}
-          className="glass flex items-center gap-1.5 rounded-full px-4 py-1.5 text-xs text-muted transition hover:text-foreground">
+          className="glass flex w-fit items-center gap-1.5 rounded-full px-4 py-1.5 text-xs text-muted transition hover:text-foreground">
           <ArrowLeft className="h-3.5 w-3.5" /> {t("Back")}
         </button>
-        <EditForm task={task} now={now} onCancel={() => setView("timer")} onDelete={() => void run(onDelete)} busy={busy}
+
+        <EditForm task={task} now={now} formRef={formRef} onBusy={setSaving}
           onSave={async (patch) => { await onEdit(task, patch); setView("timer"); }} />
 
         <SubtaskList key={`parts-${task.id}`} task={task} now={now} splitting={splitting}
@@ -124,6 +125,18 @@ function Body({
               onChange={(r) => void onSetRecurrence(task, r)} />
           </section>
         )}
+
+        {/* footer: a subtle Delete, then Save as the very last element */}
+        <div className="mt-auto space-y-3 border-t border-line pt-4">
+          <button type="button" onClick={() => void run(onDelete)} disabled={busy || saving}
+            className="mx-auto flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-muted transition hover:text-red-500 disabled:opacity-60">
+            <Trash2 className="h-3.5 w-3.5" /> {t("Delete task")}
+          </button>
+          <button type="button" onClick={() => formRef.current?.requestSubmit()} disabled={busy || saving}
+            className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60">
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />} {t("Save")}
+          </button>
+        </div>
       </div>
     );
   }
@@ -144,7 +157,6 @@ function Body({
         busy={busy}
         onComplete={() => void run((x) => onComplete(x))}
         onAdjustSpent={onAdjustSpent}
-        onSetSpent={onSetSpent}
         onStart={onStartTimer}
         onPause={onStopTimer}
         onConfirm={onConfirmTimer}
@@ -152,51 +164,20 @@ function Body({
 
       <button type="button" data-tour="edit-btn" onClick={() => setView("edit")}
         className="glass flex w-full items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm text-foreground transition hover:brightness-125">
-        <Pencil className="h-4 w-4" /> {t("✎ Edit task")}
+        <Pencil className="h-4 w-4" /> {t("Edit task")}
       </button>
     </div>
   );
 }
 
-/** Time spent in whole minutes: type any integer (saved on blur or Enter); the time left follows. */
-function SpentInput({ task, onSet }: { task: Task; onSet: (t: Task, minutes: number) => Promise<void> }) {
-  const { t } = useLang();
-  const current = spentMinutes(task);
-  const [draft, setDraft] = useState<string | null>(null); // null = show the live value
-  const commit = async () => {
-    const text = draft;
-    setDraft(null);
-    if (text === null || text.trim() === "") return;
-    const typed = Number(text.trim());
-    if (!Number.isFinite(typed)) return;
-    const n = Math.max(0, Math.floor(typed)); // whole minutes only: no decimals, no seconds
-    if (n !== current) await onSet(task, n).catch(() => {});
-  };
-  return (
-    <label className="flex min-w-0 flex-1 flex-col items-center gap-1 text-[11px] text-muted">
-      {t("Spent (min)")}
-      <input
-        type="number" inputMode="numeric" step={1} min={0} max={1440}
-        value={draft ?? String(current)}
-        onChange={(e) => setDraft(e.target.value)}
-        onFocus={(e) => e.target.select()}
-        onBlur={() => void commit()}
-        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") setDraft(null); }}
-        className="glass h-10 w-full max-w-[7rem] rounded-xl text-center text-base tabular-nums text-foreground outline-none focus:border-[rgb(var(--glow-a))]"
-      />
-    </label>
-  );
-}
-
-/** Step 1: totals, the live MM:SS timer, manual time spent with exact ±15, and Complete. */
+/** Step 1: totals, then the live timer, then logging minutes by hand, then (set apart) completing the whole task. */
 function ProgressTimer({
-  task, busy, onComplete, onAdjustSpent, onSetSpent, onStart, onPause, onConfirm,
+  task, busy, onComplete, onAdjustSpent, onStart, onPause, onConfirm,
 }: {
   task: Task;
   busy: boolean;
   onComplete: () => void;
   onAdjustSpent: (t: Task, deltaMin: number) => Promise<void>;
-  onSetSpent: (t: Task, minutes: number) => Promise<void>;
   onStart: (t: Task) => Promise<void>;
   onPause: (t: Task) => Promise<void>;
   onConfirm: (t: Task) => Promise<number>;
@@ -211,16 +192,22 @@ function ProgressTimer({
   const timeUp = running && left <= 0 && remainingMinutes(task) > 0;
   const pct = Math.round(progressOf(task, tick) * 100);
   const [pending, setPending] = useState(false);
-  const [credited, setCredited] = useState<number | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [minutes, setMinutes] = useState("15"); // minutes to log by hand
   const act = async (fn: () => Promise<void>) => {
     if (pending) return; // one click, one change
     setPending(true);
     try { await fn(); } catch { /* the dashboard shows its own error toast */ } finally { setPending(false); }
   };
-  const step = "flex h-10 shrink-0 items-center justify-center gap-1 rounded-full border border-line px-3 text-sm transition hover:bg-foreground/10 disabled:opacity-50";
+  const flash = (text: string) => {
+    setNote(text);
+    setTimeout(() => setNote((n) => (n === text ? null : n)), 3000);
+  };
+  const toMin = (v: string) => Math.min(1440, Math.max(1, Math.floor(Number(v)) || 1));
+  const stepBtn = "flex h-10 shrink-0 items-center justify-center gap-1 rounded-full border border-line px-3 text-sm transition hover:bg-foreground/10 disabled:opacity-50";
 
   return (
-    <section className="glass space-y-3 rounded-2xl p-4">
+    <div className="space-y-3">
       {timeUp && (
         <div role="alert" className="space-y-2 rounded-xl border border-[rgb(var(--c)/0.5)] bg-[rgb(var(--c)/0.1)] p-3">
           <p className="text-sm font-medium">⏰ {t("Time's up!")}</p>
@@ -237,60 +224,62 @@ function ProgressTimer({
         </div>
       )}
 
-      {/* whole-minute totals */}
-      <div className="grid grid-cols-3 gap-2 text-center">
-        {[
-          [t("Total"), totalMinutes(task)],
-          [t("Spent"), spentMinutes(task)],
-          [t("Left"), remainingMinutes(task)],
-        ].map(([label, n]) => (
-          <div key={label as string} className="rounded-xl bg-foreground/5 px-2 py-2">
-            <p className="text-[11px] text-muted">{label}</p>
-            <p className="text-lg font-semibold tabular-nums">{n} <span className="text-xs font-normal text-muted">{t("min")}</span></p>
-          </div>
-        ))}
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
-        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: "rgb(var(--c))" }} />
+      {/* read-only whole-minute summary */}
+      <div className="glass rounded-2xl p-3">
+        <p className="text-center text-sm tabular-nums">
+          {t("Total: {n} min", { n: totalMinutes(task) })} <span className="text-muted">•</span> {t("Spent: {n} min", { n: spentMinutes(task) })} <span className="text-muted">•</span> {t("Left: {n} min", { n: remainingMinutes(task) })}
+        </p>
+        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+          <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: "rgb(var(--c))" }} />
+        </div>
       </div>
 
-      {/* live timer */}
-      <div data-tour="timer-clock" className="space-y-2 rounded-2xl border border-line p-3">
+      {/* Card 1: live timer */}
+      <section data-tour="timer-clock" className="glass space-y-2.5 rounded-2xl p-4">
+        <p className="text-xs font-medium text-muted">{t("Live timer")}</p>
         <div className="grid grid-cols-2 gap-2 text-center">
           <div><p className="text-[11px] text-muted">{t("Elapsed")}</p><p className="text-2xl font-semibold tabular-nums">{formatClock(session * 1000)}</p></div>
           <div><p className="text-[11px] text-muted">{t("Time left")}</p><p className="text-2xl font-semibold tabular-nums">{formatClock(left * 1000)}</p></div>
         </div>
         <div className="flex gap-2">
-          <button type="button" disabled={pending} onClick={() => { setCredited(null); void act(() => (running ? onPause(task) : onStart(task))); }}
-            aria-pressed={running} aria-label={running ? t("Pause") : t("Start timer")}
+          <button type="button" disabled={pending} onClick={() => { setNote(null); void act(() => (running ? onPause(task) : onStart(task))); }}
+            aria-pressed={running}
             className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-foreground/10 text-sm font-medium transition hover:bg-foreground/15 disabled:opacity-50">
             {running ? <><Pause className="h-4 w-4 fill-current" /> {t("Pause")}</> : <><Play className="h-4 w-4 fill-current" /> {t("Start timer")}</>}
           </button>
           <button type="button" disabled={pending || !hasSession}
-            onClick={() => act(async () => setCredited(await onConfirm(task)))}
-            aria-label={t("Stop & credit")} title={t("Stop & credit")}
+            onClick={() => act(async () => { const n = await onConfirm(task); flash(t("Logged +{n} min", { n })); })}
             className="flex h-11 items-center justify-center gap-1.5 rounded-full border border-line px-4 text-sm transition hover:bg-foreground/10 disabled:opacity-40">
-            <Check className="h-4 w-4" /> {t("Credit")}
+            <Check className="h-4 w-4" /> {t("Log minutes")}
           </button>
         </div>
-        {credited !== null && <p role="status" className="text-center text-xs text-muted">{t("Credited {n} min", { n: credited })}</p>}
-      </div>
+      </section>
 
-      {/* manual time spent, for working without the timer: −15 | typed minutes | +15 */}
-      <div data-tour="time-log" className="flex items-end justify-center gap-2">
-        <button type="button" disabled={pending} onClick={() => act(() => onAdjustSpent(task, -STEP_MIN))} aria-label={t("{n}m", { n: `−${STEP_MIN}` })} className={step}>
-          <Minus className="h-3.5 w-3.5" />{STEP_MIN}
+      {/* Card 2: log time without the timer */}
+      <section data-tour="time-log" className="glass space-y-2.5 rounded-2xl p-4">
+        <p className="text-xs font-medium text-muted">{t("Log time manually")}</p>
+        <label className="block text-xs text-muted">
+          {t("How many minutes did you work?")}
+          <div className="mt-1.5 flex items-center justify-center gap-2">
+            <button type="button" disabled={pending} onClick={() => setMinutes(String(Math.max(1, toMin(minutes) - STEP_MIN)))} aria-label={t("{n}m", { n: `−${STEP_MIN}` })} className={stepBtn}>
+              <Minus className="h-3.5 w-3.5" />{STEP_MIN}
+            </button>
+            <input type="number" inputMode="numeric" step={1} min={1} max={1440} value={minutes}
+              onChange={(e) => setMinutes(e.target.value)} onFocus={(e) => e.target.select()}
+              onBlur={() => setMinutes(String(toMin(minutes)))}
+              className="glass h-10 w-20 rounded-xl text-center text-base tabular-nums text-foreground outline-none focus:border-[rgb(var(--glow-a))]" />
+            <button type="button" disabled={pending} onClick={() => setMinutes(String(Math.min(1440, toMin(minutes) + STEP_MIN)))} aria-label={t("{n}m", { n: `+${STEP_MIN}` })} className={stepBtn}>
+              <Plus className="h-3.5 w-3.5" />{STEP_MIN}
+            </button>
+          </div>
+        </label>
+        <button type="button" disabled={pending}
+          onClick={() => { const n = toMin(minutes); void act(async () => { await onAdjustSpent(task, n); flash(t("Logged +{n} min", { n })); }); }}
+          className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground/10 px-4 py-2.5 text-sm font-medium transition hover:bg-foreground/15 disabled:opacity-50">
+          <Plus className="h-4 w-4" /> {t("Log {n} min", { n: toMin(minutes) })}
         </button>
-        <SpentInput task={task} onSet={onSetSpent} />
-        <button type="button" disabled={pending} onClick={() => act(() => onAdjustSpent(task, STEP_MIN))} aria-label={t("{n}m", { n: `+${STEP_MIN}` })} className={step}>
-          <Plus className="h-3.5 w-3.5" />{STEP_MIN}
-        </button>
-      </div>
-
-      <button type="button" data-tour="done-btn" disabled={busy} onClick={onComplete}
-        className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60">
-        <Check className="h-4 w-4" /> {t("Complete")}
-      </button>
+        {note && <p role="status" className="text-center text-xs text-emerald-600 dark:text-emerald-400">{note}</p>}
+      </section>
 
       {permission === "default" && (
         <button type="button" disabled={enabling} onClick={() => void enable()}
@@ -298,20 +287,28 @@ function ProgressTimer({
           <BellRing className="h-3.5 w-3.5" /> {t("🔔 Enable timer completion notifications")}
         </button>
       )}
-    </section>
+
+      {/* set apart: finishing the whole task is a different thing from logging time */}
+      <div className="border-t border-line pt-4">
+        <p className="mb-2 text-center text-xs text-muted">{t("Is the whole task finished?")}</p>
+        <button type="button" data-tour="done-btn" disabled={busy} onClick={onComplete}
+          className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60">
+          🎉 {t("Finish task")}
+        </button>
+      </div>
+    </div>
   );
 }
 
-/** Step 2: the full edit tablo. Times of day are set through the AI chat, not here. */
+/** Step 2: the edit fields. Save lives in the footer below (it submits this form through `formRef`). */
 function EditForm({
-  task, now, onSave, onCancel, onDelete, busy: outerBusy,
+  task, now, onSave, formRef, onBusy,
 }: {
   task: Task;
   now: number;
   onSave: (patch: TaskEdit) => Promise<void>;
-  onCancel: () => void;
-  onDelete: () => void;
-  busy: boolean;
+  formRef: React.RefObject<HTMLFormElement | null>;
+  onBusy: (busy: boolean) => void;
 }) {
   const { t } = useLang();
   const spent = spentMinutes(task);
@@ -321,7 +318,7 @@ function EditForm({
   const [total, setTotal] = useState(String(totalMinutes(task)));
   const [left, setLeft] = useState(String(remainingMinutes(task)));
   const [leftTouched, setLeftTouched] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [pacing, setPacing] = useState<Pacing>(pacingOf(task));
   const [error, setError] = useState<string | null>(null);
   const whole = (v: string) => Math.max(0, Math.floor(Number(v)));
   const hue = bubbleHue(task, now);
@@ -335,25 +332,26 @@ function EditForm({
     if (!Number.isFinite(Number(total)) || !Number.isFinite(Number(left))) return setError(t("Enter whole minutes."));
     const totalMin = Math.min(1440, Math.max(1, whole(total)));
     const leftMin = Math.min(totalMin, whole(left));
-    setBusy(true);
+    onBusy(true);
     setError(null);
     try {
       await onSave({
         title: title.trim(),
         deadline: noDeadline ? null : when.toISOString(),
         durationMin: totalMin,
-        pacing: pacingOf(task),
+        pacing,
         // Typing the time left sets what has been spent (total − left); otherwise the spent time stays as it was.
         ...(leftTouched ? { loggedMinutes: totalMin - leftMin } : {}),
       });
     } catch {
       setError(t("Couldn't save. Please try again."));
-      setBusy(false);
+    } finally {
+      onBusy(false);
     }
   }
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form ref={formRef} onSubmit={submit} className="space-y-4">
       <label className="block text-xs text-muted" data-tour="field-title">
         <span className="flex justify-between"><span>{t("Task title")}</span><span aria-live="polite">{title.length}/100</span></span>
         <input required maxLength={100} value={title} onChange={(e) => setTitle(e.target.value)} className={`${field} mt-1 text-foreground`} />
@@ -361,7 +359,7 @@ function EditForm({
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block text-xs text-muted">
-          {t("Duration (min)")}
+          {t("Total duration (min)")}
           <input type="number" inputMode="numeric" step={1} min={1} max={1440} value={total}
             onChange={(e) => {
               setTotal(e.target.value);
@@ -377,6 +375,11 @@ function EditForm({
         </label>
       </div>
 
+      <div className="text-xs text-muted">
+        <span className="mb-1 block">{t("Focus intensity")}</span>
+        <PacingSelector value={pacing} onChange={setPacing} />
+      </div>
+
       <div className="space-y-2">
         <DeadlineField value={deadline} none={noDeadline} onValue={setDeadline} onNone={setNoDeadline} />
         {/* The colour comes from the deadline alone: there is no manual priority. */}
@@ -387,20 +390,6 @@ function EditForm({
       </div>
 
       {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
-      <div className="flex gap-3">
-        <button type="submit" disabled={busy || outerBusy}
-          className="flex flex-1 items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60">
-          {busy && <Loader2 className="h-4 w-4 animate-spin" />} {t("Save")}
-        </button>
-        <button type="button" onClick={onDelete} disabled={busy || outerBusy}
-          className="glass flex items-center justify-center gap-1.5 rounded-full px-5 text-sm text-muted transition hover:text-red-500 disabled:opacity-60">
-          <Trash2 className="h-4 w-4" /> {t("Delete")}
-        </button>
-      </div>
-      <button type="button" onClick={onCancel} disabled={busy}
-        className="w-full rounded-full py-1.5 text-xs text-muted transition hover:text-foreground disabled:opacity-60">
-        {t("Cancel")}
-      </button>
     </form>
   );
 }

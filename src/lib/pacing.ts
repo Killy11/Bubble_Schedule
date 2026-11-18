@@ -9,11 +9,11 @@ export const PACING_META: Record<Pacing, { label: string; hint: string }> = {
     hint: "Spread out, long breaks",
   },
   balanced: {
-    label: "Balanced",
+    label: "Normal",
     hint: "Steady rhythm, short breaks",
   },
   locked: {
-    label: "Locked-in",
+    label: "Locked In",
     hint: "One unbroken block",
   },
 };

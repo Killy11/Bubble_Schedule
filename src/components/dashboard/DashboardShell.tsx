@@ -13,6 +13,8 @@ import { FeedbackSheet } from "@/components/FeedbackSheet";
 import { SupportPrompt } from "@/components/SupportPrompt";
 import { playBubblePop, playTimerChime, preloadBubblePop, stopBubblePop } from "@/lib/bubblePopSound";
 import { useLocalReminders } from "@/hooks/useLocalReminders";
+import { useSecondTick } from "@/hooks/useSecondTick";
+import { formatClock, sessionSeconds } from "@/lib/remaining";
 import { useTimerCompletion } from "@/hooks/useTimerCompletion";
 import { showLocalNotification } from "@/lib/localNotify";
 import { useSupport } from "@/context/SupportProvider";
@@ -155,7 +157,7 @@ export function DashboardShell() {
   );
 
   const {
-    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, confirmTimer, adjustSpent, setSpent, setRecurrence, saveSubtasks,
+    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, confirmTimer, adjustSpent, setRecurrence, saveSubtasks,
     startTimer, stopTimer, updateTask, toggleSubtask, reschedule,
   } = useTasks(uid, timezone, now, handleOverdue, handleOneDay);
 
@@ -293,6 +295,10 @@ export function DashboardShell() {
     writeLocal(TUTORIAL_KEY, "1"); // never auto-launches again; replay from ? or the profile
     if (uid) markOnboardingComplete(uid).catch((e) => console.warn("onboarding flag:", e));
   };
+  // A timer that is running stays visible on every tab and with every window closed. Its state lives on the task in
+  // Firestore (startedAt + accumulatedSeconds), so it also survives tab switches and reloads.
+  const runningTasks = active.filter((x) => !!x.startedAt);
+  const timerTick = useSecondTick(runningTasks.length > 0);
   const openTask = active.find((t) => t.id === openId) ?? null;
   const doneToday = tasks.filter(
     (t) => t.status === "completed" && t.completedAt && dateKeyInTz(t.completedAt, timezone) === today,
@@ -497,6 +503,21 @@ export function DashboardShell() {
         }}
       />
 
+      {runningTasks[0] && (
+        <div className="mx-auto flex w-full max-w-[1600px] shrink-0 justify-center px-4 pt-2">
+          <button
+            type="button"
+            onClick={() => setOpenId(runningTasks[0].id)}
+            className="glass flex max-w-full items-center gap-2 rounded-full px-4 py-1.5 text-xs shadow-lg transition hover:brightness-125"
+          >
+            <span className="animate-pulse">⏱</span>
+            <span className="min-w-0 truncate">{runningTasks[0].title}</span>
+            <span className="tabular-nums text-muted">• {formatClock(sessionSeconds(runningTasks[0], timerTick) * 1000)}</span>
+            {runningTasks.length > 1 && <span className="text-muted">+{runningTasks.length - 1}</span>}
+          </button>
+        </div>
+      )}
+
       <main className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 gap-4 overflow-hidden p-4 pb-24 lg:pb-4">
         {/* Bubble canvas */}
         <section className={`${tab === "bubbles" ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 flex-col lg:flex`}>
@@ -541,6 +562,7 @@ export function DashboardShell() {
 
         {/* Side panel (desktop) / tab content (mobile) */}
         <aside
+          data-tour="side-panel"
           className={`${tab === "bubbles" ? "hidden" : "flex"} glass min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden rounded-3xl lg:flex lg:w-[400px] lg:shrink-0`}
         >
           <div className="hidden gap-1 border-b border-line p-2 lg:flex">
@@ -661,7 +683,6 @@ export function DashboardShell() {
         onComplete={completeTask}
         onDelete={removeTask}
         onConfirmTimer={confirmTimer}
-        onSetSpent={(task, m) => setSpent(task, m)}
         onAdjustSpent={(task, d) => adjustSpent(task, d)}
         onSetRecurrence={setRecurrence}
         splitting={!!openTask && splitting.has(openTask.id)}

@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useLang, type TFn } from "@/context/LanguageProvider";
@@ -29,63 +30,43 @@ interface Step {
 const steps = (t: TFn): Step[] => [
   {
     id: "add", target: '[data-tour="add-task-btn"]', tab: "bubbles", interactive: true, advanceOnModal: "create",
-    title: t("An empty canvas"),
-    body: t("The canvas starts empty because every task lives here as a floating bubble. Tap + New bubble to open the Create window."),
+    title: t("Let's start with your first bubble!"),
+    body: t("Tap the + button to open the Create task window."),
   },
   {
     id: "title", target: '[data-tour="field-title"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("Task title"),
-    body: t("Name what you plan to do, for example “Write the report”. This text appears on the bubble."),
+    title: t("1. Task title"),
+    body: t("Write what you are going to do. For example “Prepare the presentation” or “Workout”."),
   },
   {
     id: "duration", target: '[data-tour="field-duration"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("Duration in minutes"),
-    body: t("Enter how long the task takes. The longer the task, the BIGGER its bubble. Leave it empty and the AI will estimate it."),
+    title: t("2. Duration in minutes"),
+    body: t("Enter how many minutes it takes (for example 45). The more minutes, the BIGGER the bubble on screen."),
+  },
+  {
+    id: "mode", target: '[data-tour="field-mode"]', tab: "bubbles", interactive: true, insideModal: true,
+    title: t("3. Focus mode"),
+    body: t("Pick how you work: Locked In (deep focus), Normal (usual pace) or Chill (an easy task, no rush)."),
   },
   {
     id: "deadline", target: '[data-tour="field-deadline"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("Deadline and urgency"),
-    body: t("The closer the deadline, the more the bubble's colour and glow change (red under a day, yellow 1–5 days, green later), so urgent tasks catch your eye. Now fill the fields in and tap Add bubble: this guide continues when your bubble appears."),
+    title: t("4. Deadline"),
+    body: t("Set a deadline (for example tonight or tomorrow). The closer the deadline, the brighter the bubble glows."),
   },
   {
-    id: "bubble", target: '[data-tour="first-bubble"]', tab: "bubbles", interactive: true, advanceOnModal: "task", closeDialogs: true,
-    title: t("Your first bubble"),
-    body: t("Here it is. Bigger means longer, and the colour follows the deadline. Tap your bubble to open its control window."),
+    id: "submit", target: '[data-tour="field-submit"]', tab: "bubbles", interactive: true, insideModal: true,
+    title: t("Create it"),
+    body: t("Done! Tap Create and your first bubble appears on the canvas."),
   },
   {
-    id: "timer", target: '[data-tour="timer-clock"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("Live timer and ✓"),
-    body: t("Press ▶ to track your work in real time, ⏸ to pause. Tap ✓ Credit to log it: the elapsed time is turned into whole minutes (rounded down, 03:40 counts as 3)."),
+    id: "bubble", target: '[data-tour="first-bubble"]', tab: "bubbles", interactive: true, closeDialogs: true,
+    title: t("Your bubble"),
+    body: t("Tap it to open the Timer window. There you can run the live timer, log the minutes you worked by hand with “Log time”, or finish the whole task with “Finish task” 🎉."),
   },
   {
-    id: "spent", target: '[data-tour="time-log"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("Time spent and −15 / +15"),
-    body: t("No timer? Type the exact minutes you have already spent, or use −15 / +15. The time left updates by itself: left = total − spent."),
-  },
-  {
-    id: "done", target: '[data-tour="done-btn"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("Complete"),
-    body: t("When the whole task is finished, tap Complete: the bubble pops with a celebration (and you can Undo)."),
-  },
-  {
-    id: "edit", target: '[data-tour="edit-btn"]', tab: "bubbles", interactive: true, insideModal: true,
-    title: t("Edit task"),
-    body: t("This opens the full editor: change the title, the total duration, the minutes left or the deadline, set a repeat, or delete the task."),
-  },
-  {
-    id: "chat", target: '[data-tour="ai-chat"]', tab: "chat", closeDialogs: true,
-    title: t("AI assistant and voice"),
-    body: t("Type or dictate with the mic, for example “Put this at 3 PM” or “Plan my day”. The AI assigns tasks to specific hours of your day."),
-  },
-  {
-    id: "schedule", target: '[data-tour="schedule-view"]', tab: "schedule",
-    title: t("Your daily schedule"),
-    body: t("Tasks the AI times appear here on the timeline, hour by hour. Overdue and Completed are one tap away at the top."),
-  },
-  {
-    id: "settings", target: '[data-tour="settings-btn"]', tab: "bubbles",
-    title: t("Notifications and reminders"),
-    body: t("In your profile you can turn on notifications for task starts and timer endings. On iPhone, add the site to your Home Screen first (Share → Add to Home Screen)."),
+    id: "panel", target: '[data-tour="side-panel"]', tab: "chat", closeDialogs: true,
+    title: t("AI chat, schedule and notifications"),
+    body: t("Tell the AI chat, or dictate with the mic, when to do things (“Put the presentation at 3 PM”). Your day then appears in the Schedule timeline. Turn on notifications in your profile (the round button at the top)."),
   },
 ];
 
@@ -109,7 +90,12 @@ export function InteractiveTutorial({
   onClose: () => void;
   onSelectTab: (tab: TutorialTab) => void;
 }) {
-  return <AnimatePresence>{open && <Tour onClose={onClose} onSelectTab={onSelectTab} bubbleCount={bubbleCount} onCloseDialogs={onCloseDialogs} />}</AnimatePresence>;
+  if (typeof document === "undefined") return null;
+  // A portal on <body> with z-[9999]: always above the app's own dialogs.
+  return createPortal(
+    <AnimatePresence>{open && <Tour onClose={onClose} onSelectTab={onSelectTab} bubbleCount={bubbleCount} onCloseDialogs={onCloseDialogs} />}</AnimatePresence>,
+    document.body,
+  );
 }
 
 function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: () => void; onSelectTab: (tab: TutorialTab) => void; bubbleCount: number; onCloseDialogs: () => void }) {
@@ -172,6 +158,8 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
       const next = { x: r.left - PAD, y: r.top - PAD, w: r.width + PAD * 2, h: r.height + PAD * 2 };
       setBox((b) => (b && Math.abs(b.x - next.x) < 0.5 && Math.abs(b.y - next.y) < 0.5 && Math.abs(b.w - next.w) < 0.5 && Math.abs(b.h - next.h) < 0.5 ? b : next));
     };
+    const el0 = target ? (document.querySelector(target) as HTMLElement | null) : null;
+    el0?.scrollIntoView({ block: "nearest" });
     const first = requestAnimationFrame(measure);
     const id = setInterval(measure, 150);
     window.addEventListener("resize", measure);
@@ -235,7 +223,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
   top = Math.min(Math.max(M, top), Math.max(M, view.h - cardH - M));
 
   return (
-    <motion.div data-tour-card className={`fixed inset-0 z-[90] ${step.interactive ? "pointer-events-none" : ""}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="dialog" aria-modal="true" aria-label={t("Help")}>
+    <motion.div data-tour-card className={`fixed inset-0 z-[9999] ${step.interactive ? "pointer-events-none" : ""}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="dialog" aria-modal="true" aria-label={t("Help")}>
       {/* catches clicks so the app underneath can't be used mid-tour */}
       {!step.interactive && <div className="absolute inset-0" />}
       {box && step.interactive ? (

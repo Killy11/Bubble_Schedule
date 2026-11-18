@@ -182,7 +182,6 @@ function Form({
         <input type="file" accept={ESTIMATE_ACCEPT} className="sr-only" disabled={estimating}
           onChange={(e) => { void analyse(e.target.files?.[0]); e.target.value = ""; }} />
       </label>
-      <DeadlineField value={deadline} none={noDeadline} onValue={setDeadline} onNone={setNoDeadline} />
       <div data-tour="field-duration" className="text-xs text-muted">
         <span className="mb-1 block">{t("Duration")}</span>
         <DurationFields
@@ -212,10 +211,11 @@ function Form({
         {suggestion && !durationTouched && <p className="mt-1 text-[11px]">{t("From {n} similar tasks", { n: suggestion.samples })}</p>}
       </div>
       {/* Focus intensity lives here only. */}
-      <div className="text-xs text-muted">
+      <div data-tour="field-mode" className="text-xs text-muted">
         <span className="mb-1 block">{t("Focus intensity")}</span>
         <PacingSelector value={pacing} onChange={setPacingPick} />
       </div>
+      <DeadlineField value={deadline} none={noDeadline} onValue={setDeadline} onNone={setNoDeadline} />
       {!noDeadline && (
         <div className="text-xs text-muted">
           <span className="mb-1 block">{t("Repeat")}</span>
@@ -223,7 +223,7 @@ function Form({
         </div>
       )}
       {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
-      <button type="submit" disabled={busy}
+      <button type="submit" disabled={busy} data-tour="field-submit"
         className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60">
         {busy && <Loader2 className="h-4 w-4 animate-spin" />} {t("Add bubble")}
       </button>

@@ -6,12 +6,12 @@ import { PACING_META } from "@/lib/pacing";
 import type { Pacing } from "@/types";
 
 const OPTIONS: Array<{ id: Pacing; icon: typeof Coffee }> = [
-  { id: "chill", icon: Coffee },
-  { id: "balanced", icon: Waves },
   { id: "locked", icon: Lock },
+  { id: "balanced", icon: Waves },
+  { id: "chill", icon: Coffee },
 ];
 
-/** Chill / Balanced / Locked-in. `compact` drops the hint line. */
+/** Locked In / Normal / Chill. `compact` drops the hint line. */
 export function PacingSelector({
   value,
   onChange,
