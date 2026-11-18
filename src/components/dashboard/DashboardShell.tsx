@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthProvider";
 import { useToast } from "@/context/ToastProvider";
 import { useLang } from "@/context/LanguageProvider";
 import { Celebrations, type BurstSpec } from "@/components/Celebration";
+import { ShareSheet } from "@/components/ShareSheet";
 import { FeedbackSheet } from "@/components/FeedbackSheet";
 import { SupportPrompt } from "@/components/SupportPrompt";
 import { playBubblePop, playTimerChime, preloadBubblePop, stopBubblePop } from "@/lib/bubblePopSound";
@@ -88,6 +89,7 @@ export function DashboardShell() {
   const [rescheduleId, setRescheduleId] = useState<string | null>(null);
   const [completedOpen, setCompletedOpen] = useState(false);
   const [overdueOpen, setOverdueOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [popping, setPopping] = useState<ReadonlySet<string>>(new Set());
   const [bursts, setBursts] = useState<BurstSpec[]>([]);
@@ -534,6 +536,7 @@ export function DashboardShell() {
         onOpenProfile={() => setProfileOpen(true)}
         onOpenHelp={startTutorial}
         onOpenFeedback={() => setFeedbackOpen(true)}
+        onOpenShare={() => setShareOpen(true)}
       />
 
       {runningTasks[0] && (
@@ -646,6 +649,7 @@ export function DashboardShell() {
           openSupport(); // the same Support modal as the header button
         }}
       />
+      <ShareSheet open={shareOpen} onClose={() => setShareOpen(false)} />
       <FeedbackSheet open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
       <TaskFormSheet
         open={formOpen}

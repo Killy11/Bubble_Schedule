@@ -570,4 +570,11 @@ export const UK: Record<string, string> = {
   "Log out of account": "Вийти з акаунту",
   "Music: on": "Музика: увімк.",
   "Music: off": "Музика: вимк.",
+  "Share BubbleSchedule": "Поширити BubbleSchedule",
+  Share: "Поширити",
+  Link: "Посилання",
+  "Copy link": "Скопіювати посилання",
+  "✓ Copied": "✓ Скопійовано",
+  "Download QR (PNG)": "Завантажити QR (PNG)",
+  "Send...": "Надіслати...",
 };
