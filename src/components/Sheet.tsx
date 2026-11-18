@@ -11,11 +11,14 @@ export function Sheet({
   onClose,
   title,
   children,
+  tourId,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /** Lets the guided tour recognise this dialog (e.g. "create", "task"). */
+  tourId?: string;
 }) {
   const { t } = useLang();
   useEffect(() => {
@@ -38,6 +41,7 @@ export function Sheet({
           <motion.div
             role="dialog"
             aria-modal="true"
+            data-tour-modal={tourId}
             aria-label={title}
             onClick={(e) => e.stopPropagation()}
             initial={{ y: 40, opacity: 0 }}

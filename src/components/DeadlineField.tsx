@@ -19,7 +19,7 @@ export function DeadlineField({
 }) {
   const { t } = useLang();
   return (
-    <div className="text-xs text-muted">
+    <div data-tour="field-deadline" className="text-xs text-muted">
       <div className="flex items-center justify-between">
         <span>{t("Deadline")}</span>
         <label className="flex cursor-pointer items-center gap-1.5">

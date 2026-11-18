@@ -53,7 +53,7 @@ export function TaskFormSheet({
 }) {
   const { t } = useLang();
   return (
-    <Sheet open={open} onClose={onClose} title={t("New bubble")}>
+    <Sheet open={open} onClose={onClose} title={t("New bubble")} tourId="create">
       {/* Remounts on each open, so the form resets and gets a fresh default deadline. */}
       {open && <Form onClose={onClose} onSubmit={onSubmit} history={history} defaultPacing={defaultPacing} />}
     </Sheet>
@@ -156,7 +156,7 @@ function Form({
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      <label className="block text-xs text-muted">
+      <label data-tour="field-title" className="block text-xs text-muted">
         <span className="flex justify-between">
           <span>{t("Title")}</span>
           <span aria-live="polite">{title.length}/100</span>
@@ -183,7 +183,7 @@ function Form({
           onChange={(e) => { void analyse(e.target.files?.[0]); e.target.value = ""; }} />
       </label>
       <DeadlineField value={deadline} none={noDeadline} onValue={setDeadline} onNone={setNoDeadline} />
-      <div className="text-xs text-muted">
+      <div data-tour="field-duration" className="text-xs text-muted">
         <span className="mb-1 block">{t("Duration")}</span>
         <DurationFields
           hours={shownHours}

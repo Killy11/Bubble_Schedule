@@ -2,7 +2,6 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Minus, Pause, Play, Plus } from "lucide-react";
 import { useLang, type TFn } from "@/context/LanguageProvider";
 
 export const TUTORIAL_KEY = "bubbleschedule_tutorial_completed_v1";
@@ -18,59 +17,73 @@ interface Step {
   extra?: ReactNode;
   /** The user is meant to use the real app during this step: no dimming, clicks pass through. */
   interactive?: boolean;
-  /** Move on by itself as soon as a new bubble appears. */
-  advanceOnNewBubble?: boolean;
-}
-
-/** A small static copy of the Timer & Quick Actions window, so the step can show what a tap opens. */
-function TimerPreview({ t }: { t: TFn }) {
-  return (
-    <div aria-hidden className="mt-3 space-y-2 rounded-2xl border border-white/10 bg-white/5 p-3 text-center text-xs">
-      <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-xl bg-white/5 py-1.5"><p className="text-[10px] text-zinc-400">{t("Elapsed")}</p><p className="text-lg font-semibold tabular-nums">12:34</p></div>
-        <div className="rounded-xl bg-white/5 py-1.5"><p className="text-[10px] text-zinc-400">{t("Time left")}</p><p className="text-lg font-semibold tabular-nums">47:26</p></div>
-      </div>
-      <div className="flex items-center justify-center gap-1.5">
-        <span className="flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1"><Play className="h-3 w-3 fill-current" /><Pause className="h-3 w-3 fill-current" /></span>
-        <span className="flex items-center gap-1 rounded-full border border-white/15 px-2.5 py-1"><Check className="h-3 w-3" /> {t("Credit")}</span>
-      </div>
-      <div className="flex items-center justify-center gap-1.5">
-        <span className="flex items-center rounded-full border border-white/15 px-2 py-1"><Minus className="h-3 w-3" />15</span>
-        <span className="rounded-lg border border-white/15 px-3 py-1 tabular-nums">25</span>
-        <span className="flex items-center rounded-full border border-white/15 px-2 py-1"><Plus className="h-3 w-3" />15</span>
-      </div>
-      <div className="flex gap-1.5">
-        <span className="flex-1 rounded-full bg-white py-1.5 font-medium text-black">✓ {t("Complete")}</span>
-        <span className="flex-1 rounded-full border border-white/15 py-1.5">✎ {t("Edit task")}</span>
-      </div>
-    </div>
-  );
+  id: string;
+  /** The target lives inside an app dialog (the card is then placed beside the dialog, not over it). */
+  insideModal?: boolean;
+  /** Move on by itself when the dialog with this tour id opens ("create" or "task"). */
+  advanceOnModal?: string;
+  /** Close any open app dialog on entering this step. */
+  closeDialogs?: boolean;
 }
 
 const steps = (t: TFn): Step[] => [
   {
-    target: '[data-tour="add-task-btn"]', tab: "bubbles", interactive: true, advanceOnNewBubble: true,
-    title: t("Create your first bubble"),
-    body: t("The canvas starts empty because every task becomes a bubble. Tap New bubble now, type a title and the minutes it needs, then save. This guide moves on by itself when your bubble appears."),
+    id: "add", target: '[data-tour="add-task-btn"]', tab: "bubbles", interactive: true, advanceOnModal: "create",
+    title: t("An empty canvas"),
+    body: t("The canvas starts empty because every task lives here as a floating bubble. Tap + New bubble to open the Create window."),
   },
   {
-    target: '[data-tour="first-bubble"]', tab: "bubbles", interactive: true,
-    title: t("Tap your new bubble"),
-    body: t("Tapping a bubble opens its timer: start the live countdown, tap ✓ to log whole minutes, change the time left with −15 / a number / +15, or tap Complete to pop it. Try it, then press Next."),
-    extra: <TimerPreview t={t} />,
+    id: "title", target: '[data-tour="field-title"]', tab: "bubbles", interactive: true, insideModal: true,
+    title: t("Task title"),
+    body: t("Name what you plan to do, for example “Write the report”. This text appears on the bubble."),
   },
   {
-    target: '[data-tour="ai-chat"]', tab: "chat",
-    title: t("Set a time of day with the AI chat"),
-    body: t("To put a task at a specific time of day, just type or dictate it in the chat (for example “Put this at 3 PM” or “Plan my day”)."),
+    id: "duration", target: '[data-tour="field-duration"]', tab: "bubbles", interactive: true, insideModal: true,
+    title: t("Duration in minutes"),
+    body: t("Enter how long the task takes. The longer the task, the BIGGER its bubble. Leave it empty and the AI will estimate it."),
   },
   {
-    target: '[data-tour="schedule-view"]', tab: "schedule",
+    id: "deadline", target: '[data-tour="field-deadline"]', tab: "bubbles", interactive: true, insideModal: true,
+    title: t("Deadline and urgency"),
+    body: t("The closer the deadline, the more the bubble's colour and glow change (red under a day, yellow 1–5 days, green later), so urgent tasks catch your eye. Now fill the fields in and tap Add bubble: this guide continues when your bubble appears."),
+  },
+  {
+    id: "bubble", target: '[data-tour="first-bubble"]', tab: "bubbles", interactive: true, advanceOnModal: "task", closeDialogs: true,
+    title: t("Your first bubble"),
+    body: t("Here it is. Bigger means longer, and the colour follows the deadline. Tap your bubble to open its control window."),
+  },
+  {
+    id: "timer", target: '[data-tour="timer-clock"]', tab: "bubbles", interactive: true, insideModal: true,
+    title: t("Live timer and ✓"),
+    body: t("Press ▶ to track your work in real time, ⏸ to pause. Tap ✓ Credit to log it: the elapsed time is turned into whole minutes (rounded down, 03:40 counts as 3)."),
+  },
+  {
+    id: "spent", target: '[data-tour="time-log"]', tab: "bubbles", interactive: true, insideModal: true,
+    title: t("Time spent and −15 / +15"),
+    body: t("No timer? Type the exact minutes you have already spent, or use −15 / +15. The time left updates by itself: left = total − spent."),
+  },
+  {
+    id: "done", target: '[data-tour="done-btn"]', tab: "bubbles", interactive: true, insideModal: true,
+    title: t("Complete"),
+    body: t("When the whole task is finished, tap Complete: the bubble pops with a celebration (and you can Undo)."),
+  },
+  {
+    id: "edit", target: '[data-tour="edit-btn"]', tab: "bubbles", interactive: true, insideModal: true,
+    title: t("Edit task"),
+    body: t("This opens the full editor: change the title, the total duration, the minutes left or the deadline, set a repeat, or delete the task."),
+  },
+  {
+    id: "chat", target: '[data-tour="ai-chat"]', tab: "chat", closeDialogs: true,
+    title: t("AI assistant and voice"),
+    body: t("Type or dictate with the mic, for example “Put this at 3 PM” or “Plan my day”. The AI assigns tasks to specific hours of your day."),
+  },
+  {
+    id: "schedule", target: '[data-tour="schedule-view"]', tab: "schedule",
     title: t("Your daily schedule"),
-    body: t("Tasks the AI times appear here on the timeline, day by day. Overdue and Completed are one tap away at the top."),
+    body: t("Tasks the AI times appear here on the timeline, hour by hour. Overdue and Completed are one tap away at the top."),
   },
   {
-    target: '[data-tour="settings-btn"]', tab: "bubbles",
+    id: "settings", target: '[data-tour="settings-btn"]', tab: "bubbles",
     title: t("Notifications and reminders"),
     body: t("In your profile you can turn on notifications for task starts and timer endings. On iPhone, add the site to your Home Screen first (Share → Add to Home Screen)."),
   },
@@ -85,8 +98,10 @@ const PAD = 6;
  * 375 px phone. `onSelectTab` switches the app's tab so each step's target is actually on screen.
  */
 export function InteractiveTutorial({
-  open, onClose, onSelectTab, bubbleCount,
+  open, onClose, onSelectTab, bubbleCount, onCloseDialogs,
 }: {
+  /** Close any open app dialog (the tour leaves the Task window when it moves on). */
+  onCloseDialogs: () => void;
   open: boolean;
   /** How many bubbles are on the canvas right now (used to notice the first one being created). */
   bubbleCount: number;
@@ -94,10 +109,10 @@ export function InteractiveTutorial({
   onClose: () => void;
   onSelectTab: (tab: TutorialTab) => void;
 }) {
-  return <AnimatePresence>{open && <Tour onClose={onClose} onSelectTab={onSelectTab} bubbleCount={bubbleCount} />}</AnimatePresence>;
+  return <AnimatePresence>{open && <Tour onClose={onClose} onSelectTab={onSelectTab} bubbleCount={bubbleCount} onCloseDialogs={onCloseDialogs} />}</AnimatePresence>;
 }
 
-function Tour({ onClose, onSelectTab, bubbleCount }: { onClose: () => void; onSelectTab: (tab: TutorialTab) => void; bubbleCount: number }) {
+function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: () => void; onSelectTab: (tab: TutorialTab) => void; bubbleCount: number; onCloseDialogs: () => void }) {
   const { t } = useLang();
   const list = useMemo(() => steps(t), [t]);
   const [i, setI] = useState(0);
@@ -107,17 +122,32 @@ function Tour({ onClose, onSelectTab, bubbleCount }: { onClose: () => void; onSe
   const [view, setView] = useState({ w: typeof window === "undefined" ? 375 : window.innerWidth, h: typeof window === "undefined" ? 700 : window.innerHeight });
   const cardRef = useRef<HTMLDivElement>(null);
   const baseline = useRef(bubbleCount); // bubbles already there when the guide opened
-  const [modalOpen, setModalOpen] = useState(false); // an app dialog (e.g. New bubble) is open under the guide
+  const [modalId, setModalId] = useState<string | null>(null); // tour id of the app dialog that is open, if any
+  const [modalBox, setModalBox] = useState<Box | null>(null);
   const [cardH, setCardH] = useState(240);
 
-  // Step 1 ends by itself when a new bubble shows up on the canvas.
+  // A new bubble appearing while the user is still in the create steps jumps ahead to "tap your bubble".
+  const bubbleIdx = list.findIndex((x) => x.id === "bubble");
   useEffect(() => {
-    if (step.advanceOnNewBubble && bubbleCount > baseline.current) {
+    if (bubbleCount > baseline.current) {
       baseline.current = bubbleCount;
-      const id = setTimeout(() => setI((n) => Math.min(n + 1, list.length - 1)), 450); // let the new bubble settle first
+      if (i < bubbleIdx) {
+        const id = setTimeout(() => setI(bubbleIdx), 450); // let the new bubble settle first
+        return () => clearTimeout(id);
+      }
+    }
+  }, [bubbleCount, bubbleIdx, i]);
+  // A step that waits for a dialog moves on the moment it opens.
+  useEffect(() => {
+    if (step.advanceOnModal && modalId === step.advanceOnModal) {
+      const id = setTimeout(() => setI((n) => Math.min(n + 1, list.length - 1)), 350);
       return () => clearTimeout(id);
     }
-  }, [bubbleCount, step.advanceOnNewBubble, list.length]);
+  }, [modalId, step.advanceOnModal, list.length]);
+  // Leaving the bubble's window behind for the chat / schedule steps.
+  useEffect(() => {
+    if (step.closeDialogs) onCloseDialogs();
+  }, [step.closeDialogs, onCloseDialogs]);
 
   // Show the tab this step needs.
   useEffect(() => {
@@ -128,7 +158,13 @@ function Tour({ onClose, onSelectTab, bubbleCount }: { onClose: () => void; onSe
   const target = step.target;
   useEffect(() => {
     const measure = () => {
-      setModalOpen(!!document.querySelector('[role="dialog"][aria-modal="true"]:not([data-tour-card])'));
+      const modal = document.querySelector("[data-tour-modal]") as HTMLElement | null;
+      setModalId(modal ? modal.getAttribute("data-tour-modal") : null);
+      const mr = modal?.getBoundingClientRect();
+      setModalBox((b) => {
+        const nb = mr ? { x: mr.left, y: mr.top, w: mr.width, h: mr.height } : null;
+        return b && nb && Math.abs(b.x - nb.x) < 0.5 && Math.abs(b.y - nb.y) < 0.5 && Math.abs(b.w - nb.w) < 0.5 && Math.abs(b.h - nb.h) < 0.5 ? b : nb;
+      });
       setView((v) => (v.w === window.innerWidth && v.h === window.innerHeight ? v : { w: window.innerWidth, h: window.innerHeight }));
       const el = target ? (document.querySelector(target) as HTMLElement | null) : null;
       const r = el?.getBoundingClientRect();
@@ -184,8 +220,18 @@ function Tour({ onClose, onSelectTab, bubbleCount }: { onClose: () => void; onSe
     else top = Math.max(M, Math.min(box.y + box.h, view.h) - cardH - M * 4);
     left = Math.min(Math.max(M, box.x + box.w / 2 - cardW / 2), view.w - cardW - M);
   }
-  // While an app dialog is open under an interactive step, keep the card out of its way at the top of the screen.
-  if (step.interactive && modalOpen) top = M;
+  // A step inside an app dialog: put the card beside the dialog on wide screens, or at the very top on a phone.
+  if (step.insideModal && modalBox) {
+    if (view.w >= 900 && modalBox.x + modalBox.w + M + cardW <= view.w) {
+      left = modalBox.x + modalBox.w + M;
+      top = box ? box.y : modalBox.y;
+    } else if (view.w >= 900 && modalBox.x - M - cardW >= 0) {
+      left = modalBox.x - M - cardW;
+      top = box ? box.y : modalBox.y;
+    } else {
+      top = M;
+    }
+  }
   top = Math.min(Math.max(M, top), Math.max(M, view.h - cardH - M));
 
   return (
@@ -193,7 +239,7 @@ function Tour({ onClose, onSelectTab, bubbleCount }: { onClose: () => void; onSe
       {/* catches clicks so the app underneath can't be used mid-tour */}
       {!step.interactive && <div className="absolute inset-0" />}
       {box && step.interactive ? (
-        !modalOpen && (
+        (
           <div
             aria-hidden
             className="pointer-events-none fixed animate-pulse rounded-3xl border-2 border-white/70 transition-all duration-300"

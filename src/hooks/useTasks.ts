@@ -435,6 +435,40 @@ export function useTasks(
     [uid],
   );
 
+  /**
+   * Time SPENT, in exact whole minutes: the time left follows (total − spent, never below 0). The new value is
+   * absolute and worked out from what is on screen, and a second call for the same task is ignored while the first
+   * write is in flight, so one click can only ever change the time by one step.
+   */
+  const adjustSpent = useCallback(
+    async (task: Task, deltaMin: number) => {
+      if (!uid || adjusting.current.has(task.id)) return;
+      const next = Math.min(MAX_TOTAL_MIN, Math.max(0, (task.loggedMinutes ?? 0) + deltaMin));
+      if (next === (task.loggedMinutes ?? 0)) return;
+      adjusting.current.add(task.id);
+      try {
+        await updateDoc(doc(db, "users", uid, "tasks", task.id), { loggedMinutes: next, updatedAt: new Date() });
+      } finally {
+        adjusting.current.delete(task.id);
+      }
+    },
+    [uid],
+  );
+  const setSpent = useCallback(
+    async (task: Task, minutes: number) => {
+      if (!uid || !Number.isFinite(minutes) || adjusting.current.has(task.id)) return;
+      const next = Math.min(MAX_TOTAL_MIN, Math.max(0, Math.floor(minutes)));
+      if (next === (task.loggedMinutes ?? 0)) return;
+      adjusting.current.add(task.id);
+      try {
+        await updateDoc(doc(db, "users", uid, "tasks", task.id), { loggedMinutes: next, updatedAt: new Date() });
+      } finally {
+        adjusting.current.delete(task.id);
+      }
+    },
+    [uid],
+  );
+
   /** Set the time left to an exact number of whole minutes (typed by the user). */
   const setRemaining = useCallback(
     async (task: Task, minutes: number) => {
@@ -456,7 +490,7 @@ export function useTasks(
   const updateTask = useCallback(
     async (
       task: Task,
-      patch: { title: string; deadline: string | null; durationMin: number | null; pacing: Pacing },
+      patch: { title: string; deadline: string | null; durationMin: number | null; pacing: Pacing; loggedMinutes?: number },
     ) => {
       if (!uid) return;
       const deadlineChanged = (patch.deadline ? Date.parse(patch.deadline) : null) !== (task.deadline ? Date.parse(task.deadline) : null);
@@ -465,6 +499,7 @@ export function useTasks(
         deadline: patch.deadline ? new Date(patch.deadline) : deleteField(),
         durationMin: patch.durationMin ?? deleteField(),
         pacing: patch.pacing,
+        ...(patch.loggedMinutes !== undefined ? { loggedMinutes: patch.loggedMinutes } : {}),
         // A new deadline deserves fresh "due soon" / "expired" alerts.
         ...(deadlineChanged
           ? { notified: false, notifiedOverdue: false, notified24hDue: false, oneDayNotified: patch.deadline ? oneDayFlagFor(patch.deadline, Date.now()) : deleteField() }
@@ -622,6 +657,8 @@ export function useTasks(
     updateTask,
     adjustRemaining,
     setRemaining,
+    adjustSpent,
+    setSpent,
     reschedule,
   };
 }

@@ -92,6 +92,11 @@ export function DashboardShell() {
   // Tasks that already celebrated: a task celebrates once per completion, and only when the user (or the AI) completes it
   // (never because a snapshot flipped its status). Undo / Restore removes it, so completing it again celebrates again.
   const celebratedIds = useRef(new Set<string>());
+  /** The guided tour closes the New bubble / Task windows when it moves on. */
+  const closeDialogs = useCallback(() => {
+    setOpenId(null);
+    setFormOpen(false);
+  }, []);
   /** Stop everything celebratory right now (Undo): bursts, particles, poppers, sound. */
   const cancelCelebration = () => {
     setBursts([]); // unmounting a burst clears its timers and resets its confetti canvas
@@ -150,12 +155,12 @@ export function DashboardShell() {
   );
 
   const {
-    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, confirmTimer, setRemaining,
+    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, confirmTimer, adjustSpent, setSpent, setRecurrence, saveSubtasks,
     startTimer, stopTimer, updateTask, toggleSubtask, reschedule,
   } = useTasks(uid, timezone, now, handleOverdue, handleOneDay);
 
   // Big tasks are split into scheduled parts automatically (and on demand from the task modal).
-  useDecompose(
+  const { working: splitting, split } = useDecompose(
     tasks,
     !!uid && !tasksLoading,
     ({ task, subtasks, placed, total }) => {
@@ -626,7 +631,7 @@ export function DashboardShell() {
         onDelete={(task) => deleteForever([task.id])}
         onClearAll={() => deleteForever(completed.map((x) => x.id))}
       />
-      <InteractiveTutorial open={tourOpen || autoTour} onClose={closeTour} onSelectTab={setTab} bubbleCount={active.length} />
+      <InteractiveTutorial open={tourOpen || autoTour} onClose={closeTour} onSelectTab={setTab} bubbleCount={active.length} onCloseDialogs={closeDialogs} />
       <PartDetailSheet
         task={active.find((x) => x.id === openPart?.taskId) ?? null}
         sub={active.find((x) => x.id === openPart?.taskId)?.subtasks?.find((x) => x.id === openPart?.subId) ?? null}
@@ -656,8 +661,13 @@ export function DashboardShell() {
         onComplete={completeTask}
         onDelete={removeTask}
         onConfirmTimer={confirmTimer}
-        onSetRemaining={(task, m) => setRemaining(task, m)}
-        onAdjust={(task, d) => adjustRemaining(task, d)}
+        onSetSpent={(task, m) => setSpent(task, m)}
+        onAdjustSpent={(task, d) => adjustSpent(task, d)}
+        onSetRecurrence={setRecurrence}
+        splitting={!!openTask && splitting.has(openTask.id)}
+        onToggleSubtask={(task, sub, checked) => (checked === !sub.completed ? toggleSubtaskFlow(task, sub) : Promise.resolve())}
+        onSaveSubtasks={saveSubtasks}
+        onSplit={(task, n) => void split(task, n)}
         onStartTimer={(task) => startTimer(task.id)}
         onStopTimer={stopTimer}
         onEdit={async (task, patch) => {
