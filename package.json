@@ -2,37 +2,20 @@
   "name": "bubble_schedule",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
+    "dev": "npm run dev --workspace=@bubbleschedule/frontend",
+    "build": "npm run build --workspace=@bubbleschedule/frontend",
+    "start": "npm run start --workspace=@bubbleschedule/frontend",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspace=@bubbleschedule/frontend",
     "deploy:firebase": "firebase deploy --only firestore"
   },
-  "dependencies": {
-    "@google/genai": "^3.3.0",
-    "@types/canvas-confetti": "^1.9.0",
-    "canvas-confetti": "^1.9.4",
-    "firebase": "^13.3.0",
-    "firebase-admin": "^14.5.1",
-    "framer-motion": "^14.14.0",
-    "lucide-react": "^1.73.0",
-    "mammoth": "^1.13.0",
-    "next": "16.4.6",
-    "qrcode.react": "^4.2.0",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "server-only": "^0.0.1"
-  },
   "devDependencies": {
-    "@tailwindcss/turbopack": "4.3.3",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.4.6",
-    "tailwindcss": "4.3.3",
-    "typescript": "^5"
+    "next": "16.4.6"
   },
   "overrides": {
     "jwks-rsa": {

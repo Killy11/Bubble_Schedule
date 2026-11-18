@@ -4,8 +4,8 @@
 
 | File | Purpose |
 |---|---|
-| [`.env.example`](.env.example) | Template of every environment variable. Copy to `../.env.local` for local work; add the same names in Vercel. |
-| `../vercel.json` | Vercel project config (kept at the repo root, where Vercel reads it). Intentionally `{}`: the Next.js defaults are used and no Vercel cron is configured. |
+| [`.env.example`](.env.example) | Template of every environment variable. Copy to `../frontend/.env.local` for local work; add the same names in Vercel. |
+| `../vercel.json` | Vercel build settings, kept at the repo root where Vercel reads it: framework `nextjs`, `npm install`, `npm run build`, output `frontend/.next`. No Vercel cron is configured. |
 | `../firebase.json` | Firebase CLI config; rules and indexes live in `../backend/`. |
 | `../.firebaserc` | Default Firebase project id. |
 
@@ -60,10 +60,15 @@ flowchart LR
 
 ### 2. Vercel
 
-1. <https://vercel.com/new> → import the GitHub repository. Framework preset: **Next.js**; Root Directory: the repository root;
-   Node.js version: 22.
+1. <https://vercel.com/new> → import the GitHub repository. Leave **Root Directory** empty (the repository root); `vercel.json`
+   supplies the framework (`nextjs`), build command and `frontend/.next` output directory. Node.js version: 22.
 2. Settings → Environment Variables: add every variable from `.env.example` (production, preview, development).
-3. Deploy. Every push to `main` builds and deploys automatically (`npm run build`).
+3. Deploy. Every push to `main` builds and deploys automatically (`npm run build`, which builds the `frontend` workspace and
+   compiles `backend/` into it).
+
+   *If Vercel cannot find the Next.js output:* in the project settings set **Root Directory** to `frontend`, keep
+   "Include source files outside of the Root Directory" enabled (the backend lives in `../backend`), and clear the build and
+   output overrides. Both setups build the same app.
 4. Firebase → Authentication → Settings → **Authorised domains**: add the Vercel domain (`bubbleschedule.vercel.app` or your own).
 
 ### 3. Reminders
@@ -86,6 +91,6 @@ are produced by the page itself.
 
 ## Security notes
 
-- Never commit `.env.local` (it is git-ignored). Only `.env.example` is tracked.
+- Never commit `frontend/.env.local` (it is git-ignored). Only `.env.example` is tracked.
 - `FIREBASE_ADMIN_PRIVATE_KEY` and `GEMINI_API_KEY` are server-only and never reach the browser.
 - Firestore rules restrict every user to their own data; see `../backend/README.md`.

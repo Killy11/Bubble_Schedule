@@ -1,0 +1,15 @@
+{
+  "name": "@bubbleschedule/backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Server-side code of BubbleSchedule (API handlers, AI, notifications, Firebase Admin). Consumed by the Next.js app in ../frontend.",
+  "dependencies": {
+    "@google/genai": "^3.3.0",
+    "firebase-admin": "^14.5.1",
+    "mammoth": "^1.13.0",
+    "server-only": "^0.0.1"
+  },
+  "scripts": {
+    "lint": "eslint src"
+  }
+}

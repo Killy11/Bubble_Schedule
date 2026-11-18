@@ -33,21 +33,31 @@ itself, in **English and Ukrainian**.
 
 ## Repository structure
 
+An npm-workspaces monorepo. Everything runs as one Next.js application: the frontend workspace owns the app, and its API
+routes call into the backend workspace.
+
 ```
 .
-├── frontend/   Web app overview. The Next.js source itself lives in src/ + public/ at the repo root (see below)
-├── backend/    Firestore security rules and indexes, data model and server API documentation
-├── infra/      Environment template (.env.example), deployment guide and architecture diagram
-├── src/        Next.js application code: UI (components, hooks, context) AND server routes (src/app/api, src/lib/server)
-├── public/     Static assets, PWA icons, service workers (sw.js, firebase-messaging-sw.js)
-├── vercel.json firebase.json package.json next.config.ts tsconfig.json eslint.config.mjs
-└── README.md
+├── frontend/             Next.js app (the web UI and the Next.js entry points of the API)
+│   ├── src/app/          pages and thin route files (src/app/api/*/route.ts re-export the backend handlers)
+│   ├── src/components/   UI · src/hooks/ · src/context/ · src/lib/ (shared pure logic, planner, i18n) · src/types/
+│   ├── public/           icons, service workers, audio
+│   └── next.config.ts, tsconfig.json, eslint.config.mjs, package.json
+├── backend/              server-side code and database config
+│   ├── src/routes/       API handlers (assistant, schedule, rebalance, notifications, feedback, …)
+│   ├── src/ai/           Gemini client, prompts, schemas, validation
+│   ├── src/server/       push, file parsing, rate limits, server re-planning, assistant memory
+│   ├── src/firebase/     Firebase Admin SDK, session helper
+│   └── firestore.rules, firestore.indexes.json, package.json
+├── infra/                .env.example, deployment guide and architecture diagram
+├── vercel.json           Vercel build settings (must stay at the repository root)
+├── firebase.json         Firebase CLI config (rules live in backend/)
+└── package.json          workspace root: scripts and shared overrides
 ```
 
-> **Why `src/` is at the root and not inside `frontend/`:** Vercel builds the repository root, and the Next.js API routes
-> (`src/app/api`) must live in the same project as the pages. Moving the app into a sub-folder would require changing the
-> Vercel project's *Root Directory* setting; the live deployment keeps working as it is. Each of `frontend/`, `backend/`
-> and `infra/` has its own README that maps the relevant files.
+The backend is a library workspace, not a separate server: Next.js route files in `frontend/src/app/api` are one-line
+re-exports of the handlers in `backend/src/routes`, imported through the `@backend/*` path alias. One build, one
+deployment, one URL.
 
 ## Tech stack
 
@@ -76,7 +86,7 @@ git clone https://github.com/Killy11/Bubble_Schedule.git
 cd Bubble_Schedule
 npm install
 
-cp infra/.env.example .env.local     # then fill in the values (see below)
+cp infra/.env.example frontend/.env.local   # then fill in the values (see below)
 npm run dev                          # http://localhost:3000
 ```
 
@@ -99,6 +109,7 @@ Firestore rules once (see Deployment). Without a `GEMINI_API_KEY` the app still 
 ```bash
 npm run dev       # development server
 npm run build     # production build (also type-checks)
+npm run typecheck # tsc across frontend and backend
 npm run start     # run the production build
 npm run lint      # ESLint
 ```
@@ -109,7 +120,7 @@ The app is deployed to **Vercel** and the data rules to **Firebase**. Full detai
 
 1. **Firebase**: create the project, enable Google + Email/Password sign-in, create the Firestore database, then deploy rules and indexes:
    `firebase login && npm run deploy:firebase` (uses `firebase.json`, which points at `backend/firestore.rules` and `backend/firestore.indexes.json`).
-2. **Vercel**: import the GitHub repository (framework: Next.js, root directory: repository root, Node 22). Add every variable from `infra/.env.example` under *Settings → Environment Variables*, then deploy. Every push to `main` deploys automatically.
+2. **Vercel**: import the GitHub repository (root directory: the repository root; `vercel.json` already sets the Next.js framework, the build command and the `frontend/.next` output directory; Node 22). Add every variable from `infra/.env.example` under *Settings → Environment Variables*, then deploy. Every push to `main` deploys automatically.
 3. **Auth domain**: add your Vercel domain (e.g. `bubbleschedule.vercel.app`) to Firebase Authentication → Settings → Authorised domains.
 4. **Reminders (cron)**: point a scheduler (for example cron-job.org, every 1–2 minutes) at `GET https://<your-domain>/api/notifications/dispatch` with the header `Authorization: Bearer <CRON_SECRET>`. Vercel's free plan only allows daily cron jobs, so an external scheduler is used.
 

@@ -1,16 +1,21 @@
 # Backend
 
 BubbleSchedule has no separate server process: the backend is **Firebase** (Auth, Firestore, Cloud Messaging) plus
-**server route handlers** that run on Vercel. This folder holds the database configuration; the route handlers live next
-to the pages because Next.js requires it (`src/app/api`, helpers in `src/lib/server`).
+**server code** that runs on Vercel. This workspace holds all of it: the API handlers, the AI layer, notifications and the
+database configuration. It is built together with the Next.js app: `frontend/src/app/api/**/route.ts` are one-line
+re-exports of the handlers here (Next.js requires route files inside the app, and route options such as `maxDuration` must
+be literal in those files).
 
 | What | Where |
 |---|---|
 | Firestore security rules | [`firestore.rules`](firestore.rules) |
 | Firestore indexes | [`firestore.indexes.json`](firestore.indexes.json) |
 | Firebase CLI config (repo root) | `../firebase.json` (points at the two files above) |
-| API route handlers | `../src/app/api/**` |
-| Server-only libraries (admin SDK, push, planner, rate limits) | `../src/lib/server`, `../src/lib/firebase/admin.ts` |
+| API handlers | [`src/routes/`](src/routes) |
+| Gemini client, prompts, schemas, validation | [`src/ai/`](src/ai) |
+| Push, file parsing, rate limits, server re-planning, assistant memory | [`src/server/`](src/server) |
+| Firebase Admin SDK, session helper | [`src/firebase/`](src/firebase) |
+| Shared types and pure logic used on both sides (planner, time, types) | `../frontend/src/lib`, `../frontend/src/types` (imported with `@/`) |
 
 Deploy rules and indexes: `npm run deploy:firebase` (from the repo root; needs `firebase login`).
 
@@ -38,7 +43,7 @@ rateLimits/{key}                 server-only counters (feedback, file analysis)
 Security rules (`firestore.rules`): a user can read and write only their own `users/{uid}` tree; `feedback` can be created by
 a signed-in user for themselves and never read from the client; `reminders` and `rateLimits` are server-only.
 
-## API routes (`src/app/api`)
+## API routes (handlers in `src/routes`, served at `/api/*`)
 
 | Route | Purpose |
 |---|---|
@@ -56,6 +61,6 @@ a signed-in user for themselves and never read from the client; `reminders` and 
 
 ## AI
 
-`src/lib/ai/gemini.ts` wraps `@google/genai` with structured JSON output, model fallback and retries.
-The deterministic planner (`src/lib/planner.ts`, `src/lib/rebalance.ts`) orders tasks red → yellow → green → no deadline
+`src/ai/gemini.ts` wraps `@google/genai` with structured JSON output, model fallback and retries.
+The deterministic planner (`../frontend/src/lib/planner.ts`, `../frontend/src/lib/rebalance.ts`) orders tasks red → yellow → green → no deadline
 and runs in the browser and on the server, so scheduling works even when the AI is unavailable.
