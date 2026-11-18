@@ -33,6 +33,31 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* App shell lock: the document itself never scrolls, pans or rubber-bands. Pages scroll inside their own containers. */
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation; /* taps and scrolling only: no double-tap zoom */
+}
+@media (max-width: 767px) {
+  /* iOS Safari can still drag a non-fixed document; pin it. */
+  html,
+  body {
+    position: fixed;
+    inset: 0;
+  }
+  /* 16px minimum so iOS never zooms in when a field is focused */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
 html { color-scheme: light; }
 html[data-theme="dark"] { color-scheme: dark; }
 body {

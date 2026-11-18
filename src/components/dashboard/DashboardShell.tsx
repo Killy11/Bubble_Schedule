@@ -439,7 +439,7 @@ export function DashboardShell() {
   ];
 
   return (
-    <div className="ambient relative flex min-h-dvh flex-1 flex-col">
+    <div className="ambient relative flex h-dvh w-full max-w-full flex-col overflow-hidden">
       <Header
         summary={summary}
         name={user.displayName || user.email || "You"}
@@ -453,9 +453,9 @@ export function DashboardShell() {
         }}
       />
 
-      <main className="mx-auto flex w-full max-w-[1600px] flex-1 gap-4 p-4 pb-24 lg:pb-4">
+      <main className="mx-auto flex min-h-0 w-full min-w-0 max-w-[1600px] flex-1 gap-4 overflow-hidden p-4 pb-24 lg:pb-4">
         {/* Bubble canvas */}
-        <section className={`${tab === "bubbles" ? "flex" : "hidden"} min-h-0 flex-1 flex-col lg:flex`}>
+        <section className={`${tab === "bubbles" ? "flex" : "hidden"} min-h-0 min-w-0 flex-1 flex-col lg:flex`}>
           <div className="mb-3 flex items-center justify-end">
             <div className="flex gap-2">
               <button
@@ -473,7 +473,7 @@ export function DashboardShell() {
               </button>
             </div>
           </div>
-          <div ref={canvasHost} className="relative min-h-[360px] flex-1">
+          <div ref={canvasHost} className="relative min-h-0 flex-1 overflow-hidden">
             <Celebrations bursts={bursts} onDone={(id) => setBursts((b) => b.filter((x) => x.id !== id))} />
             {error ? (
               <p className="absolute inset-0 flex items-center justify-center text-sm text-red-500">{t("Couldn't load your tasks.")}</p>
@@ -502,8 +502,7 @@ export function DashboardShell() {
 
         {/* Side panel (desktop) / tab content (mobile) */}
         <aside
-          className={`${tab === "bubbles" ? "hidden" : "flex"} glass min-h-0 w-full flex-col overflow-hidden rounded-3xl lg:flex lg:w-[400px] lg:shrink-0`}
-          style={{ height: "calc(100dvh - 7.5rem)" }}
+          className={`${tab === "bubbles" ? "hidden" : "flex"} glass min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden rounded-3xl lg:flex lg:w-[400px] lg:shrink-0`}
         >
           <div className="hidden gap-1 border-b border-line p-2 lg:flex">
             {TABS.filter((x) => x.id !== "bubbles").map(({ id, label, icon: Icon }) => (

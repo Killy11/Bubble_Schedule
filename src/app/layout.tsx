@@ -37,6 +37,8 @@ export const viewport: Viewport = {
   colorScheme: "dark light",
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1, // no pinch zoom: the app is a fixed-size shell
+  userScalable: false,
   viewportFit: "cover", // draw under the notch; the header and tab bar add safe-area padding
 };
 
@@ -57,7 +59,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           }}
         />
       </head>
-      <body className="min-h-full flex flex-col">
+      <body className="flex h-dvh w-full max-w-full flex-col overflow-hidden">
         <ThemeProvider>
           <LanguageProvider>
             <AuthProvider>

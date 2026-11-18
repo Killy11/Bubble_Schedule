@@ -99,7 +99,7 @@ function Tour({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label={t("Help")}
-        className="glass w-full max-w-md rounded-3xl bg-background/90 p-6 shadow-2xl"
+        className="glass max-h-[90dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl bg-background/90 p-6 shadow-2xl"
       >
         <div className="mb-2 flex items-center justify-between text-xs text-muted">
           <span>{i + 1} / {STEPS.length}</span>

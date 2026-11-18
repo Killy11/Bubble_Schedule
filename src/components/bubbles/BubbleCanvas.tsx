@@ -54,7 +54,7 @@ export function BubbleCanvas({
   const placeById = new Map(placements.map((p) => [p.id, p]));
 
   return (
-    <div ref={ref} className="relative h-full min-h-[320px] w-full overflow-hidden">
+    <div ref={ref} className="relative h-full min-h-0 w-full overflow-hidden touch-none">
       <AnimatePresence>
         {shown.map((t, i) => {
           const place = placeById.get(t.id);

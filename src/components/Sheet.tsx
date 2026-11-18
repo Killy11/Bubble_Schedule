@@ -44,7 +44,7 @@ export function Sheet({
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 40, opacity: 0 }}
             transition={{ type: "spring", stiffness: 260, damping: 28 }}
-            className="glass max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-background/90 p-6 shadow-2xl sm:rounded-3xl"
+            className="glass max-h-[90dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl bg-background/90 p-6 shadow-2xl sm:rounded-3xl"
           >
             <div className="mb-4 flex items-start justify-between">
               <h2 className="min-w-0 break-words pr-3 text-lg font-semibold tracking-tight">{title}</h2>

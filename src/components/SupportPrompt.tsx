@@ -43,7 +43,7 @@ export function SupportPrompt({ open, onClose, onSupport }: { open: boolean; onC
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.97, y: 6 }}
             transition={{ duration: 0.28, ease: "easeOut" }}
-            className="relative w-full max-w-[440px] overflow-hidden rounded-[28px] border border-white/12 bg-[#111116]/90 p-7 shadow-[0_24px_80px_rgba(0,0,0,0.75)] outline-none backdrop-blur-2xl sm:p-8"
+            className="relative max-h-[90dvh] w-full max-w-[440px] overflow-y-auto overscroll-contain rounded-[28px] border border-white/12 bg-[#111116]/90 p-7 shadow-[0_24px_80px_rgba(0,0,0,0.75)] outline-none backdrop-blur-2xl sm:p-8"
           >
             {/* ambient glow and specular rim */}
             <div

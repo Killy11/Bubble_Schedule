@@ -39,14 +39,14 @@ export function Header({
           {summary}
         </p>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <SupportButton />
           <button
             type="button"
             onClick={onOpenFeedback}
             aria-label={t("Feedback")}
             title={t("Feedback")}
-            className="glass flex h-9 items-center gap-1.5 rounded-full px-2.5 text-xs text-muted transition hover:text-foreground"
+            className="glass hidden h-9 items-center gap-1.5 rounded-full px-2.5 text-xs text-muted transition hover:text-foreground sm:flex" /* on phones Feedback lives in Profile */
           >
             <MessageSquarePlus className="h-4 w-4" />
             <span className="hidden xl:inline">{t("Feedback")}</span>

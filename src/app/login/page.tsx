@@ -99,7 +99,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="ambient relative flex min-h-dvh flex-1 items-center justify-center overflow-hidden px-4">
+    <main className="ambient relative flex h-dvh w-full max-w-full overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-6">
       <div className="absolute right-4 top-4 z-20"><ThemeToggle /></div>
       {BUBBLES.map((b, i) => (
         <motion.div
@@ -118,7 +118,7 @@ export default function LoginPage() {
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="glass relative z-10 w-full max-w-sm rounded-[2rem] p-8 text-center shadow-2xl"
+        className="glass relative z-10 m-auto w-full max-w-sm rounded-[2rem] p-8 text-center shadow-2xl"
       >
         <div className="mx-auto mb-5 flex justify-center"><Logo size={52} /></div>
         <h1 className="text-2xl font-semibold tracking-tight">BubbleSchedule</h1>

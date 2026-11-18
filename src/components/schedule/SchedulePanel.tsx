@@ -83,7 +83,7 @@ export function SchedulePanel({
   };
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto p-4">
+    <div className="flex h-full flex-col gap-4 overflow-y-auto overscroll-contain p-4">
       {/* Two compact summary blocks; each opens its list. */}
       <div className="grid grid-cols-2 gap-2">
         <button
