@@ -12,6 +12,8 @@ import { Celebrations, type BurstSpec } from "@/components/Celebration";
 import { FeedbackSheet } from "@/components/FeedbackSheet";
 import { SupportPrompt } from "@/components/SupportPrompt";
 import { playBubblePop, preloadBubblePop, stopBubblePop } from "@/lib/bubblePopSound";
+import { useLocalReminders } from "@/hooks/useLocalReminders";
+import { showLocalNotification } from "@/lib/localNotify";
 import { useSupport } from "@/context/SupportProvider";
 import { OverdueSheet } from "@/components/bubbles/OverdueSheet";
 import { deadlineMs, isLiveTask, isOverdueTask } from "@/lib/deadline";
@@ -129,6 +131,14 @@ export function DashboardShell() {
   const handleOneDay = useCallback(
     (list: Task[]) => {
       const first = list[0];
+      // With the tab in the background there is no toast to see: raise a system notification too.
+      if (typeof document !== "undefined" && document.hidden) {
+        void showLocalNotification(
+          list.length === 1 ? `⏳ ${t("1 day left until deadline")}: ${first.title}` : `⏳ ${t("1 day left")}: ${list.length}`,
+          first.deadline ? oneDayBody(first.deadline, Date.now(), t) : "",
+          `${first.id}_24h`,
+        );
+      }
       toast({
         title: list.length === 1 ? `⏰ ${t("1 day left")}: «${first.title}»` : `⏰ ${t("1 day left")}: ${list.length}`,
         body: list.length === 1 && first.deadline ? oneDayBody(first.deadline, Date.now(), t) : undefined,
@@ -164,6 +174,14 @@ export function DashboardShell() {
   const {
     schedule, markTaskBlocksDone, markTaskBlocksPlanned, removeTaskBlocks, restoreBlocks, renameTaskBlocks, editBlock,
   } = useSchedule(uid, today);
+
+  // "Starting in 5 min" while the app is open: toast when visible, a system notification when the tab is hidden.
+  useLocalReminders(uid, tasks, schedule, today, ({ taskId, title, start }) => {
+    const heading = t("⏰ Starting in 5 min: {title}", { title });
+    const body = t("Time to get going.");
+    if (document.hidden) void showLocalNotification(heading, body, `${taskId}_${start}`);
+    else toast({ title: heading, body, onClick: () => setOpenId(taskId) });
+  });
 
   // Any create / edit / delete re-plans everything by earliest deadline.
   const lastUnplaced = useRef("");

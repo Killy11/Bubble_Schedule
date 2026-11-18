@@ -5,6 +5,7 @@ import { BellRing, Check, Clock, Download, Globe, Loader2, Mail, MessageSquarePl
 import { doc, updateDoc } from "firebase/firestore";
 import { Sheet } from "@/components/Sheet";
 import { db } from "@/lib/firebase/client";
+import { showLocalNotification } from "@/lib/localNotify";
 import { derivedQuiet, effectiveQuiet } from "@/lib/settings";
 import type { UserSettings } from "@/types";
 import { useUserProfile } from "@/hooks/useUserProfile";
@@ -89,6 +90,107 @@ function QuietHours({ uid, settings }: { uid: string; settings: UserSettings }) 
   );
 }
 
+/** Notification status, the enable button, a test button, the master switch and Quiet hours. */
+function NotificationsCard({
+  uid, settings, permission, enabling, error, enable, disable, iosNeedsInstall,
+}: {
+  uid: string;
+  settings: UserSettings;
+  permission: NotificationPermission | "unsupported";
+  enabling: boolean;
+  error: string | null;
+  enable: () => Promise<void>;
+  disable: () => Promise<void>;
+  iosNeedsInstall: boolean;
+}) {
+  const { t, lang } = useLang();
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const on = settings.notificationsEnabled && permission === "granted";
+
+  /** Sends a real push to this account's devices. If that fails, a local notification still proves the device can show one. */
+  async function sendTest() {
+    setTesting(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/notifications/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lang }),
+      });
+      if (res.ok) {
+        setResult({ ok: true, text: t("Test sent. It should arrive in a few seconds.") });
+      } else {
+        const reason = ((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? "";
+        const shown = await showLocalNotification(lang === "uk" ? "🔔 Тестове сповіщення" : "🔔 Test notification", lang === "uk" ? "Локальний тест: цей пристрій може показувати сповіщення." : "Local test: this device can show notifications.", `test_${uid}`);
+        setResult({ ok: false, text: `${t("Push delivery failed")}${reason ? `: ${t(reason)}` : ""}${shown ? ` (${t("Shown on this device only.")})` : ""}` });
+      }
+    } catch {
+      setResult({ ok: false, text: t("Push delivery failed") });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  if (permission === "unsupported") {
+    return iosNeedsInstall ? (
+      <p className="flex items-start gap-1.5 text-xs text-muted">
+        <Share className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        {t("On iPhone, add the site to your Home Screen (Share → Add to Home Screen) to receive notifications.")}
+      </p>
+    ) : null;
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="flex items-center gap-1.5 text-sm font-medium"><BellRing className="h-4 w-4" /> {t("Notifications")}</p>
+
+      {permission === "denied" ? (
+        <p role="status" className="rounded-2xl border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-500">
+          {t("🚫 Blocked in browser settings — allow notifications near the address bar")}
+        </p>
+      ) : on ? (
+        <>
+          <p role="status" className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs text-emerald-600 dark:text-emerald-400">
+            {t("✅ Notifications active on this device")}
+          </p>
+          <Switch
+            icon={enabling ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
+            label={t("Notifications")}
+            on
+            disabled={enabling}
+            onChange={() => void disable()}
+          />
+          <button
+            type="button"
+            onClick={sendTest}
+            disabled={testing}
+            className={`${primaryBtn} glass hover:brightness-125`}
+          >
+            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {t("🔔 Send test notification")}
+          </button>
+          {result && (
+            <p role="status" className={`text-xs ${result.ok ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>{result.text}</p>
+          )}
+          <QuietHours uid={uid} settings={settings} />
+        </>
+      ) : (
+        <button type="button" onClick={() => void enable()} disabled={enabling} className={`${primaryBtn} bg-foreground text-background hover:opacity-90`}>
+          {enabling ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />} {t("Enable notifications")}
+        </button>
+      )}
+
+      {iosNeedsInstall && (
+        <p className="flex items-start gap-1.5 text-xs text-muted">
+          <Share className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          {t("On iPhone, add the site to your Home Screen (Share → Add to Home Screen) to receive notifications.")}
+        </p>
+      )}
+      {error && <p role="alert" className="text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
+
 const toMin = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 
 /** Working-hours range picker; saved to users/{uid}.settings.workingHours and used by the AI planner. */
@@ -144,7 +246,6 @@ export function ProfileSheet({ open, onClose, onOpenFeedback }: { open: boolean;
   const { permission, enabling, error, enable, disable } = useNotifications();
   const [installing, setInstalling] = useState(false);
   const { settings } = useUserProfile(user?.uid);
-  const pushOn = settings.notificationsEnabled && permission === "granted";
 
   const name = user?.displayName || null;
   const email = user?.email || "—";
@@ -231,27 +332,18 @@ export function ProfileSheet({ open, onClose, onOpenFeedback }: { open: boolean;
             </>
           )}
 
-          {/* Push notifications: the master switch and Quiet Hours */}
-          {(permission !== "unsupported" || isIOS) && (
-            <div className="space-y-2">
-              <Switch
-                icon={enabling ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}
-                label={t("Notifications")}
-                on={pushOn}
-                disabled={enabling || permission === "unsupported" || permission === "denied"}
-                onChange={(next) => void (next ? enable() : disable())}
-              />
-              {pushOn && user && <QuietHours uid={user.uid} settings={settings} />}
-              {isIOS && !installed && (
-                <p className="flex items-start gap-1.5 text-xs text-muted">
-                  <Share className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {t("iPhone/iPad: Share → Add to Home Screen to get notifications")}
-                </p>
-              )}
-              {permission === "denied" && !error && (
-                <p className="text-xs text-muted">{t("Notifications are blocked in browser settings")}</p>
-              )}
-              {error && <p role="alert" className="text-xs text-red-500">{error}</p>}
-            </div>
+          {/* Notifications: real browser state, enable, test, master switch, Quiet Hours */}
+          {user && (
+            <NotificationsCard
+              uid={user.uid}
+              settings={settings}
+              permission={permission}
+              enabling={enabling}
+              error={error}
+              enable={enable}
+              disable={disable}
+              iosNeedsInstall={isIOS && !installed}
+            />
           )}
 
           <SupportButton variant="block" />

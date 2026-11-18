@@ -349,4 +349,21 @@ export const UK: Record<string, string> = {
   Pause: "Пауза",
   "{d} left": "{d} залишилось",
   left: "залишилось",
+
+  // Notifications status
+  "⏰ Starting in 5 min: {title}": "⏰ Через 5 хв починається: {title}",
+  "Time to get going.": "Час братися до роботи.",
+  "1 day left until deadline": "Залишився 1 день до дедлайну",
+  "✅ Notifications active on this device": "✅ Сповіщення активні на цьому пристрої",
+  "🚫 Blocked in browser settings — allow notifications near the address bar": "🚫 Заблоковано в налаштуваннях браузера — дозвольте сповіщення біля адресного рядка",
+  "Enable notifications": "Увімкнути сповіщення",
+  "On iPhone, add the site to your Home Screen (Share → Add to Home Screen) to receive notifications.": "На iPhone додайте сайт на екран «Домівка» (Поділитися → На екран «Домівка»), щоб отримувати сповіщення.",
+  "🔔 Send test notification": "🔔 Надіслати тестове сповіщення",
+  "Test sent. It should arrive in a few seconds.": "Тест надіслано. Сповіщення має з'явитися за кілька секунд.",
+  "Push delivery failed": "Не вдалося доставити push",
+  "No device is registered for notifications yet.": "Жоден пристрій ще не зареєстровано для сповіщень.",
+  "No device accepted the push (its token may have expired). Turn notifications off and on again.": "Жоден пристрій не прийняв push (токен міг застаріти). Вимкніть і знову ввімкніть сповіщення.",
+  "The push service rejected the message.": "Push-сервіс відхилив повідомлення.",
+  "Too many tests. Try again later.": "Забагато тестів. Спробуйте пізніше.",
+  "Shown on this device only.": "Показано лише на цьому пристрої.",
 };

@@ -89,8 +89,8 @@ async function snooze(p: ActionPayload) {
   const tasks = new Map(taskSnap.docs.map((d) => [d.id, { ...fromFirestoreData<Task>(d.data()), id: d.id }]));
   const schedSnap = await db
     .collection(`users/${p.uid}/schedules`)
-    .where(FieldPath.documentId(), ">=", addDays(dateKeyInTz(now, tz), -1))
-    .limit(10)
+    .where(FieldPath.documentId(), ">=", addDays(dateKeyInTz(now, tz), -30))
+    .limit(40)
     .get();
   const schedules = new Map(schedSnap.docs.map((d) => [d.id, fromFirestoreData<Schedule>(d.data())]));
 

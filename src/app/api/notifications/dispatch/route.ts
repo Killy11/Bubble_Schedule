@@ -23,6 +23,7 @@ import type { Schedule, Subtask, Task, User } from "@/types";
 export const maxDuration = 60;
 
 const LEAD_MS = 5 * 60_000;
+const GRACE_MS = 2 * 60_000;
 const DAY_MS = 24 * 3_600_000;
 const MAX_USERS = 500;
 
@@ -114,9 +115,12 @@ async function run(): Promise<Record<string, number>> {
     }
 
     // ── (a) 5 minutes before a scheduled start ──────────────────────────────────────────────
+    // (-GRACE, LEAD]: a late or skipped cron tick still catches a start that is seconds behind it; the stored
+    // start time (`notified5mStart`) keeps it from firing twice. Everything is epoch milliseconds (UTC), so the server
+    // clock's timezone never matters.
     const inWindow = (iso?: string) => {
       const d = iso ? Date.parse(iso) - now : NaN;
-      return d > 0 && d <= LEAD_MS;
+      return d > -GRACE_MS && d <= LEAD_MS;
     };
     const items: StartItem[] = [];
     for (const t of live) {
@@ -128,8 +132,9 @@ async function run(): Promise<Record<string, number>> {
     }
     const schedSnap = await db
       .collection(`users/${uid}/schedules`)
-      .where(FieldPath.documentId(), ">=", addDays(dateKeyInTz(now, user.timezone || "UTC"), -1))
-      .limit(10)
+      // A plan is stored under the day it was made but holds blocks for several days ahead, so look back a while.
+      .where(FieldPath.documentId(), ">=", addDays(dateKeyInTz(now, user.timezone || "UTC"), -30))
+      .limit(40)
       .get();
     const schedDocs: Array<{ id: string; blocks: Schedule["blocks"] }> = schedSnap.docs.map((d) => ({
       id: d.id,
