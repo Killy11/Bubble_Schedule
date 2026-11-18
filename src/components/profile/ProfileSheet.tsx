@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { BellRing, Check, Clock, Download, Globe, Loader2, Mail, Moon, Share } from "lucide-react";
+import { BellRing, Check, Clock, Download, Globe, Loader2, LogOut, Mail, Moon, Share } from "lucide-react";
 import { doc, updateDoc } from "firebase/firestore";
 import { Sheet } from "@/components/Sheet";
 import { db } from "@/lib/firebase/client";
@@ -181,7 +181,8 @@ function WorkingHours({ uid, start: s0, end: e0, quietCustom }: { uid: string; s
   );
 }
 
-export function ProfileSheet({ open, onClose, onShowTutorial }: { open: boolean; onClose: () => void; onShowTutorial: () => void }) {
+export function ProfileSheet({ open, onClose, onShowTutorial, onSignOut }: { open: boolean; onClose: () => void; onShowTutorial: () => void; onSignOut: () => Promise<void> }) {
+  const [signingOut, setSigningOut] = useState(false);
   const { t, lang, setLang } = useLang();
   const { user } = useAuth();
   const { canInstall, installed, isIOS, install } = useInstall();
@@ -292,6 +293,17 @@ export function ProfileSheet({ open, onClose, onShowTutorial }: { open: boolean;
             {t("🎓 Show the interactive guide")}
           </button>
           <SupportButton variant="block" />
+          <button
+            type="button"
+            disabled={signingOut}
+            onClick={async () => {
+              setSigningOut(true);
+              try { await onSignOut(); } finally { setSigningOut(false); }
+            }}
+            className={`${primaryBtn} border border-red-500/30 text-red-500 hover:bg-red-500/10`}
+          >
+            {signingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />} {t("Log out of account")}
+          </button>
         </div>
       </div>
     </Sheet>

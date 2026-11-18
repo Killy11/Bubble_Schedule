@@ -544,10 +544,6 @@ export function DashboardShell() {
         onOpenProfile={() => setProfileOpen(true)}
         onOpenHelp={startTutorial}
         onOpenFeedback={() => setFeedbackOpen(true)}
-        onSignOut={async () => {
-          await signOut();
-          router.replace("/login");
-        }}
       />
 
       {runningTasks[0] && (
@@ -658,7 +654,11 @@ export function DashboardShell() {
         ))}
       </nav>
 
-      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onShowTutorial={startTutorial} />
+      <ProfileSheet open={profileOpen} onClose={() => setProfileOpen(false)} onShowTutorial={startTutorial}
+        onSignOut={async () => {
+          await signOut();
+          router.replace("/login");
+        }} />
       <SupportPrompt
         open={supportPromptOpen}
         onClose={() => setSupportPromptOpen(false)}
