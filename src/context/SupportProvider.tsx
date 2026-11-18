@@ -6,6 +6,9 @@ import { Heart, X } from "lucide-react";
 import { useLang } from "@/context/LanguageProvider";
 import { SUPPORT_URL } from "@/lib/support";
 
+const TEAM_MESSAGE =
+  "Hi! We are a young team developing this planner. We really need your support to grow the project, launch new features, and make BubbleSchedule even better for you.";
+
 const SupportContext = createContext<{ openSupport: () => void } | null>(null);
 
 /** One Support / donation modal for the whole app: the header, Profile, Help and the welcome prompt all open it. */
@@ -74,6 +77,14 @@ function SupportModal({ open, onClose }: { open: boolean; onClose: () => void })
               <div className="mb-5 mt-1 flex h-14 w-14 items-center justify-center rounded-full border border-rose-300/35 bg-gradient-to-br from-rose-500/25 via-pink-500/15 to-amber-400/15 shadow-[0_0_30px_rgba(244,63,94,0.35),inset_0_1px_4px_rgba(255,255,255,0.35)]">
                 <Heart className="h-6 w-6 text-rose-400" fill="currentColor" aria-hidden />
               </div>
+              <p className="mb-6 text-center text-[15.5px] leading-[1.65] text-zinc-100/95">
+                {t(TEAM_MESSAGE).split("BubbleSchedule").map((chunk, i) => (
+                  <span key={i}>
+                    {i > 0 && <span className="font-medium text-white">BubbleSchedule</span>}
+                    {chunk}
+                  </span>
+                ))}
+              </p>
               <a
                 href={SUPPORT_URL}
                 target="_blank"
@@ -83,7 +94,7 @@ function SupportModal({ open, onClose }: { open: boolean; onClose: () => void })
               >
                 {t("❤️ Support via Monobank (UAH)")}
               </a>
-              <p className="mt-4 text-[13px] leading-relaxed text-zinc-400">
+              <p className="mt-4 text-center text-xs leading-relaxed text-zinc-400/85">
                 {t("Donations go to our Ukrainian Monobank jar in UAH (₴). International cards, Apple Pay, and Google Pay are fully supported — your bank automatically converts USD, EUR, or any local currency into UAH at its standard exchange rate.")}
               </p>
             </div>
