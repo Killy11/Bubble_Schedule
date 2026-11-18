@@ -113,7 +113,17 @@ function Body({
         </button>
 
         <EditForm task={task} now={now} formRef={formRef} onBusy={setSaving}
-          onSave={async (patch) => { await onEdit(task, patch); setView("timer"); }} />
+          onSave={async (patch) => {
+            await onEdit(task, patch);
+            // Saving with all the planned time used up (spent ≥ total, nothing left) completes the task.
+            const spentAfter = patch.loggedMinutes ?? spentMinutes(task);
+            const totalAfter = patch.durationMin ?? totalMinutes(task);
+            if (totalAfter > 0 && spentAfter >= totalAfter) {
+              void run((x) => onComplete({ ...x, durationMin: totalAfter, loggedMinutes: spentAfter }, spentAfter));
+              return;
+            }
+            setView("timer");
+          }} />
 
         <SubtaskList key={`parts-${task.id}`} task={task} now={now} splitting={splitting}
           onToggle={onToggleSubtask} onSave={onSaveSubtasks} onSplit={onSplit} />
@@ -156,27 +166,40 @@ function Body({
         task={task}
         busy={busy}
         onComplete={() => void run((x) => onComplete(x))}
+        onAutoComplete={(actual) => void run((x) => onComplete(x, actual))}
         onAdjustSpent={onAdjustSpent}
         onStart={onStartTimer}
         onPause={onStopTimer}
         onConfirm={onConfirmTimer}
       />
 
-      <button type="button" data-tour="edit-btn" onClick={() => setView("edit")}
-        className="glass flex w-full items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm text-foreground transition hover:brightness-125">
-        <Pencil className="h-4 w-4" /> {t("Edit task")}
-      </button>
+      <div data-tour="modal-actions" className="space-y-4">
+        <button type="button" onClick={() => setView("edit")}
+          className="glass flex w-full items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm text-foreground transition hover:brightness-125">
+          <Pencil className="h-4 w-4" /> {t("Edit task")}
+        </button>
+        {/* set apart at the very bottom: finishing the whole task is different from logging time */}
+        <div className="border-t border-line pt-4">
+          <p className="mb-2 text-center text-xs text-muted">{t("Is the whole task finished?")}</p>
+          <button type="button" data-tour="done-btn" disabled={busy} onClick={() => void run((x) => onComplete(x))}
+            className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60">
+            🎉 {t("Finish task")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
 
 /** Step 1: totals, then the live timer, then logging minutes by hand, then (set apart) completing the whole task. */
 function ProgressTimer({
-  task, busy, onComplete, onAdjustSpent, onStart, onPause, onConfirm,
+  task, busy, onComplete, onAutoComplete, onAdjustSpent, onStart, onPause, onConfirm,
 }: {
   task: Task;
   busy: boolean;
   onComplete: () => void;
+  /** Spent time reached the total: complete the task (the modal closes and the bubble pops). */
+  onAutoComplete: (actualMin: number) => void;
   onAdjustSpent: (t: Task, deltaMin: number) => Promise<void>;
   onStart: (t: Task) => Promise<void>;
   onPause: (t: Task) => Promise<void>;
@@ -227,7 +250,7 @@ function ProgressTimer({
       {/* read-only whole-minute summary */}
       <div className="glass rounded-2xl p-3">
         <p className="text-center text-sm tabular-nums">
-          {t("Total: {n} min", { n: totalMinutes(task) })} <span className="text-muted">•</span> {t("Spent: {n} min", { n: spentMinutes(task) })} <span className="text-muted">•</span> {t("Left: {n} min", { n: remainingMinutes(task) })}
+          {t("Total: {n} min", { n: totalMinutes(task) })} <span className="text-muted">•</span> {t("Spent: {n} min", { n: spentMinutes(task) })}
         </p>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-line" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
           <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: "rgb(var(--c))" }} />
@@ -248,7 +271,12 @@ function ProgressTimer({
             {running ? <><Pause className="h-4 w-4 fill-current" /> {t("Pause")}</> : <><Play className="h-4 w-4 fill-current" /> {t("Start timer")}</>}
           </button>
           <button type="button" disabled={pending || !hasSession}
-            onClick={() => act(async () => { const n = await onConfirm(task); flash(t("Logged +{n} min", { n })); })}
+            onClick={() => act(async () => {
+              const n = await onConfirm(task);
+              const after = spentMinutes(task) + n;
+              if (after >= totalMinutes(task)) return onAutoComplete(after); // used up the planned time: done
+              flash(t("Logged +{n} min", { n }));
+            })}
             className="flex h-11 items-center justify-center gap-1.5 rounded-full border border-line px-4 text-sm transition hover:bg-foreground/10 disabled:opacity-40">
             <Check className="h-4 w-4" /> {t("Log minutes")}
           </button>
@@ -258,9 +286,8 @@ function ProgressTimer({
       {/* Card 2: log time without the timer */}
       <section data-tour="time-log" className="glass space-y-2.5 rounded-2xl p-4">
         <p className="text-xs font-medium text-muted">{t("Log time manually")}</p>
-        <label className="block text-xs text-muted">
-          {t("How many minutes did you work?")}
-          <div className="mt-1.5 flex items-center justify-center gap-2">
+        <div className="block text-xs text-muted">
+          <div className="flex items-center justify-center gap-2">
             <button type="button" disabled={pending} onClick={() => setMinutes(String(Math.max(1, toMin(minutes) - STEP_MIN)))} aria-label={t("{n}m", { n: `−${STEP_MIN}` })} className={stepBtn}>
               <Minus className="h-3.5 w-3.5" />{STEP_MIN}
             </button>
@@ -272,11 +299,16 @@ function ProgressTimer({
               <Plus className="h-3.5 w-3.5" />{STEP_MIN}
             </button>
           </div>
-        </label>
+        </div>
         <button type="button" disabled={pending}
-          onClick={() => { const n = toMin(minutes); void act(async () => { await onAdjustSpent(task, n); flash(t("Logged +{n} min", { n })); }); }}
+          onClick={() => {
+            const n = toMin(minutes);
+            const after = spentMinutes(task) + n;
+            if (after >= totalMinutes(task)) return onAutoComplete(after); // the planned time is used up: the task is done
+            void act(async () => { await onAdjustSpent(task, n); flash(t("Logged +{n} min", { n })); });
+          }}
           className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground/10 px-4 py-2.5 text-sm font-medium transition hover:bg-foreground/15 disabled:opacity-50">
-          <Plus className="h-4 w-4" /> {t("Log {n} min", { n: toMin(minutes) })}
+          {t("+ Log {n} min", { n: toMin(minutes) })}
         </button>
         {note && <p role="status" className="text-center text-xs text-emerald-600 dark:text-emerald-400">{note}</p>}
       </section>
@@ -288,14 +320,6 @@ function ProgressTimer({
         </button>
       )}
 
-      {/* set apart: finishing the whole task is a different thing from logging time */}
-      <div className="border-t border-line pt-4">
-        <p className="mb-2 text-center text-xs text-muted">{t("Is the whole task finished?")}</p>
-        <button type="button" data-tour="done-btn" disabled={busy} onClick={onComplete}
-          className="flex w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 py-3 text-sm font-medium text-background transition hover:opacity-90 disabled:opacity-60">
-          🎉 {t("Finish task")}
-        </button>
-      </div>
     </div>
   );
 }

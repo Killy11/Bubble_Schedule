@@ -34,7 +34,7 @@ import { BubbleCanvas } from "@/components/bubbles/BubbleCanvas";
 import { POP_MS } from "@/components/bubbles/Bubble";
 import { CompletedSheet } from "@/components/bubbles/CompletedSheet";
 import { RescheduleSheet } from "@/components/bubbles/RescheduleSheet";
-import { InteractiveTutorial, TUTORIAL_KEY } from "@/components/InteractiveTutorial";
+import { InteractiveTutorial, TutorialWelcome, TUTORIAL_KEY } from "@/components/InteractiveTutorial";
 import { TaskDetailSheet } from "@/components/bubbles/TaskDetailSheet";
 import { TaskFormSheet } from "@/components/bubbles/TaskFormSheet";
 import { ChatPanel } from "@/components/chat/ChatPanel";
@@ -288,6 +288,14 @@ export function DashboardShell() {
     return () => clearTimeout(id);
   }, [dashboardReady, tourOpen, autoTour]);
 
+  /** The welcome question for a new account. Either answer is remembered (device and profile), so it is asked once. */
+  const answerWelcome = (wantsTour: boolean) => {
+    setTourDismissed(true);
+    writeLocal(ONBOARDED_KEY, "1");
+    if (!wantsTour) writeLocal(TUTORIAL_KEY, "1");
+    if (uid) markOnboardingComplete(uid).catch((e) => console.warn("onboarding flag:", e));
+    if (wantsTour) setTourOpen(true);
+  };
   const closeTour = () => {
     setTourOpen(false);
     setTourDismissed(true);
@@ -565,7 +573,7 @@ export function DashboardShell() {
           data-tour="side-panel"
           className={`${tab === "bubbles" ? "hidden" : "flex"} glass min-h-0 w-full min-w-0 max-w-full flex-col overflow-hidden rounded-3xl lg:flex lg:w-[400px] lg:shrink-0`}
         >
-          <div className="hidden gap-1 border-b border-line p-2 lg:flex">
+          <div data-tour="desktop-tabs" className="hidden gap-1 border-b border-line p-2 lg:flex">
             {TABS.filter((x) => x.id !== "bubbles").map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -606,7 +614,7 @@ export function DashboardShell() {
       </main>
 
       {/* Mobile tab bar */}
-      <nav className="glass fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 flex rounded-full p-1.5 backdrop-blur-xl lg:hidden" aria-label="Sections">
+      <nav data-tour="mobile-nav" className="glass fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 flex rounded-full p-1.5 backdrop-blur-xl lg:hidden" aria-label="Sections">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -653,7 +661,8 @@ export function DashboardShell() {
         onDelete={(task) => deleteForever([task.id])}
         onClearAll={() => deleteForever(completed.map((x) => x.id))}
       />
-      <InteractiveTutorial open={tourOpen || autoTour} onClose={closeTour} onSelectTab={setTab} bubbleCount={active.length} onCloseDialogs={closeDialogs} />
+      <TutorialWelcome open={autoTour && !tourOpen} onYes={() => answerWelcome(true)} onNo={() => answerWelcome(false)} />
+      <InteractiveTutorial open={tourOpen} onClose={closeTour} onSelectTab={setTab} bubbleCount={active.length} onCloseDialogs={closeDialogs} />
       <PartDetailSheet
         task={active.find((x) => x.id === openPart?.taskId) ?? null}
         sub={active.find((x) => x.id === openPart?.taskId)?.subtasks?.find((x) => x.id === openPart?.subId) ?? null}

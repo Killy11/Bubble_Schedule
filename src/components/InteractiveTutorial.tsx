@@ -25,13 +25,19 @@ interface Step {
   advanceOnModal?: string;
   /** Close any open app dialog on entering this step. */
   closeDialogs?: boolean;
+  /** The user must do the thing themselves: there is no Next button, only a quiet Skip. */
+  mandatory?: boolean;
+  /** Move on by itself when the dialog with this tour id closes. */
+  advanceOnModalClose?: string;
+  /** Put the card at the top edge of the screen so it never covers the target (the AI chat step). */
+  pinTop?: boolean;
 }
 
 const steps = (t: TFn): Step[] => [
   {
-    id: "add", target: '[data-tour="add-task-btn"]', tab: "bubbles", interactive: true, advanceOnModal: "create",
+    id: "add", target: '[data-tour="add-task-btn"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "create",
     title: t("Let's start with your first bubble!"),
-    body: t("Tap the + button to open the Create task window."),
+    body: t("Tap the + button to create your first bubble."),
   },
   {
     id: "title", target: '[data-tour="field-title"]', tab: "bubbles", interactive: true, insideModal: true,
@@ -54,19 +60,44 @@ const steps = (t: TFn): Step[] => [
     body: t("Set a deadline (for example tonight or tomorrow). The closer the deadline, the brighter the bubble glows."),
   },
   {
-    id: "submit", target: '[data-tour="field-submit"]', tab: "bubbles", interactive: true, insideModal: true,
+    id: "submit", target: '[data-tour="field-submit"]', tab: "bubbles", interactive: true, insideModal: true, mandatory: true,
     title: t("Create it"),
-    body: t("Done! Tap Create and your first bubble appears on the canvas."),
+    body: t("Done! Tap “Create”: your first bubble appears on the canvas."),
   },
   {
-    id: "bubble", target: '[data-tour="first-bubble"]', tab: "bubbles", interactive: true, closeDialogs: true,
-    title: t("Your bubble"),
-    body: t("Tap it to open the Timer window. There you can run the live timer, log the minutes you worked by hand with “Log time”, or finish the whole task with “Finish task” 🎉."),
+    id: "bubble", target: '[data-tour="first-bubble"]', tab: "bubbles", interactive: true, mandatory: true, advanceOnModal: "task", closeDialogs: true,
+    title: t("Tap your bubble"),
+    body: t("Tap right on the bubble you created to open its timer window."),
   },
   {
-    id: "panel", target: '[data-tour="side-panel"]', tab: "chat", closeDialogs: true,
-    title: t("AI chat, schedule and notifications"),
-    body: t("Tell the AI chat, or dictate with the mic, when to do things (“Put the presentation at 3 PM”). Your day then appears in the Schedule timeline. Turn on notifications in your profile (the round button at the top)."),
+    id: "timer", target: '[data-tour="timer-clock"]', tab: "bubbles", interactive: true, insideModal: true,
+    title: t("Live timer"),
+    body: t("▶ Start tracks your work in real time. ✓ Log minutes adds the time you worked, rounded down to whole minutes (03:40 counts as 3)."),
+  },
+  {
+    id: "manual", target: '[data-tour="time-log"]', tab: "bubbles", interactive: true, insideModal: true,
+    title: t("Log time manually"),
+    body: t("Worked without the timer? Pick the minutes with −15 / +15 and tap “+ Log”. When the time spent reaches the total, the bubble pops by itself."),
+  },
+  {
+    id: "actions", target: '[data-tour="modal-actions"]', tab: "bubbles", interactive: true, insideModal: true,
+    title: t("Edit and finish"),
+    body: t("At the bottom: “Edit task” changes the title, duration, mode and deadline, and “Finish task” completes everything at once."),
+  },
+  {
+    id: "close", target: '[data-tour="timer-clock"]', tab: "bubbles", interactive: true, insideModal: true, mandatory: true, advanceOnModalClose: "task",
+    title: t("Close the window"),
+    body: t("Close the timer window (the × at the top, or tap outside it) to continue."),
+  },
+  {
+    id: "tabs", target: '[data-tour="mobile-nav"], [data-tour="desktop-tabs"]', tab: "bubbles",
+    title: t("Three main sections"),
+    body: t("The app has 3 sections you can switch between at any time: 1) Bubbles (the visual canvas), 2) Schedule (the hour-by-hour plan of your day) and 3) AI Chat (your assistant)."),
+  },
+  {
+    id: "chat", target: '[data-tour="ai-chat"]', tab: "chat", interactive: true, pinTop: true, closeDialogs: true,
+    title: t("Try the AI chat"),
+    body: t("Write or dictate a message right now, for example “Put my task at 4 PM” or “Add coffee for 15 min”, send it and watch the AI answer. Notifications are turned on in your profile. Press the button when you're done."),
   },
 ];
 
@@ -130,6 +161,16 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
       return () => clearTimeout(id);
     }
   }, [modalId, step.advanceOnModal, list.length]);
+  // A step that waits for a dialog to close moves on the moment it does (not while it is still open).
+  const sawModal = useRef(false);
+  useEffect(() => {
+    if (!step.advanceOnModalClose) {
+      sawModal.current = false;
+      return;
+    }
+    if (modalId === step.advanceOnModalClose) sawModal.current = true;
+    else if (sawModal.current || modalId === null) setI((n) => Math.min(n + 1, list.length - 1));
+  }, [modalId, step.advanceOnModalClose, list.length]);
   // Leaving the bubble's window behind for the chat / schedule steps.
   useEffect(() => {
     if (step.closeDialogs) onCloseDialogs();
@@ -152,13 +193,14 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
         return b && nb && Math.abs(b.x - nb.x) < 0.5 && Math.abs(b.y - nb.y) < 0.5 && Math.abs(b.w - nb.w) < 0.5 && Math.abs(b.h - nb.h) < 0.5 ? b : nb;
       });
       setView((v) => (v.w === window.innerWidth && v.h === window.innerHeight ? v : { w: window.innerWidth, h: window.innerHeight }));
-      const el = target ? (document.querySelector(target) as HTMLElement | null) : null;
+      // `target` may list several selectors (e.g. phone nav vs desktop tabs): use the first one that is actually visible.
+      const el = target ? ([...document.querySelectorAll(target)] as HTMLElement[]).find((e) => e.getBoundingClientRect().width > 1) ?? null : null;
       const r = el?.getBoundingClientRect();
       if (!r || r.width < 2 || r.height < 2) return setBox((b) => (b === null ? b : null));
       const next = { x: r.left - PAD, y: r.top - PAD, w: r.width + PAD * 2, h: r.height + PAD * 2 };
       setBox((b) => (b && Math.abs(b.x - next.x) < 0.5 && Math.abs(b.y - next.y) < 0.5 && Math.abs(b.w - next.w) < 0.5 && Math.abs(b.h - next.h) < 0.5 ? b : next));
     };
-    const el0 = target ? (document.querySelector(target) as HTMLElement | null) : null;
+    const el0 = target ? ([...document.querySelectorAll(target)] as HTMLElement[]).find((e) => e.getBoundingClientRect().width > 1) ?? null : null;
     el0?.scrollIntoView({ block: "nearest" });
     const first = requestAnimationFrame(measure);
     const id = setInterval(measure, 150);
@@ -175,9 +217,9 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
     if (cardRef.current) setCardH(cardRef.current.offsetHeight);
   }, [i, box, t]);
 
-  const handlers = useRef({ onClose, last });
+  const handlers = useRef({ onClose, last, mandatory: !!step.mandatory });
   useEffect(() => {
-    handlers.current = { onClose, last };
+    handlers.current = { onClose, last, mandatory: !!step.mandatory };
   });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -185,6 +227,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return; // typing
       if (e.key === "Escape") handlers.current.onClose();
       else if (e.key === "ArrowRight") {
+        if (handlers.current.mandatory) return;
         if (handlers.current.last) handlers.current.onClose();
         else setI((n) => n + 1);
       }
@@ -208,6 +251,8 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
     else top = Math.max(M, Math.min(box.y + box.h, view.h) - cardH - M * 4);
     left = Math.min(Math.max(M, box.x + box.w / 2 - cardW / 2), view.w - cardW - M);
   }
+  // The chat step: the card hugs the top edge so the whole chat (messages, input, mic, send) stays visible and usable.
+  if (step.pinTop) top = M;
   // A step inside an app dialog: put the card beside the dialog on wide screens, or at the very top on a phone.
   if (step.insideModal && modalBox) {
     if (view.w >= 900 && modalBox.x + modalBox.w + M + cardW <= view.w) {
@@ -256,7 +301,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
         <div className="mb-2 flex items-center justify-between text-xs text-zinc-400">
           <span>{t("Step {a} of {b}", { a: i + 1, b: list.length })}</span>
           {!last && (
-            <button type="button" onClick={onClose} className="rounded-full px-2 py-1 transition hover:text-white">{t("Skip")}</button>
+            <button type="button" onClick={onClose} className="rounded-full px-2 py-1 transition hover:text-white">{step.mandatory ? t("Skip tutorial") : t("Skip")}</button>
           )}
         </div>
         <h2 className="text-base font-semibold tracking-tight">{step.title}</h2>
@@ -267,12 +312,51 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs }: { onClose: 
             className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/[0.08] disabled:opacity-30">
             ← {t("Back")}
           </button>
-          <button type="button" onClick={next}
-            className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black transition hover:opacity-90">
-            {last ? t("🚀 Get started") : `${t("Next")} →`}
-          </button>
+          {!step.mandatory && (
+            <button type="button" onClick={next}
+              className="rounded-full bg-white px-5 py-2 text-sm font-medium text-black transition hover:opacity-90">
+              {last ? t("🚀 Finish tutorial") : `${t("Next")} →`}
+            </button>
+          )}
         </div>
       </motion.div>
     </motion.div>
+  );
+}
+
+/** Shown once to a brand-new account: take the interactive tutorial, or go straight into the app. */
+export function TutorialWelcome({ open, onYes, onNo }: { open: boolean; onYes: () => void; onNo: () => void }) {
+  const { t } = useLang();
+  if (typeof document === "undefined") return null;
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <motion.div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/65 p-4 backdrop-blur-md" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("Interactive tutorial")}
+            initial={{ opacity: 0, scale: 0.95, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ duration: 0.28, ease: "easeOut" }}
+            className="max-h-[90dvh] w-full max-w-[440px] overflow-y-auto overscroll-contain rounded-[28px] border border-white/12 bg-[#111116]/95 p-7 text-center text-zinc-100 shadow-[0_24px_80px_rgba(0,0,0,0.75)] sm:p-8"
+          >
+            <p className="text-[16px] font-medium leading-[1.5]">{t("Would you like to get to know the app with an interactive tutorial?")}</p>
+            <div className="mt-6 flex flex-col gap-2.5">
+              <button type="button" onClick={onYes}
+                className="rounded-full bg-white px-5 py-3 text-sm font-medium text-black transition hover:opacity-90">
+                {t("Yes, show me (tutorial)")}
+              </button>
+              <button type="button" onClick={onNo}
+                className="rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-sm text-zinc-300 transition hover:bg-white/[0.08]">
+                {t("No, I already know the app")}
+              </button>
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
   );
 }
