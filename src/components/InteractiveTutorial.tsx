@@ -141,7 +141,7 @@ const steps = (t: TFn, isDesktop: boolean, narrow: boolean): Step[] => [
 ];
 
 type Box = { x: number; y: number; w: number; h: number };
-const PAD = 6;
+const PAD = 8;
 
 /**
  * Spotlight walkthrough over the real UI. It measures the target element (and keeps measuring on resize, scroll and
@@ -267,13 +267,22 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileO
     };
     const el0 = target ? ([...document.querySelectorAll(target)] as HTMLElement[]).find((e) => e.getBoundingClientRect().width > 1) ?? null : null;
     el0?.scrollIntoView({ block: "nearest" });
-    const first = requestAnimationFrame(measure);
-    const id = setInterval(measure, 150);
+    // A bubble on the canvas springs into place and drifts, so while a step points at one the rectangle is
+    // re-measured every animation frame; other targets are still, so a slower tick is enough.
+    const followsBubble = !!target && target.includes("first-bubble");
+    let raf = 0;
+    const loop = () => {
+      measure();
+      raf = requestAnimationFrame(loop);
+    };
+    const first = followsBubble ? requestAnimationFrame(loop) : requestAnimationFrame(measure);
+    const id = followsBubble ? undefined : setInterval(measure, 150);
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
     return () => {
       cancelAnimationFrame(first);
-      clearInterval(id);
+      cancelAnimationFrame(raf);
+      if (id) clearInterval(id);
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
     };
@@ -333,7 +342,7 @@ function Tour({ onClose, onSelectTab, bubbleCount, onCloseDialogs, onSetProfileO
   top = Math.min(Math.max(M, top), Math.max(M, view.h - cardH - M));
 
   return (
-    <motion.div data-tour-card className="fixed inset-0 z-[9999]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="dialog" aria-modal="true" aria-label={t("Help")}>
+    <motion.div data-tour-card className="pointer-events-none fixed inset-0 z-[9999]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="dialog" aria-modal="true" aria-label={t("Help")}>
       {/*
         The dimmed backdrop is built from blocking panels around the spotlight: every pointer event outside the cutout is
         swallowed (nothing underneath can be clicked, so no dialog closes and the tutorial can't be left by a stray tap).

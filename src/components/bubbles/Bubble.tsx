@@ -90,7 +90,6 @@ export function Bubble({
 
   return (
     <motion.div
-      data-tour={index === 0 ? "first-bubble" : undefined}
       className={`absolute left-0 top-0 hue-${hue}`}
       initial={{ ...geometry, scale: 0, opacity: 0 }}
       // Position AND size are animated, so rank changes glide and logging time shrinks smoothly.
@@ -126,6 +125,7 @@ export function Bubble({
       <motion.button
         type="button"
         onClick={() => onOpen(task.id)}
+        data-tour={index === 0 ? "first-bubble" : undefined} // the clickable element itself, not a wrapper
         disabled={popping}
         aria-label={`${task.title}, ${formatDeadline(task.deadline, now, t, lang)}${repeats ? `, ${t("repeats")} ${repeats}` : ""}${parts ? `, ${progressLabel(task, now, t, lang)}` : ""}`}
         animate={{ y: [0, -amp, 0], x: [0, amp / 2, 0] }}

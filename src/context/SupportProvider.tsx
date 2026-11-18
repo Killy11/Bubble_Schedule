@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Heart, X } from "lucide-react";
+import { isTutorialActive } from "@/lib/tutorialLock";
 import { useLang } from "@/context/LanguageProvider";
 import { SUPPORT_URL } from "@/lib/support";
 
@@ -47,7 +48,7 @@ function SupportModal({ open, onClose }: { open: boolean; onClose: () => void })
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          onClick={onClose}
+          onClick={() => { if (!isTutorialActive()) onClose(); }}
         >
           <motion.div
             role="dialog"
