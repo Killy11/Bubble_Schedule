@@ -99,6 +99,12 @@ export async function POST(request: Request) {
         deadline: t.deadline ? toLocalNaive(t.deadline, tz) : null,
         durationMin: t.durationMin ?? null,
         // Only a real fixed slot counts as "scheduled at a time"; a deadline alone never does.
+        // Steps of a split task: move one by its id; the others stay as they are.
+        parts: (t.subtasks ?? []).filter((s) => !s.completed).map((s) => ({
+          id: s.id, title: s.title, durationMin: s.durationMinutes, pinned: !!s.pinned,
+          start: s.scheduledStart ? toLocalNaive(s.scheduledStart, tz) : null,
+          end: s.scheduledEnd ? toLocalNaive(s.scheduledEnd, tz) : null,
+        })),
         fixedStart: t.isFixedTime && t.fixedStartTime ? toLocalNaive(t.fixedStartTime, tz) : null,
       })),
       userMemory,
@@ -136,7 +142,8 @@ export async function POST(request: Request) {
   const tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz) : [];
   // Real, validated changes win over the label: a "move X to 17–19" is executed even if the model called it "schedule".
   const titleById = new Map(existing.map((t) => [t.id, t.title]));
-  const actions = normalizeActions(raw.actions ?? [], new Set(existing.map((t) => t.id)), tz).map((a) => ({
+  const partIds = new Map(existing.map((t) => [t.id, new Set((t.subtasks ?? []).filter((s) => !s.completed).map((s) => s.id))]));
+  const actions = normalizeActions(raw.actions ?? [], new Set(existing.map((t) => t.id)), tz, partIds).map((a) => ({
     ...a,
     taskTitle: titleById.get(a.taskId),
   }));

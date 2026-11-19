@@ -73,6 +73,8 @@ export interface AssistantAction {
   fixedStart?: ISODateTime;
   /** Release a fixed time slot: the planner moves the task freely again. */
   clearFixed?: boolean;
+  /** Set: the change is for this one part of the task only (its time window), nothing else. */
+  subtaskId?: string;
   /** Filled by the server, for the one-line "latest AI change" note. */
   taskTitle?: string;
 }

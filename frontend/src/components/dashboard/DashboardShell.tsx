@@ -516,6 +516,15 @@ export function DashboardShell() {
         } else if (a.type === "complete") {
           playBubblePop();
           await finish(task, undefined, true);
+        } else if (a.subtaskId) {
+          // One step: write its window and pin it. The parent's deadline, title and the other steps stay untouched,
+          // and the re-plan moves the unpinned steps into free time around it.
+          const start = a.fixedStart;
+          const mins = a.durationMin;
+          if (start && mins) {
+            const end = new Date(Date.parse(start) + mins * 60_000).toISOString();
+            await saveSubtasks(task, (task.subtasks ?? []).map((s) => (s.id === a.subtaskId ? { ...s, scheduledStart: start, scheduledEnd: end, pinned: true } : s)));
+          }
         } else {
           const deadline = a.removeDeadline ? null : (a.deadline ?? task.deadline ?? null);
           const title = a.title ?? task.title;

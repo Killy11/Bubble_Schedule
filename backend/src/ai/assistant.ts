@@ -10,6 +10,7 @@ Read the user's message and decide what they want:
 - "schedule": they want the day re-planned or adjusted (e.g. "I overslept, shift my morning tasks", "prioritize study today", "plan my day"). Do not extract tasks.
 - "modify_tasks": they want to change tasks that already exist (move/reschedule a task, change its deadline or duration, mark it done, delete it, remove its deadline). Put each change in "actions", matching the task by id from existingTasks. Do not create new tasks for these.
 A request about ONE named task and a time ("move the gym to 17–19", "переніс зал з 17 по 19") is ALWAYS "modify_tasks" with a real action, never "schedule" (which is only for re-planning the whole day without naming a task). If you cannot match the task in existingTasks, ask which task in "reply" with intent "answer". In "reply" never say a task was moved, scheduled or changed unless the same response contains the action for it.
+PARTS OF A TASK. A task in existingTasks may have "parts" (steps 1/4, 2/4…), each with its own id, title, durationMin and start/end. When the user moves a PART ("the first part", "step 2", "першу частину") return an "update" action with the task's "taskId" AND that part's "subtaskId", plus "fixedStart"/"fixedEnd" for its new window ("in 20 minutes" = NOW + 20 minutes; the length stays the part's durationMin). Such an action changes ONLY that part: leave "title", "deadline", "durationMin" null and "removeDeadline" false, and never touch the other parts. For a task that has parts, never put a fixedStart on the task itself without a subtaskId. NEVER change, shorten or move a task's deadline unless the user explicitly asks to change the deadline: set "deadline" only for that.
 FIXED TIME SLOTS. When the user asks for a task at a specific time or window ("at 17:00", "from 17 to 19", "put it 17:00–19:00", "move X to 6pm"), that is a fixed slot, not a deadline: use intent "modify_tasks" with an "update" action that sets "fixedStart" (LOCAL "YYYY-MM-DDTHH:mm") and "fixedEnd" (LOCAL; for a single time use fixedStart + the task's durationMin, or 60 minutes if unknown). Also set "deadline" to the same value as fixedEnd. Never answer "it is already scheduled" by computing deadline minus duration: the only proof that a task has a fixed slot is existingTasks[].fixedStart. If the task has no fixedStart, the request still needs the action. To release a slot ("let the AI move it again") set "clearFixed" true. For a NEW task with a requested time, create it with "fixedStart" and "fixedEnd" in "tasks". Never tell the user to refresh the page or re-plan manually: the app re-plans by itself right after your action, and other tasks move around the fixed slot. Only say a change was made when you returned the action for it.
 - "answer": a question or chat that needs neither. Answer briefly using the context given.
 
@@ -37,7 +38,7 @@ export const ASSISTANT_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["type", "taskId", "title", "deadline", "removeDeadline", "durationMin", "fixedStart", "fixedEnd", "clearFixed"],
+        required: ["type", "taskId", "title", "deadline", "removeDeadline", "durationMin", "fixedStart", "fixedEnd", "clearFixed", "subtaskId"],
         properties: {
           type: { type: "string", enum: ["update", "complete", "delete"] },
           taskId: { type: "string" },
@@ -48,6 +49,7 @@ export const ASSISTANT_JSON_SCHEMA = {
           fixedStart: { type: ["string", "null"] },
           fixedEnd: { type: ["string", "null"] },
           clearFixed: { type: "boolean" },
+          subtaskId: { type: ["string", "null"] },
         },
       },
     },
@@ -86,6 +88,8 @@ export interface RawAssistantAction {
   fixedStart?: string | null; // local naive
   fixedEnd?: string | null; // local naive
   clearFixed?: boolean;
+  /** Set: the action targets this one part of the task. */
+  subtaskId?: string | null;
 }
 export interface RawAssistantResult {
   intent: "create_tasks" | "modify_tasks" | "schedule" | "answer";
@@ -110,7 +114,13 @@ function fixedSlot(start: string | null | undefined, end: string | null | undefi
 }
 
 /** Validate the model's actions: known task ids only, sane values, no empty updates. */
-export function normalizeActions(raw: RawAssistantAction[], validIds: ReadonlySet<string>, tz: string): AssistantAction[] {
+export function normalizeActions(
+  raw: RawAssistantAction[],
+  validIds: ReadonlySet<string>,
+  tz: string,
+  /** taskId → ids of its open parts; a task that has parts can only be re-timed through one of them. */
+  parts: ReadonlyMap<string, ReadonlySet<string>> = new Map(),
+): AssistantAction[] {
   const out: AssistantAction[] = [];
   for (const a of raw.slice(0, MAX_TASKS)) {
     if (!validIds.has(a.taskId)) continue;
@@ -125,7 +135,17 @@ export function normalizeActions(raw: RawAssistantAction[], validIds: ReadonlySe
     const durationMin =
       Number.isFinite(a.durationMin) && a.durationMin! > 0 ? Math.max(5, Math.min(480, Math.round(a.durationMin!))) : undefined;
     const removeDeadline = a.removeDeadline === true && !deadline;
-    const slot = fixedSlot(a.fixedStart, a.fixedEnd, a.durationMin, tz);
+    const taskParts = parts.get(a.taskId);
+    if (a.subtaskId) {
+      // One part: only its own time window changes. Title, deadline and the other parts are never touched.
+      if (!taskParts?.has(a.subtaskId)) continue;
+      const s = fixedSlot(a.fixedStart, a.fixedEnd, a.durationMin, tz);
+      if (!s) continue;
+      out.push({ type: "update", taskId: a.taskId, subtaskId: a.subtaskId, fixedStart: s.startIso, durationMin: s.durationMin });
+      continue;
+    }
+    // A task with parts has no single slot of its own (that would collapse its parts into one block).
+    const slot = taskParts?.size ? null : fixedSlot(a.fixedStart, a.fixedEnd, a.durationMin, tz);
     const clearFixed = a.clearFixed === true && !slot;
     if (!deadline && !title && !durationMin && !removeDeadline && !slot && !clearFixed) continue;
     out.push({
