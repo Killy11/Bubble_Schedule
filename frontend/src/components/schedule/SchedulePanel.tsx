@@ -9,11 +9,10 @@ import { formatDeadline, formatTime } from "@/lib/time";
 import { bubbleHue, HUE_META } from "@/lib/bubbles/urgency";
 import { formatDuration } from "@/lib/subtasks";
 import type { Hue } from "@/components/Orb";
-import type { Schedule, ScheduleBlock, Subtask, Task } from "@/types";
+import type { LastAiAction, Schedule, ScheduleBlock, Subtask, Task } from "@/types";
 
 const dayStart = (t: number) => new Date(t).setHours(0, 0, 0, 0);
 
-const TYPE_LABEL = { added: "Added", moved: "Moved", removed: "Removed", resized: "Resized" } as const;
 
 /** One card on the timeline: a standalone task's block, or one step of a bigger task. */
 type Entry =
@@ -22,6 +21,7 @@ type Entry =
 
 export function SchedulePanel({
   schedule,
+  lastAction,
   tasks,
   now,
   completedCount,
@@ -37,6 +37,8 @@ export function SchedulePanel({
   onToggleTimer,
 }: {
   schedule: Schedule | null;
+  /** The latest thing the user asked the AI to do (one short line). */
+  lastAction?: LastAiAction;
   /** Live tasks only: active and not overdue. Completed and overdue ones are not on the timeline. */
   tasks: Task[];
   now: number;
@@ -56,7 +58,14 @@ export function SchedulePanel({
   onToggleTimer: (task: Task) => void;
 }) {
   const { t, lang } = useLang();
-  const change = schedule?.lastChange;
+  const hhmm = (iso: string) => new Date(iso).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit", hour12: false });
+  /** One short line, e.g. "Moved: Gym → 17:00–19:00" or "Added: Economics homework". */
+  const actionLine = (a: LastAiAction) => {
+    const label = { added: "Added", moved: "Moved", updated: "Updated", completed: "Completed", deleted: "Deleted" }[a.type];
+    const what = a.type === "added" && (a.count ?? 1) > 1 ? `${a.title} +${(a.count ?? 1) - 1}` : a.title;
+    const when = a.start && a.end ? ` → ${hhmm(a.start)}–${hhmm(a.end)}` : a.start ? ` → ${hhmm(a.start)}` : "";
+    return `${t(label)}: ${what}${when}`;
+  };
   const byId = new Map(tasks.map((x) => [x.id, x]));
 
   const entries: Entry[] = [];
@@ -118,31 +127,10 @@ export function SchedulePanel({
         </button>
       </div>
 
-      {change && (
-        <section className="glass rounded-2xl p-4">
-          <div className="mb-1 flex items-center gap-2 text-xs font-medium text-[rgb(var(--glow-a))]">
-            <Sparkles className="h-3.5 w-3.5" /> {t("Latest AI changes")}
-          </div>
-          <p className="text-sm">
-            {change.code === "replanned"
-              ? t("Re-planned by earliest deadline.")
-              : change.code === "replanned_unplaced"
-                ? change.count === 1
-                  ? t("Re-planned by deadline. 1 task can't fully fit before its deadline.")
-                  : t("Re-planned by deadline. {n} tasks can't fully fit before their deadlines.", { n: change.count ?? 0 })
-                : change.summary}
-          </p>
-          {change.changes.length > 0 && (
-            <ul className="mt-3 space-y-1.5 text-xs text-muted">
-              {change.changes.map((c, i) => (
-                <li key={i}>
-                  <span className="font-medium text-foreground">{t(TYPE_LABEL[c.type])}</span> {c.title}
-                  {c.to && ` → ${formatTime(c.to.start)}`}
-                  {c.why && <span> · {t(c.why)}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
+      {lastAction && (
+        <section className="glass flex items-center gap-2 rounded-2xl px-3 py-2.5">
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-[rgb(var(--glow-a))]" />
+          <p className="min-w-0 truncate text-sm" title={t("Latest AI changes")}>{actionLine(lastAction)}</p>
         </section>
       )}
 

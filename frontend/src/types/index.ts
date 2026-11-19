@@ -19,8 +19,20 @@ export interface User {
   userMemory?: string[];
   /** The calendar day (YYYY-MM-DD, user timezone) the current chat belongs to. The chat is cleared when it changes. */
   chatDate?: string;
+  /** The latest thing the user asked the AI chat to do; the Schedule tab shows it as one short line (replaced, never stacked). */
+  lastAiAction?: LastAiAction;
   createdAt: ISODateTime;
   lastLoginAt: ISODateTime;
+}
+
+export interface LastAiAction {
+  type: "added" | "moved" | "updated" | "completed" | "deleted";
+  title: string;
+  /** Number of tasks when several were added at once. */
+  count?: number;
+  start?: ISODateTime;
+  end?: ISODateTime;
+  at: ISODateTime;
 }
 
 export interface UserSettings {

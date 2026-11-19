@@ -134,10 +134,19 @@ export async function POST(request: Request) {
   }
 
   const tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz) : [];
-  const actions =
-    raw.intent === "modify_tasks" ? normalizeActions(raw.actions ?? [], new Set(existing.map((t) => t.id)), tz) : [];
+  // Real, validated changes win over the label: a "move X to 17–19" is executed even if the model called it "schedule".
+  const titleById = new Map(existing.map((t) => [t.id, t.title]));
+  const actions = normalizeActions(raw.actions ?? [], new Set(existing.map((t) => t.id)), tz).map((a) => ({
+    ...a,
+    taskTitle: titleById.get(a.taskId),
+  }));
+  if (actions.length > 0 && raw.intent !== "create_tasks") raw.intent = "modify_tasks";
   // The model claimed a change but nothing valid came back: never let the reply say it was done.
-  const failedChange = (raw.intent === "create_tasks" && tasks.length === 0) || (raw.intent === "modify_tasks" && actions.length === 0);
+  const failedChange =
+    (raw.intent === "create_tasks" && tasks.length === 0) ||
+    (raw.intent === "modify_tasks" && actions.length === 0) ||
+    // a "schedule" answer that names a specific time but changed nothing is a claim without a mutation
+    (raw.intent === "schedule" && actions.length === 0 && !mock && /\b\d{1,2}[:.]\d{2}\b|\b(з|from|at|о)\s+\d{1,2}\b/i.test(message) && /(перен|постав|закр|move|put|pin|set)/i.test(message));
   const cyr = /[\u0400-\u04FF]/.test(message);
   const response: AssistantResponse = {
     intent: failedChange ? "answer" : raw.intent,

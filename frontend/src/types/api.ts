@@ -73,6 +73,8 @@ export interface AssistantAction {
   fixedStart?: ISODateTime;
   /** Release a fixed time slot: the planner moves the task freely again. */
   clearFixed?: boolean;
+  /** Filled by the server, for the one-line "latest AI change" note. */
+  taskTitle?: string;
 }
 
 export interface AssistantResponse {

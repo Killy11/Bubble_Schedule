@@ -600,6 +600,7 @@ export function DashboardShell() {
             {panel === "schedule" ? (
               <SchedulePanel
                 schedule={schedule}
+                lastAction={profile?.lastAiAction}
                 tasks={active}
                 now={now}
                 completedCount={completed.length}

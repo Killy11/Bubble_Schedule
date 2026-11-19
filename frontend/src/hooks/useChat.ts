@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { collection, doc, limit, onSnapshot, orderBy, query, setDoc } from "firebase/firestore";
+import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { messageConverter } from "@/lib/firebase/converters";
 import { TaskLimitError, type NewTaskInput } from "@/hooks/useTasks";
 import { detectPacing, parseSplitRequest } from "@/lib/pacing";
 import { extOf, prepareAttachment, thumbnailOf } from "@/lib/attachments";
-import type { ChatMessage, DateKey, Pacing } from "@/types";
+import type { ChatMessage, DateKey, LastAiAction, Pacing } from "@/types";
 import type { AssistantAction, AssistantRequest, AssistantResponse, ScheduleRequest } from "@/types/api";
 
 async function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T> {
@@ -81,6 +81,18 @@ export function useChat(
       if (!uid) return;
       const ref = doc(collection(db, "users", uid, "messages")).withConverter(messageConverter);
       await setDoc(ref, { id: ref.id, role, content, kind, status, ...(attachments?.length ? { attachments } : {}), createdAt: new Date().toISOString() });
+    },
+    [uid],
+  );
+
+  /** The Schedule tab's one-line "latest AI change": replaces the previous one. Best effort. */
+  const noteAction = useCallback(
+    (a: Omit<LastAiAction, "at">) => {
+      if (!uid) return;
+      const { start, end, ...rest } = a;
+      void updateDoc(doc(db, "users", uid), {
+        lastAiAction: { ...rest, ...(start ? { start: new Date(start) } : {}), ...(end ? { end: new Date(end) } : {}), at: new Date() },
+      }).catch(() => {});
     },
     [uid],
   );
@@ -180,6 +192,17 @@ export function useChat(
         if (result.intent === "modify_tasks") {
           // Same code path as the UI's own edits: one Firestore write, and the canvas and the timeline both follow.
           await applyActions(result.actions);
+          const a = result.actions[0];
+          if (a) {
+            const title = a.taskTitle ?? a.title ?? "";
+            const slotEnd = a.fixedStart && a.durationMin ? new Date(Date.parse(a.fixedStart) + a.durationMin * 60_000).toISOString() : undefined;
+            noteAction(
+              a.type === "delete" ? { type: "deleted", title }
+              : a.type === "complete" ? { type: "completed", title }
+              : a.fixedStart ? { type: "moved", title, start: a.fixedStart, end: slotEnd }
+              : { type: "updated", title },
+            );
+          }
           await post("assistant", result.reply, "text", "sent");
           return;
         }
@@ -188,9 +211,14 @@ export function useChat(
         const requestedParts = parseSplitRequest(message) ?? undefined;
         // One batched write for the whole request (up to 25 tasks), so the canvas updates once.
         await addTasks(result.tasks.map((x) => ({ title: x.title, deadline: x.deadline, durationMin: x.durationMin, fixedStartTime: x.fixedStart, pacing, requestedParts: x.fixedStart ? undefined : requestedParts })));
+        if (result.tasks.length) {
+          const first = result.tasks[0];
+          const end = first.fixedStart && first.durationMin ? new Date(Date.parse(first.fixedStart) + first.durationMin * 60_000).toISOString() : undefined;
+          noteAction({ type: "added", title: first.title, count: result.tasks.length, start: first.fixedStart, end });
+        }
         await post("assistant", result.reply, "text", "sent"); // new tasks are folded into the plan by the auto re-plan
       }),
-    [guarded, post, runSchedule, addTasks, defaultPacing, applyActions, lang],
+    [guarded, post, runSchedule, addTasks, defaultPacing, applyActions, lang, noteAction],
   );
 
   return { messages, pending, send, ask, stop };
