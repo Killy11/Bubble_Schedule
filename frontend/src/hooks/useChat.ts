@@ -197,7 +197,8 @@ export function useChat(
             const title = a.taskTitle ?? a.title ?? "";
             const slotEnd = a.fixedStart && a.durationMin ? new Date(Date.parse(a.fixedStart) + a.durationMin * 60_000).toISOString() : undefined;
             noteAction(
-              a.subtaskId && a.fixedStart ? { type: "moved", title, start: a.fixedStart, end: slotEnd }
+              a.type === "split" ? { type: "updated", title }
+              : a.subtaskId && a.fixedStart ? { type: "moved", title, start: a.fixedStart, end: slotEnd }
               : a.type === "delete" ? { type: "deleted", title }
               : a.type === "complete" ? { type: "completed", title }
               : a.fixedStart ? { type: "moved", title, start: a.fixedStart, end: slotEnd }

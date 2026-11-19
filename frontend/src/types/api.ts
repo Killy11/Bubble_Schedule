@@ -63,8 +63,10 @@ export interface AssistantTask {
 
 /** A change to an existing task, applied on the client through the shared task state. */
 export interface AssistantAction {
-  type: "update" | "complete" | "delete";
+  type: "update" | "complete" | "delete" | "split";
   taskId: string;
+  /** split: how many parts. */
+  parts?: number;
   title?: string;
   deadline?: ISODateTime;
   removeDeadline?: boolean;

@@ -516,6 +516,9 @@ export function DashboardShell() {
         } else if (a.type === "complete") {
           playBubblePop();
           await finish(task, undefined, true);
+        } else if (a.type === "split") {
+          // Same path as the "Split" button: the parts go into this task, then the re-plan spreads them before the deadline.
+          if (a.parts) void split(task, a.parts);
         } else if (a.subtaskId) {
           // One step: write its window and pin it. The parent's deadline, title and the other steps stay untouched,
           // and the re-plan moves the unpinned steps into free time around it.

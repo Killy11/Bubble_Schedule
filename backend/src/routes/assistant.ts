@@ -15,13 +15,13 @@ import {
 import { FileError, readFile, type ReadFile } from "@backend/server/files";
 import { takeHourlySlot } from "@backend/server/rateLimit";
 import { mergeMemory, sameMemory } from "@backend/server/memory";
-import { weekdayOf, dateKeyInTz, toLocalNaive } from "@/lib/time";
+import { addDays, weekdayOf, dateKeyInTz, toLocalNaive } from "@/lib/time";
 import type { ChatMessage, Task, User } from "@/types";
 import type { AssistantRequest, AssistantResponse } from "@/types/api";
 
 const MAX_MESSAGE = 1000;
 /** Sliding window: only the last 16 messages go to the model (plus the memory and the task list). */
-const HISTORY_MESSAGES = 16;
+const HISTORY_MESSAGES = 8;
 const MAX_FILES = 3;
 const MAX_TOTAL_BYTES = 4 * 1024 * 1024;
 const MAX_FILE_REQUESTS_PER_HOUR = 30;
@@ -87,13 +87,18 @@ export async function POST(request: Request) {
       .reverse()
       .slice(0, -1) // the newest is the message being sent now
       .slice(-HISTORY_MESSAGES)
-      .map((m) => ({ role: m.role, content: m.content }));
+      .map((m) => ({ role: m.role, content: m.content.slice(0, 300) })); // short context = faster answers
     const today = dateKeyInTz(now, tz);
     const context = {
       NOW: localNow(now, tz),
       today: `${DAYS[weekdayOf(today)]} ${today}`,
       timezone: tz,
-      existingTasks: existing.map((t) => ({
+      // 14 days with weekdays: the model reads dates from here instead of calculating them.
+      calendar: Array.from({ length: 14 }, (_, i) => {
+        const key = addDays(today, i);
+        return `${DAYS[weekdayOf(key)].slice(0, 3)} ${key}${i === 0 ? " (today)" : i === 1 ? " (tomorrow)" : ""}`;
+      }),
+      existingTasks: existing.slice(0, 40).map((t) => ({
         id: t.id,
         title: t.title,
         deadline: t.deadline ? toLocalNaive(t.deadline, tz) : null,
