@@ -57,6 +57,8 @@ export interface AssistantTask {
   /** UTC ISO. Omitted when the user stated no date or time: the task has no deadline. */
   deadline?: ISODateTime;
   durationMin?: number;
+  /** Requested time window ("from 17:00 to 19:00"): the task is pinned to exactly this slot. */
+  fixedStart?: ISODateTime;
 }
 
 /** A change to an existing task, applied on the client through the shared task state. */
@@ -67,6 +69,10 @@ export interface AssistantAction {
   deadline?: ISODateTime;
   removeDeadline?: boolean;
   durationMin?: number;
+  /** Pin the task to exactly this start (its length is durationMin). */
+  fixedStart?: ISODateTime;
+  /** Release a fixed time slot: the planner moves the task freely again. */
+  clearFixed?: boolean;
 }
 
 export interface AssistantResponse {

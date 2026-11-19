@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useImperativeHandle, type Ref } from "react";
 import { Mic, Square } from "lucide-react";
 import { useLang } from "@/context/LanguageProvider";
 import { useToast } from "@/context/ToastProvider";
@@ -14,6 +14,7 @@ export function MicButton({
   fixedLang,
   stopKey,
   onListeningChange,
+  controlRef,
 }: {
   value: string;
   onChange: (text: string) => void;
@@ -24,22 +25,25 @@ export function MicButton({
   stopKey?: unknown;
   /** Called when dictation starts or ends. */
   onListeningChange?: (listening: boolean) => void;
+  /** `abort()` ends dictation synchronously and discards late microphone results: call it first thing on submit. */
+  controlRef?: Ref<{ abort: () => void }>;
 }) {
   const { toast } = useToast();
   const { t } = useLang();
   const [savedLang, setLang] = useSpeechLang();
   const lang = fixedLang ?? savedLang;
-  const { supported, listening, start, stop } = useSpeechInput({
+  const { supported, listening, start, stop, abort } = useSpeechInput({
     lang,
     onTranscript: onChange,
     onError: (message) => toast({ title: t("Voice input"), body: t(message) }),
   });
+  useImperativeHandle(controlRef, () => ({ abort }), [abort]);
   useEffect(() => {
     onListeningChange?.(listening);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listening]);
   useEffect(() => {
-    stop();
+    abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopKey]);
   const dim = size === "sm" ? "h-9 w-9" : "h-10 w-10";

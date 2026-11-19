@@ -16,6 +16,7 @@ function planSignature(tasks: readonly Task[]): string {
       [
         t.id,
         t.deadline,
+        t.isFixedTime ? t.fixedStartTime : "",
         effectiveDuration(t) ?? "",
         t.pacing ?? "balanced",
         t.requestedParts ?? "",

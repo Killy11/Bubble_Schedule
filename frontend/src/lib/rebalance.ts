@@ -18,7 +18,7 @@ export interface PlanResult {
   /** taskId → (subtaskId → new slot, or null when it doesn't fit before the deadline) */
   partSlots: Map<string, Map<string, Interval | null>>;
   /** One block for each task that has no parts. */
-  blocks: Array<{ taskId: string; start: number; end: number }>;
+  blocks: Array<{ taskId: string; start: number; end: number; /** a fixed-time task: shown pinned */ fixed?: boolean }>;
   /** Tasks (or parts of them) that can't fit before their deadline. */
   unplaced: Task[];
   /** Tasks still waiting for the AI to split them into parts. */
@@ -56,7 +56,22 @@ export function planAll(o: {
     }
   }
 
+  // Fixed-time tasks keep exactly their requested window: it is an immovable interval for everyone else.
+  const isFixed = (t: Task) => !!t.isFixedTime && !!t.fixedStartTime && !Number.isNaN(Date.parse(t.fixedStartTime));
+  const fixedWindow = (t: Task) => {
+    const start = Date.parse(t.fixedStartTime!);
+    return { start, end: start + Math.max(5, effectiveDuration(t) ?? o.settings.defaultTaskMinutes) * 60_000 };
+  };
+  for (const t of order) {
+    if (!isFixed(t)) continue;
+    const w = fixedWindow(t);
+    if (w.end <= o.nowMs) continue; // already over
+    fixed.push(w);
+    result.blocks.push({ taskId: t.id, ...w, fixed: true });
+  }
+
   order.forEach((t, orderIdx) => {
+    if (isFixed(t)) return; // placed above, never re-planned
     const dueMs = t.deadline ? Date.parse(t.deadline) : o.nowMs + NO_DEADLINE_PLAN_DAYS * 86_400_000;
     if (dueMs <= o.nowMs + 30 * 60_000) return; // about to expire: nothing useful to plan
     const pacing: Pacing = pacingOf(t);

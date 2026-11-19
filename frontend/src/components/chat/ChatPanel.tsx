@@ -91,6 +91,8 @@ export function ChatPanel({
   const [fileError, setFileError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [listening, setListening] = useState(false); // dictating: keep the newest words in view
+  const micRef = useRef<{ abort: () => void } | null>(null);
+  const submitLock = useRef(false);
   const [sent, setSent] = useState(0); // bumps on submit, which also stops dictation
   const endRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -131,12 +133,16 @@ export function ChatPanel({
   }
 
   function submit() {
-    if ((!text.trim() && files.length === 0) || pending) return;
-    onAsk(text, files);
+    if ((!text.trim() && files.length === 0) || pending || submitLock.current) return;
+    submitLock.current = true; // Enter + click / key repeat in the same tick can't send twice
+    micRef.current?.abort(); // synchronous: no late microphone result can refill the box
+    const message = text;
+    onAsk(message, files);
     setText("");
     setFiles([]);
     setFileError(null);
     setSent((n) => n + 1);
+    setTimeout(() => { submitLock.current = false; }, 400);
   }
 
   return (
@@ -205,7 +211,7 @@ export function ChatPanel({
             className="glass min-h-10 min-w-0 flex-1 resize-none rounded-2xl px-4 py-2.5 text-sm leading-5 outline-none placeholder:text-muted focus:border-[rgb(var(--glow-a))]"
             style={{ overflowY: "hidden" }}
           />
-          <MicButton value={text} onChange={(v) => setText(v.slice(0, 1000))} stopKey={sent} onListeningChange={setListening} fixedLang={lang === "uk" ? "uk-UA" : "en-US"} />
+          <MicButton value={text} onChange={(v) => setText(v.slice(0, 1000))} stopKey={sent} controlRef={micRef} onListeningChange={setListening} fixedLang={lang === "uk" ? "uk-UA" : "en-US"} />
           {pending ? (
             <button
               type="button"

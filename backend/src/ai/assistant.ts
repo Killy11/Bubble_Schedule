@@ -9,6 +9,7 @@ Read the user's message and decide what they want:
 - "create_tasks": they describe one or more things to do (e.g. "remind me to send the report tomorrow at 5pm"). Extract each as a task.
 - "schedule": they want the day re-planned or adjusted (e.g. "I overslept, shift my morning tasks", "prioritize study today", "plan my day"). Do not extract tasks.
 - "modify_tasks": they want to change tasks that already exist (move/reschedule a task, change its deadline or duration, mark it done, delete it, remove its deadline). Put each change in "actions", matching the task by id from existingTasks. Do not create new tasks for these.
+FIXED TIME SLOTS. When the user asks for a task at a specific time or window ("at 17:00", "from 17 to 19", "put it 17:00–19:00", "move X to 6pm"), that is a fixed slot, not a deadline: use intent "modify_tasks" with an "update" action that sets "fixedStart" (LOCAL "YYYY-MM-DDTHH:mm") and "fixedEnd" (LOCAL; for a single time use fixedStart + the task's durationMin, or 60 minutes if unknown). Also set "deadline" to the same value as fixedEnd. Never answer "it is already scheduled" by computing deadline minus duration: the only proof that a task has a fixed slot is existingTasks[].fixedStart. If the task has no fixedStart, the request still needs the action. To release a slot ("let the AI move it again") set "clearFixed" true. For a NEW task with a requested time, create it with "fixedStart" and "fixedEnd" in "tasks". Never tell the user to refresh the page or re-plan manually: the app re-plans by itself right after your action, and other tasks move around the fixed slot. Only say a change was made when you returned the action for it.
 - "answer": a question or chat that needs neither. Answer briefly using the context given.
 
 Task fields:
@@ -35,7 +36,7 @@ export const ASSISTANT_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["type", "taskId", "title", "deadline", "removeDeadline", "durationMin"],
+        required: ["type", "taskId", "title", "deadline", "removeDeadline", "durationMin", "fixedStart", "fixedEnd", "clearFixed"],
         properties: {
           type: { type: "string", enum: ["update", "complete", "delete"] },
           taskId: { type: "string" },
@@ -43,6 +44,9 @@ export const ASSISTANT_JSON_SCHEMA = {
           deadline: { type: ["string", "null"] },
           removeDeadline: { type: "boolean" },
           durationMin: { type: ["integer", "null"] },
+          fixedStart: { type: ["string", "null"] },
+          fixedEnd: { type: ["string", "null"] },
+          clearFixed: { type: "boolean" },
         },
       },
     },
@@ -51,11 +55,13 @@ export const ASSISTANT_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["title", "deadline", "durationMin"],
+        required: ["title", "deadline", "durationMin", "fixedStart", "fixedEnd"],
         properties: {
           title: { type: "string" },
           deadline: { type: ["string", "null"] },
           durationMin: { type: ["integer", "null"] },
+          fixedStart: { type: ["string", "null"] },
+          fixedEnd: { type: ["string", "null"] },
         },
       },
     },
@@ -66,6 +72,8 @@ export interface RawAssistantTask {
   title: string;
   deadline: string | null; // local naive
   durationMin: number | null;
+  fixedStart?: string | null; // local naive
+  fixedEnd?: string | null; // local naive
 }
 export interface RawAssistantAction {
   type: "update" | "complete" | "delete";
@@ -74,6 +82,9 @@ export interface RawAssistantAction {
   deadline: string | null; // local naive
   removeDeadline: boolean;
   durationMin: number | null;
+  fixedStart?: string | null; // local naive
+  fixedEnd?: string | null; // local naive
+  clearFixed?: boolean;
 }
 export interface RawAssistantResult {
   intent: "create_tasks" | "modify_tasks" | "schedule" | "answer";
@@ -82,6 +93,19 @@ export interface RawAssistantResult {
   actions?: RawAssistantAction[];
   /** New permanent habits / preferences detected in this message. */
   memoryAdditions?: string[];
+}
+
+/** A requested window → exact start, end and length in whole minutes (5–480). Null when it isn't a usable window. */
+function fixedSlot(start: string | null | undefined, end: string | null | undefined, durationMin: number | null | undefined, tz: string) {
+  const s = start ? localNaiveToUtc(start, tz) : null;
+  if (!s || Number.isNaN(s.getTime())) return null;
+  let e = end ? localNaiveToUtc(end, tz) : null;
+  if (!e || Number.isNaN(e.getTime()) || e.getTime() <= s.getTime()) {
+    const mins = Number.isFinite(durationMin) && durationMin! > 0 ? durationMin! : 60;
+    e = new Date(s.getTime() + mins * 60_000);
+  }
+  const mins = Math.max(5, Math.min(480, Math.round((e.getTime() - s.getTime()) / 60_000)));
+  return { startIso: s.toISOString(), endIso: new Date(s.getTime() + mins * 60_000).toISOString(), durationMin: mins };
 }
 
 /** Validate the model's actions: known task ids only, sane values, no empty updates. */
@@ -100,8 +124,17 @@ export function normalizeActions(raw: RawAssistantAction[], validIds: ReadonlySe
     const durationMin =
       Number.isFinite(a.durationMin) && a.durationMin! > 0 ? Math.max(5, Math.min(480, Math.round(a.durationMin!))) : undefined;
     const removeDeadline = a.removeDeadline === true && !deadline;
-    if (!deadline && !title && !durationMin && !removeDeadline) continue;
-    out.push({ type: "update", taskId: a.taskId, title, deadline, durationMin, removeDeadline: removeDeadline || undefined });
+    const slot = fixedSlot(a.fixedStart, a.fixedEnd, a.durationMin, tz);
+    const clearFixed = a.clearFixed === true && !slot;
+    if (!deadline && !title && !durationMin && !removeDeadline && !slot && !clearFixed) continue;
+    out.push({
+      type: "update", taskId: a.taskId, title,
+      deadline: deadline ?? slot?.endIso,
+      durationMin: slot?.durationMin ?? durationMin,
+      removeDeadline: removeDeadline || undefined,
+      fixedStart: slot?.startIso,
+      clearFixed: clearFixed || undefined,
+    });
   }
   return out;
 }
@@ -114,13 +147,16 @@ export function normalizeTasks(raw: RawAssistantTask[], tz: string): AssistantTa
     if (!title) continue;
     const parsed = t.deadline ? localNaiveToUtc(t.deadline, tz) : null;
     const deadline = parsed && !Number.isNaN(parsed.getTime()) ? parsed : null;
+    const slot = fixedSlot(t.fixedStart, t.fixedEnd, t.durationMin, tz);
     out.push({
       title,
-      deadline: deadline?.toISOString(), // none stated → no deadline (never invented)
+      deadline: slot?.endIso ?? deadline?.toISOString(), // none stated → no deadline (never invented)
       durationMin:
-        Number.isFinite(t.durationMin) && t.durationMin! > 0
+        slot?.durationMin ??
+        (Number.isFinite(t.durationMin) && t.durationMin! > 0
           ? Math.max(5, Math.min(480, Math.round(t.durationMin!)))
-          : undefined,
+          : undefined),
+      fixedStart: slot?.startIso,
     });
   }
   return out;

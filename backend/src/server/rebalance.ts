@@ -41,11 +41,13 @@ export async function rebalanceAll(uid: string, now: Date): Promise<RebalanceRes
   const docs = new Map(schedSnap.docs.map((d) => [d.id, fromFirestoreData<Schedule>(d.data())]));
   const today = docs.get(todayKey) ?? null;
 
+  const fixedIds = new Set(tasks.filter((t) => t.isFixedTime && t.fixedStartTime).map((t) => t.id));
   // Blocks the user pinned by hand are fixed; they keep their time and their task needs no other block.
   const pinnedBlocks: ScheduleBlock[] = [];
   for (const sch of docs.values()) {
     for (const b of sch.blocks ?? []) {
-      if (b.isPinned && b.status === "planned" && activeIds.has(b.taskId) && Date.parse(b.end) > nowMs) pinnedBlocks.push(b);
+      // A fixed-time task's block is rebuilt from the task itself below, so it is not carried over from an old plan.
+      if (b.isPinned && b.status === "planned" && activeIds.has(b.taskId) && !fixedIds.has(b.taskId) && Date.parse(b.end) > nowMs) pinnedBlocks.push(b);
     }
   }
   const plan = planAll({
@@ -91,8 +93,9 @@ export async function rebalanceAll(uid: string, now: Date): Promise<RebalanceRes
     title: titleOf.get(b.taskId) ?? "Task",
     start: new Date(b.start).toISOString(),
     end: new Date(b.end).toISOString(),
-    reason: "Planned by earliest deadline",
+    reason: b.fixed ? "Fixed time" : "Planned by earliest deadline",
     status: "planned",
+    ...(b.fixed ? { isPinned: true } : {}),
     ...(alerted.get(b.taskId) ? { notified5mStart: alerted.get(b.taskId) } : {}),
   }));
   const blocks = [...done, ...pinnedBlocks, ...fresh].sort((a, b) => a.start.localeCompare(b.start));

@@ -502,7 +502,10 @@ export function DashboardShell() {
           if (isOverdueTask(task, Date.now()) && (deadline === null || Date.parse(deadline) > Date.now())) {
             await reschedule(task, deadline); // also re-activates its parts and alerts
           } else {
-            await updateTask(task, { title, deadline, durationMin: a.durationMin ?? task.durationMin ?? null, pacing: pacingOf(task) });
+            await updateTask(task, {
+              title, deadline, durationMin: a.durationMin ?? task.durationMin ?? null, pacing: pacingOf(task),
+              fixedStartTime: a.fixedStart ?? (a.clearFixed ? null : undefined),
+            });
           }
           if (a.durationMin && isOverdueTask(task, Date.now())) {
             await updateTask(task, { title, deadline, durationMin: a.durationMin, pacing: pacingOf(task) });

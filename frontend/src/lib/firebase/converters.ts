@@ -25,6 +25,7 @@ const DATE_KEYS = new Set([
   "lastLoginAt",
   "lastSeenAt",
   "deadline",
+  "fixedStartTime",
   "completedAt",
   "startedAt",
   "scheduledStart",

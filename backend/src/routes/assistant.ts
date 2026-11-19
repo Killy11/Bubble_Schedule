@@ -98,6 +98,8 @@ export async function POST(request: Request) {
         title: t.title,
         deadline: t.deadline ? toLocalNaive(t.deadline, tz) : null,
         durationMin: t.durationMin ?? null,
+        // Only a real fixed slot counts as "scheduled at a time"; a deadline alone never does.
+        fixedStart: t.isFixedTime && t.fixedStartTime ? toLocalNaive(t.fixedStartTime, tz) : null,
       })),
       userMemory,
       recentChat: history,
@@ -134,13 +136,16 @@ export async function POST(request: Request) {
   const tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz) : [];
   const actions =
     raw.intent === "modify_tasks" ? normalizeActions(raw.actions ?? [], new Set(existing.map((t) => t.id)), tz) : [];
+  // The model claimed a change but nothing valid came back: never let the reply say it was done.
+  const failedChange = (raw.intent === "create_tasks" && tasks.length === 0) || (raw.intent === "modify_tasks" && actions.length === 0);
+  const cyr = /[\u0400-\u04FF]/.test(message);
   const response: AssistantResponse = {
-    // create_tasks with nothing usable degrades to a plain answer
-    intent:
-      (raw.intent === "create_tasks" && tasks.length === 0) || (raw.intent === "modify_tasks" && actions.length === 0)
-        ? "answer"
-        : raw.intent,
-    reply: String(raw.reply ?? "").slice(0, 1200) || "Done.",
+    intent: failedChange ? "answer" : raw.intent,
+    reply: failedChange && !mock
+      ? cyr
+        ? "Не вдалося застосувати зміну: уточніть, будь ласка, яку задачу та на який час (наприклад, «Звіт з 17:00 до 19:00»)."
+        : "I couldn't apply that change. Tell me which task and the exact time, for example “Report from 17:00 to 19:00”."
+      : String(raw.reply ?? "").slice(0, 1200) || "Done.",
     tasks,
     actions,
     ...(mock ? { mock: true } : {}),

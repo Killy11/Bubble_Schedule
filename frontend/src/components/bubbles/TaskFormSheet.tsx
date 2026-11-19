@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Paperclip, Scissors } from "lucide-react";
 import { ESTIMATE_ACCEPT, estimateFile, focusToPacing, type FileEstimate } from "@/lib/estimate";
 import { MicButton } from "@/components/MicButton";
@@ -85,6 +85,8 @@ function Form({
 }) {
   const { t, lang } = useLang();
   const [title, setTitle] = useState(editTask?.title ?? "");
+  const micRef = useRef<{ abort: () => void } | null>(null);
+  const submitting = useRef(false);
   const [deadline, setDeadline] = useState(() => (editTask?.deadline ? toLocalInput(editTask.deadline) : defaultDeadline()));
   const [noDeadline, setNoDeadline] = useState(!!editTask && !editTask.deadline);
   const [hours, setHours] = useState(() => (editTask?.durationMin ? splitMinutes(editTask.durationMin).hours : ""));
@@ -137,9 +139,12 @@ function Form({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (busy || submitting.current) return; // Enter + click can't create two bubbles
+    submitting.current = true;
+    micRef.current?.abort(); // drop the microphone and its buffered text before anything else
     const when = new Date(deadline);
-    if (!title.trim()) return setError(t("Give your bubble a title."));
-    if (!noDeadline && Number.isNaN(when.getTime())) return setError(t("Pick a deadline."));
+    if (!title.trim()) { submitting.current = false; return setError(t("Give your bubble a title.")); }
+    if (!noDeadline && Number.isNaN(when.getTime())) { submitting.current = false; return setError(t("Pick a deadline.")); }
     setBusy(true);
     setError(null);
     try {
@@ -154,6 +159,7 @@ function Form({
       onClose();
     } catch (e) {
       setError(e instanceof TaskLimitError ? t(e.message) : t("Couldn't save. Please try again."));
+      submitting.current = false;
       setBusy(false);
     }
   }
@@ -184,7 +190,7 @@ function Form({
           <input autoFocus required maxLength={100} value={title} onChange={(e) => setTitle(e.target.value.slice(0, 100))}
             spellCheck={false} autoComplete="off" autoCorrect="off" autoCapitalize="sentences"
             placeholder={t("Write project report")} className={`${field} min-w-0 flex-1`} />
-          <MicButton value={title} onChange={(v) => setTitle(v.slice(0, 100))} size="sm" />
+          <MicButton controlRef={micRef} value={title} onChange={(v) => setTitle(v.slice(0, 100))} size="sm" />
         </div>
       </label>
       {/* Attach an assignment file (PDF, DOCX, TXT, photo): the AI reads it and estimates the time. Nothing is stored. */}

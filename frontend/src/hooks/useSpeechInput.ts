@@ -83,6 +83,8 @@ export function useSpeechInput(opts: {
   const supported = useSyncExternalStore(noopSubscribe, () => getCtor() !== null, () => false);
   const [listening, setListening] = useState(false);
   const recRef = useRef<RecognitionLike | null>(null);
+  /** Set by abort(): every late onresult / onend of that recording is discarded, so no stale text reaches the input. */
+  const discardRef = useRef(false);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearSilence = () => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
@@ -105,6 +107,7 @@ export function useSpeechInput(opts: {
       const Ctor = getCtor();
       if (!Ctor) return cb.current.onError("Voice input isn't supported in this browser. Try Chrome, Edge or Safari.");
       const rec = new Ctor();
+      discardRef.current = false;
       rec.lang = opts.lang;
       rec.interimResults = true;
       rec.continuous = true; // short pauses between words and sentences don't end the recording
@@ -115,19 +118,20 @@ export function useSpeechInput(opts: {
       };
       const prefix = base && !/\s$/.test(base) ? `${base} ` : base;
       rec.onresult = (e) => {
+        if (discardRef.current || recRef.current !== rec) return; // trailing microphone event of an aborted recording
         armSilence();
         let text = "";
         for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
         cb.current.onTranscript(prefix + text.trim());
       };
       rec.onerror = (e) => {
-        if (e.error === "aborted") return;
+        if (e.error === "aborted" || discardRef.current) return;
         cb.current.onError(ERRORS[e.error] ?? "Voice input stopped unexpectedly. Please try again.");
       };
       rec.onend = () => {
         clearSilence();
-        setListening(false);
-        recRef.current = null;
+        if (recRef.current === rec) recRef.current = null; // a newer recording owns the ref now
+        if (!discardRef.current || recRef.current === null) setListening(false);
       };
       try {
         rec.start();
@@ -145,5 +149,18 @@ export function useSpeechInput(opts: {
     clearSilence();
     recRef.current?.stop();
   }, []);
-  return { supported, listening, start, stop };
+  /** Drop the recording AND everything it still has buffered: used when the text is submitted. Synchronous. */
+  const abort = useCallback(() => {
+    discardRef.current = true;
+    clearSilence();
+    const rec = recRef.current;
+    recRef.current = null;
+    if (rec) {
+      rec.onresult = null;
+      rec.onerror = null;
+      try { rec.abort(); } catch {}
+    }
+    setListening(false);
+  }, []);
+  return { supported, listening, start, stop, abort };
 }

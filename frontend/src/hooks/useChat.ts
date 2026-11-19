@@ -39,6 +39,7 @@ export function useChat(
 ) {
   const { lang, t } = useLang();
   // The request in flight, so Stop can cancel it.
+  const busyRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
@@ -99,7 +100,8 @@ export function useChat(
    */
   const guarded = useCallback(
     async (action: () => Promise<void>) => {
-      if (!uid || pending) return; // no duplicate requests while one is running
+      if (!uid || pending || busyRef.current) return; // no duplicate requests while one is running
+      busyRef.current = true; // synchronous: `pending` only updates on the next render
       const controller = new AbortController();
       abortRef.current = controller;
       setPending(true);
@@ -113,6 +115,7 @@ export function useChat(
           await post("system", msg, "text", "error").catch(() => {});
         }
       } finally {
+        busyRef.current = false;
         if (abortRef.current === controller) {
           abortRef.current = null;
           setPending(false);
@@ -184,7 +187,7 @@ export function useChat(
         const pacing = detectPacing(message) ?? defaultPacing;
         const requestedParts = parseSplitRequest(message) ?? undefined;
         // One batched write for the whole request (up to 25 tasks), so the canvas updates once.
-        await addTasks(result.tasks.map((x) => ({ title: x.title, deadline: x.deadline, durationMin: x.durationMin, pacing, requestedParts })));
+        await addTasks(result.tasks.map((x) => ({ title: x.title, deadline: x.deadline, durationMin: x.durationMin, fixedStartTime: x.fixedStart, pacing, requestedParts: x.fixedStart ? undefined : requestedParts })));
         await post("assistant", result.reply, "text", "sent"); // new tasks are folded into the plan by the auto re-plan
       }),
     [guarded, post, runSchedule, addTasks, defaultPacing, applyActions, lang],

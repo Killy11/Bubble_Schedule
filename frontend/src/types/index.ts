@@ -88,6 +88,12 @@ export interface Task {
   deadline?: ISODateTime;
   description?: string;
   durationMin?: number; // OPTIONAL, user-provided
+  /**
+   * A fixed time slot ("17:00–19:00"): the task owns exactly [fixedStartTime, fixedStartTime + durationMin).
+   * Separate from `deadline` (which only says "finish by"). The planner never moves it; other tasks work around it.
+   */
+  isFixedTime?: boolean;
+  fixedStartTime?: ISODateTime;
   loggedMinutes: number; // whole minutes already spent (defaults to 0); shrinks the bubble
   /** Seconds of the open timer session while it is paused. The running part is `now − startedAt`. Cleared by "Stop & confirm". */
   accumulatedSeconds?: number;

@@ -43,6 +43,8 @@ export interface NewTaskInput {
   pacing?: Pacing;
   /** The user asked for exactly this many parts. */
   requestedParts?: number;
+  /** Fixed time slot: the task starts exactly here and lasts durationMin. */
+  fixedStartTime?: string;
   /** Duration guessed from the user's history; stored as an AI-style estimate, not as a user value. */
   historyEstimate?: { durationMin: number; reasoning: string };
 }
@@ -123,6 +125,7 @@ export function useTasks(
             recurrence,
             pacing: input.pacing,
             requestedParts: input.requestedParts,
+            ...(input.fixedStartTime ? { isFixedTime: true, fixedStartTime: input.fixedStartTime, subtasksAttempted: true } : {}),
             seriesId: recurrence ? ref.id : undefined,
             status: "active",
             createdAt: nowIso,
@@ -490,7 +493,11 @@ export function useTasks(
   const updateTask = useCallback(
     async (
       task: Task,
-      patch: { title: string; deadline: string | null; durationMin: number | null; pacing: Pacing; loggedMinutes?: number },
+      patch: {
+        title: string; deadline: string | null; durationMin: number | null; pacing: Pacing; loggedMinutes?: number;
+        /** string: pin to this start · null: release the fixed slot · undefined: leave as is */
+        fixedStartTime?: string | null;
+      },
     ) => {
       if (!uid) return;
       const deadlineChanged = (patch.deadline ? Date.parse(patch.deadline) : null) !== (task.deadline ? Date.parse(task.deadline) : null);
@@ -500,6 +507,11 @@ export function useTasks(
         durationMin: patch.durationMin ?? deleteField(),
         pacing: patch.pacing,
         ...(patch.loggedMinutes !== undefined ? { loggedMinutes: patch.loggedMinutes } : {}),
+        ...(typeof patch.fixedStartTime === "string"
+          ? { isFixedTime: true, fixedStartTime: new Date(patch.fixedStartTime), subtasks: deleteField(), subtasksAttempted: true }
+          : patch.fixedStartTime === null
+            ? { isFixedTime: deleteField(), fixedStartTime: deleteField() }
+            : {}),
         // A new deadline deserves fresh "due soon" / "expired" alerts.
         ...(deadlineChanged
           ? { notified: false, notifiedOverdue: false, notified24hDue: false, oneDayNotified: patch.deadline ? oneDayFlagFor(patch.deadline, Date.now()) : deleteField() }
