@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   try {
     if ((request.headers.get("content-type") ?? "").includes("multipart/form-data")) {
       const form = await request.formData();
-      body = { message: String(form.get("message") ?? ""), nowISO: String(form.get("nowISO") ?? "") };
+      body = { message: String(form.get("message") ?? ""), nowISO: String(form.get("nowISO") ?? ""), timeZone: String(form.get("timeZone") ?? "") };
       const files = form.getAll("files").filter((f): f is File => f instanceof File);
       if (files.length > MAX_FILES) return err("Up to 3 files at a time.", 400);
       if (files.reduce((n, f) => n + f.size, 0) > MAX_TOTAL_BYTES) return err("The file is larger than 4 MB.", 413);
@@ -68,7 +68,9 @@ export async function POST(request: Request) {
     db.collection(`users/${uid}/messages`).orderBy("createdAt", "desc").limit(HISTORY_MESSAGES + 1).get(),
   ]);
   const userDoc = userSnap.exists ? fromFirestoreData<User>(userSnap.data()) : null;
-  const tz = userDoc?.timezone ?? "UTC";
+  // The device's real zone wins over the stored one (and over the server's UTC clock).
+  const validZone = (z?: string) => { if (!z) return false; try { new Intl.DateTimeFormat("en", { timeZone: z }); return true; } catch { return false; } };
+  const tz = validZone(body.timeZone) ? body.timeZone! : (userDoc?.timezone ?? "UTC");
   const userMemory = Array.isArray(userDoc?.userMemory) ? userDoc.userMemory : [];
 
   const existing = taskSnap.docs
@@ -104,10 +106,11 @@ export async function POST(request: Request) {
         title: t.title,
         deadline: t.deadline ? toLocalNaive(t.deadline, tz) : null,
         durationMin: t.durationMin ?? null,
+        pinned: !!t.isFixedTime,
         // Only a real fixed slot counts as "scheduled at a time"; a deadline alone never does.
         // Steps of a split task: move one by its id; the others stay as they are.
-        parts: (t.subtasks ?? []).filter((s) => !s.completed).map((s) => ({
-          id: s.id, title: s.title, durationMin: s.durationMinutes, pinned: !!s.pinned,
+        parts: (t.subtasks ?? []).map((s, i) => ({
+          n: i + 1, id: s.id, title: s.title, durationMin: s.durationMinutes, pinned: !!s.pinned, done: s.completed,
           start: s.scheduledStart ? toLocalNaive(s.scheduledStart, tz) : null,
           end: s.scheduledEnd ? toLocalNaive(s.scheduledEnd, tz) : null,
         })),
@@ -145,11 +148,11 @@ export async function POST(request: Request) {
     console.warn("assistant: memory update failed", e);
   }
 
-  let tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz) : [];
+  let tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz, now.getTime()) : [];
   // Real, validated changes win over the label: a "move X to 17–19" is executed even if the model called it "schedule".
   const titleById = new Map(existing.map((t) => [t.id, t.title]));
   const partIds = new Map(existing.map((t) => [t.id, new Set((t.subtasks ?? []).filter((s) => !s.completed).map((s) => s.id))]));
-  const actions = normalizeActions(raw.actions ?? [], new Set(existing.map((t) => t.id)), tz, partIds).map((a) => ({
+  const actions = normalizeActions(raw.actions ?? [], new Set(existing.map((t) => t.id)), tz, partIds, now.getTime()).map((a) => ({
     ...a,
     taskTitle: titleById.get(a.taskId),
   }));

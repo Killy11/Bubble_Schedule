@@ -155,6 +155,7 @@ export const UK: Record<string, string> = {
   "Latest AI changes": "Останні зміни ШІ",
   Added: "Додано",
   Moved: "Перенесено",
+  Retry: "Повторити",
   Updated: "Змінено",
   Deleted: "Видалено",
   Removed: "Видалено",

@@ -27,6 +27,10 @@ async function postJson<T>(url: string, body: unknown, signal?: AbortSignal): Pr
 
 import { useLang } from "@/context/LanguageProvider";
 
+const deviceZone = () => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return "UTC"; }
+};
+
 export function useChat(
   uid: string | undefined,
   targetDate: DateKey,
@@ -40,6 +44,7 @@ export function useChat(
   const { lang, t } = useLang();
   // The request in flight, so Stop can cancel it.
   const busyRef = useRef(false);
+  const lastAsk = useRef<{ text: string; files: File[] } | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
@@ -166,22 +171,24 @@ export function useChat(
    *  answer       → just show the reply
    */
   const ask = useCallback(
-    (text: string, files: File[] = []) =>
+    (text: string, files: File[] = [], isRetry = false) =>
       guarded(async () => {
+        lastAsk.current = { text, files };
         const message = text.trim() || (files.length ? (lang === "uk" ? "Проаналізуй і підсумуй цей файл." : "Analyze and summarize this file.") : "");
         if (!message) return;
         const meta = await Promise.all(files.map(async (f) => ({ name: f.name, type: f.type || extOf(f.name), size: f.size, thumb: await thumbnailOf(f) })));
-        await post("user", message, "text", "sent", meta);
+        if (!isRetry) await post("user", message, "text", "sent", meta); // a retry re-sends the same message, no second copy
         // With files, the request is multipart: Gemini receives the PDFs / images inline and the other documents as text.
         let payload: FormData | AssistantRequest;
         if (files.length) {
           const form = new FormData();
           form.set("message", message);
           form.set("nowISO", new Date().toISOString());
+          form.set("timeZone", deviceZone());
           for (const f of await Promise.all(files.map(prepareAttachment))) form.append("files", f, f.name);
           payload = form;
         } else {
-          payload = { message, nowISO: new Date().toISOString() } satisfies AssistantRequest;
+          payload = { message, nowISO: new Date().toISOString(), timeZone: deviceZone() } satisfies AssistantRequest;
         }
         const result = await postJson<AssistantResponse>("/api/assistant", payload, abortRef.current?.signal);
 
@@ -197,7 +204,8 @@ export function useChat(
             const title = a.taskTitle ?? a.title ?? "";
             const slotEnd = a.fixedStart && a.durationMin ? new Date(Date.parse(a.fixedStart) + a.durationMin * 60_000).toISOString() : undefined;
             noteAction(
-              a.type === "split" ? { type: "updated", title }
+              a.subtaskId && (a.type === "complete" || a.type === "delete") ? { type: a.type === "complete" ? "completed" : "deleted", title }
+              : a.type === "split" ? { type: "updated", title }
               : a.subtaskId && a.fixedStart ? { type: "moved", title, start: a.fixedStart, end: slotEnd }
               : a.type === "delete" ? { type: "deleted", title }
               : a.type === "complete" ? { type: "completed", title }
@@ -227,5 +235,11 @@ export function useChat(
     [guarded, post, runSchedule, addTasks, defaultPacing, applyActions, lang, noteAction],
   );
 
-  return { messages, pending, send, ask, stop };
+  /** Send the last message again after a network / server error. */
+  const retry = useCallback(() => {
+    const last = lastAsk.current;
+    if (last) void ask(last.text, last.files, true);
+  }, [ask]);
+
+  return { messages, pending, send, ask, stop, retry };
 }

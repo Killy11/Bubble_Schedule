@@ -76,6 +76,7 @@ export function ChatPanel({
   pending,
   onAsk,
   onStop,
+  onRetry,
 }: {
   messages: ChatMessage[];
   pending: boolean;
@@ -83,6 +84,8 @@ export function ChatPanel({
   onAsk: (text: string, files?: File[]) => void;
   /** Cancel the request in flight. */
   onStop: () => void;
+  /** Send the last message again (shown after an error). */
+  onRetry?: () => void;
 }) {
   const { t, lang } = useLang();
   // The draft lives here, in this component only: a keystroke re-renders this composer and nothing above it.
@@ -157,6 +160,11 @@ export function ChatPanel({
       <div className={`min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain p-4 transition ${dragging ? "ring-2 ring-inset ring-[rgb(var(--glow-a))]" : ""}`}>
         {messages.length === 0 && <p className="pt-6 text-center text-sm text-muted">{t("Hi! Tell the artificial intelligence what to do, and when.")}</p>}
         <MessageList messages={messages} />
+        {!pending && onRetry && messages[messages.length - 1]?.status === "error" && (
+          <button type="button" onClick={onRetry} className="glass rounded-full px-4 py-1.5 text-xs font-medium transition hover:brightness-125">
+            {t("Retry")}
+          </button>
+        )}
         {pending && (
           <div className="flex items-center gap-2 text-sm text-muted">
             <Loader2 className="h-4 w-4 animate-spin" /> {t("Thinking…")}

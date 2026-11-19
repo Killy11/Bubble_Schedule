@@ -49,6 +49,8 @@ export interface SessionRequest {
 export interface AssistantRequest {
   message: string;
   nowISO: ISODateTime;
+  /** The device's real IANA zone (e.g. "Europe/Kyiv"): the server clock is UTC, so "10:00" must be read in this zone. */
+  timeZone?: string;
 }
 
 /** A task the assistant extracted, matching the Task schema (title, time). */
@@ -75,7 +77,7 @@ export interface AssistantAction {
   fixedStart?: ISODateTime;
   /** Release a fixed time slot: the planner moves the task freely again. */
   clearFixed?: boolean;
-  /** Set: the change is for this one part of the task only (its time window), nothing else. */
+  /** Set: the change is for this one part of the task only (its time window, or "complete" / "delete" of that part). */
   subtaskId?: string;
   /** Filled by the server, for the one-line "latest AI change" note. */
   taskTitle?: string;

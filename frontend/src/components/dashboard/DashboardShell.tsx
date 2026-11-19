@@ -265,7 +265,7 @@ export function DashboardShell() {
   // AI edits go through the same task functions as the UI, so the canvas and the timeline change together.
   const applyRef = useRef<(actions: AssistantAction[]) => Promise<void>>(async () => {});
   const applyActions = useCallback((actions: AssistantAction[]) => applyRef.current(actions), []);
-  const { messages, pending, ask, stop } = useChat(uid, today, addTasksSmart, defaultPacing, applyActions);
+  const { messages, pending, ask, stop, retry } = useChat(uid, today, addTasksSmart, defaultPacing, applyActions);
 
   const [tab, setTab] = useState<Tab>("bubbles");
   const [formOpen, setFormOpen] = useState(false);
@@ -511,7 +511,12 @@ export function DashboardShell() {
       for (const a of actions) {
         const task = tasks.find((x) => x.id === a.taskId && x.status === "active");
         if (!task) continue;
-        if (a.type === "delete") {
+        const part = a.subtaskId ? task.subtasks?.find((x) => x.id === a.subtaskId) : undefined;
+        if (a.subtaskId && (a.type === "complete" || a.type === "delete")) {
+          // One step only: the parent task stays.
+          if (part && a.type === "complete" && !part.completed) await toggleSubtaskFlow(task, part);
+          else if (part && a.type === "delete") await saveSubtasks(task, (task.subtasks ?? []).filter((x) => x.id !== part.id));
+        } else if (a.type === "delete") {
           await removeTask(task);
         } else if (a.type === "complete") {
           playBubblePop();
@@ -651,7 +656,7 @@ export function DashboardShell() {
                 }}
               />
             ) : (
-              <ChatPanel messages={messages} pending={pending} onAsk={ask} onStop={stop} />
+              <ChatPanel messages={messages} pending={pending} onAsk={ask} onStop={stop} onRetry={retry} />
             )}
           </div>
         </aside>
