@@ -76,11 +76,41 @@ export function progressLabel(task: Task, now: number, t: Tr = same, locale?: st
  * (completed parts keep their time). 5-minute steps, at least 5 each; the last part takes the rounding remainder.
  * A pinned part keeps its start and its window follows its new length.
  */
-export function scaleSubtasks(subtasks: readonly Subtask[], totalMin: number): Subtask[] {
-  const open = subtasks.filter((s) => !s.completed);
+export function scaleSubtasks(
+  subtasks: readonly Subtask[],
+  totalMin: number,
+  /** The pacing's split threshold (e.g. 180 min): above it the task needs more parts, ~PART_TARGET_MIN each. */
+  splitAtMin: number | null = null,
+  /** Title base for parts added by a re-split. */
+  title = "",
+): Subtask[] {
+  let open = subtasks.filter((s) => !s.completed);
   if (open.length === 0) return [...subtasks];
   const doneMin = subtasks.filter((s) => s.completed).reduce((n, s) => n + s.durationMinutes, 0);
   const target = Math.max(5 * open.length, Math.round(totalMin - doneMin));
+  // Over the split threshold (3 h for Balanced): grow the number of parts, never shrink it, keep finished parts.
+  const want = splitAtMin && totalMin > splitAtMin ? Math.min(MAX_SUBTASKS - (subtasks.length - open.length), Math.ceil(target / PART_TARGET_MIN)) : 0;
+  if (want > open.length) {
+    const added: Subtask[] = Array.from({ length: want - open.length }, (_, i) => ({
+      id: newSubtaskId(), title: `${title} · ${subtasks.length + i + 1}`.trim(), durationMinutes: 5, completed: false,
+    }));
+    const per = Math.max(5, Math.floor(target / want / 5) * 5);
+    const grown = [...subtasks, ...added];
+    open = grown.filter((s) => !s.completed);
+    let used = 0;
+    const next = new Map<string, number>();
+    open.forEach((s, i) => {
+      const d = i === open.length - 1 ? Math.max(5, target - used) : per;
+      next.set(s.id, d);
+      used += d;
+    });
+    return grown.map((s) => {
+      const d = next.get(s.id);
+      if (d === undefined) return s;
+      const pinnedSpan = s.pinned && s.scheduledStart;
+      return { ...s, durationMinutes: d, ...(pinnedSpan ? { scheduledEnd: new Date(Date.parse(s.scheduledStart!) + d * 60_000).toISOString() } : {}) };
+    });
+  }
   const sum = open.reduce((n, s) => n + s.durationMinutes, 0) || open.length;
   const next = new Map<string, number>();
   let used = 0;

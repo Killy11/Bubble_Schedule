@@ -1,6 +1,6 @@
 "use client";
 
-import { scaleSubtasks } from "@/lib/subtasks";
+import { DECOMPOSE_AT_MIN, scaleSubtasks } from "@/lib/subtasks";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   collection,
@@ -510,7 +510,7 @@ export function useTasks(
         ...(patch.loggedMinutes !== undefined ? { loggedMinutes: patch.loggedMinutes } : {}),
         // A new total on a split task: the parts are rescaled so they add up to it (the re-plan then re-packs them).
         ...(task.subtasks?.length && patch.durationMin && patch.durationMin !== task.durationMin && typeof patch.fixedStartTime !== "string"
-          ? { subtasks: toFirestoreData(scaleSubtasks(task.subtasks, patch.durationMin)) }
+          ? { subtasks: toFirestoreData(scaleSubtasks(task.subtasks, patch.durationMin, DECOMPOSE_AT_MIN[patch.pacing], task.title)) }
           : {}),
         ...(typeof patch.fixedStartTime === "string"
           ? { isFixedTime: true, fixedStartTime: new Date(patch.fixedStartTime), subtasks: deleteField(), subtasksAttempted: true }
