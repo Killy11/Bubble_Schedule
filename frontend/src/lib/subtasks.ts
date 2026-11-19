@@ -70,3 +70,36 @@ export function progressLabel(task: Task, now: number, t: Tr = same, locale?: st
   if (!p.next) return `${p.done}/${p.total} ${t("parts")} · ${t("all done")}`;
   return `${p.done}/${p.total} ${t("parts")} · ${t("Next")}: ${formatWindow(p.next, now, t, locale)}`;
 }
+
+/**
+ * The task's total duration changed: rescale its open parts so that all parts add up to the new total
+ * (completed parts keep their time). 5-minute steps, at least 5 each; the last part takes the rounding remainder.
+ * A pinned part keeps its start and its window follows its new length.
+ */
+export function scaleSubtasks(subtasks: readonly Subtask[], totalMin: number): Subtask[] {
+  const open = subtasks.filter((s) => !s.completed);
+  if (open.length === 0) return [...subtasks];
+  const doneMin = subtasks.filter((s) => s.completed).reduce((n, s) => n + s.durationMinutes, 0);
+  const target = Math.max(5 * open.length, Math.round(totalMin - doneMin));
+  const sum = open.reduce((n, s) => n + s.durationMinutes, 0) || open.length;
+  const next = new Map<string, number>();
+  let used = 0;
+  open.forEach((s, i) => {
+    const d =
+      i === open.length - 1
+        ? Math.max(5, target - used)
+        : Math.max(5, Math.round(((s.durationMinutes / sum) * target) / 5) * 5);
+    next.set(s.id, d);
+    used += d;
+  });
+  return subtasks.map((s) => {
+    const d = next.get(s.id);
+    if (d === undefined || d === s.durationMinutes) return s;
+    const pinnedSpan = s.pinned && s.scheduledStart;
+    return {
+      ...s,
+      durationMinutes: d,
+      ...(pinnedSpan ? { scheduledEnd: new Date(Date.parse(s.scheduledStart!) + d * 60_000).toISOString() } : {}),
+    };
+  });
+}

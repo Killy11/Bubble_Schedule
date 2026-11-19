@@ -11,6 +11,7 @@ Read the user's message and decide what they want:
 - "modify_tasks": they want to change tasks that already exist (move/reschedule a task, change its deadline or duration, mark it done, delete it, remove its deadline). Put each change in "actions", matching the task by id from existingTasks. Do not create new tasks for these.
 A request about ONE named task and a time ("move the gym to 17–19", "переніс зал з 17 по 19") is ALWAYS "modify_tasks" with a real action, never "schedule" (which is only for re-planning the whole day without naming a task). If you cannot match the task in existingTasks, ask which task in "reply" with intent "answer". In "reply" never say a task was moved, scheduled or changed unless the same response contains the action for it.
 SPLITTING. "Split / break X into N parts" ("розбий домашку з економіки на 3 частини", "розподіли по розкладу") on an EXISTING task is a "split" action with that task's "taskId" and "parts" N (2–12): the app then makes N steps (1/N…N/N) inside that same task and spreads them over the free time before its deadline, starting now. Never create new tasks for the parts ("частина 3" etc.), never put a clock time on them, and do not change the deadline. Only if the user also names a clock time for a step is it a fixed slot (see PARTS).
+MATCHING. Match tasks in existingTasks by meaning, not exact text: ignore inflection, case and a suffix like "(частина 3)" ("домашку з економіки" = "Домашка з економіки"). A request to change a deadline or a duration of something that already exists is an "update" action on that task, never a new task. "Total duration 3 hours" = durationMin 180 on that task (its parts are rescaled by the app); a new deadline is a LOCAL "YYYY-MM-DDTHH:mm" read from the calendar.
 CALENDAR. The "calendar" list in the context maps the next 14 dates to their weekdays and gives today/tomorrow. Always read a weekday ("Friday", "в п'ятницю") from that list; never compute weekdays yourself. A bare weekday means the nearest upcoming such date (today counts only if it is that weekday and the time is still ahead).
 PARTS OF A TASK. A task in existingTasks may have "parts" (steps 1/4, 2/4…), each with its own id, title, durationMin and start/end. When the user moves a PART ("the first part", "step 2", "першу частину") return an "update" action with the task's "taskId" AND that part's "subtaskId", plus "fixedStart"/"fixedEnd" for its new window ("in 20 minutes" = NOW + 20 minutes; the length stays the part's durationMin). Such an action changes ONLY that part: leave "title", "deadline", "durationMin" null and "removeDeadline" false, and never touch the other parts. For a task that has parts, never put a fixedStart on the task itself without a subtaskId. NEVER change, shorten or move a task's deadline unless the user explicitly asks to change the deadline: set "deadline" only for that.
 FIXED TIME SLOTS. When the user asks for a task at a specific time or window ("at 17:00", "from 17 to 19", "put it 17:00–19:00", "move X to 6pm"), that is a fixed slot, not a deadline: use intent "modify_tasks" with an "update" action that sets "fixedStart" (LOCAL "YYYY-MM-DDTHH:mm") and "fixedEnd" (LOCAL; for a single time use fixedStart + the task's durationMin, or 60 minutes if unknown). Also set "deadline" to the same value as fixedEnd. Never answer "it is already scheduled" by computing deadline minus duration: the only proof that a task has a fixed slot is existingTasks[].fixedStart. If the task has no fixedStart, the request still needs the action. To release a slot ("let the AI move it again") set "clearFixed" true. For a NEW task with a requested time, create it with "fixedStart" and "fixedEnd" in "tasks". Never tell the user to refresh the page or re-plan manually: the app re-plans by itself right after your action, and other tasks move around the fixed slot. Only say a change was made when you returned the action for it.
@@ -171,6 +172,26 @@ export function normalizeActions(
 }
 
 /** Turn the model's raw tasks into validated, schema-shaped tasks. Never trusts the model's output. */
+/** Lower-case word stems of a title, without "(частина 3)" style suffixes, so inflections still match ("домашку" ~ "Домашка"). */
+function stems(title: string): Set<string> {
+  const clean = title.toLowerCase().replace(/\([^)]*\)/g, " ").replace(/\b(частина|part|step|крок)\s*\d+(\/\d+)?/g, " ");
+  return new Set(
+    clean.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2).map((w) => w.slice(0, Math.max(4, Math.min(5, w.length - 1)))),
+  );
+}
+
+/** The existing task a new title really refers to, if any (all words of the shorter title appear in the other). */
+export function findSimilarTask<T extends { id: string; title: string }>(title: string, existing: readonly T[]): T | undefined {
+  const a = stems(title);
+  if (a.size === 0) return undefined;
+  return existing.find((t) => {
+    const b = stems(t.title);
+    if (b.size === 0) return false;
+    const [small, big] = a.size <= b.size ? [a, b] : [b, a];
+    return [...small].every((w) => big.has(w));
+  });
+}
+
 export function normalizeTasks(raw: RawAssistantTask[], tz: string): AssistantTask[] {
   const out: AssistantTask[] = [];
   for (const t of raw.slice(0, MAX_TASKS)) {

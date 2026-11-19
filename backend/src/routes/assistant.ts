@@ -6,6 +6,7 @@ import { fromFirestoreData } from "@/lib/firebase/converters";
 import {
   ASSISTANT_JSON_SCHEMA,
   ASSISTANT_SYSTEM_PROMPT,
+  findSimilarTask,
   localNow,
   mockAssistant,
   normalizeActions,
@@ -144,7 +145,7 @@ export async function POST(request: Request) {
     console.warn("assistant: memory update failed", e);
   }
 
-  const tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz) : [];
+  let tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz) : [];
   // Real, validated changes win over the label: a "move X to 17–19" is executed even if the model called it "schedule".
   const titleById = new Map(existing.map((t) => [t.id, t.title]));
   const partIds = new Map(existing.map((t) => [t.id, new Set((t.subtasks ?? []).filter((s) => !s.completed).map((s) => s.id))]));
@@ -152,7 +153,20 @@ export async function POST(request: Request) {
     ...a,
     taskTitle: titleById.get(a.taskId),
   }));
-  if (actions.length > 0 && raw.intent !== "create_tasks") raw.intent = "modify_tasks";
+  // A "new" task that is really an existing one (fuzzy title match) becomes an update of it: no stale duplicates.
+  const merged = new Set<string>();
+  const kept: typeof tasks = [];
+  for (const nt of tasks) {
+    const hit = findSimilarTask(nt.title, existing.filter((e) => !merged.has(e.id)));
+    if (!hit || actions.some((a) => a.taskId === hit.id)) { kept.push(nt); continue; }
+    merged.add(hit.id);
+    actions.push({
+      type: "update", taskId: hit.id, taskTitle: hit.title,
+      deadline: nt.deadline, durationMin: nt.durationMin, fixedStart: nt.fixedStart,
+    });
+  }
+  tasks = kept;
+  if (actions.length > 0) raw.intent = "modify_tasks";
   // The model claimed a change but nothing valid came back: never let the reply say it was done.
   const failedChange =
     (raw.intent === "create_tasks" && tasks.length === 0) ||

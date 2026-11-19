@@ -205,6 +205,10 @@ export function useChat(
               : { type: "updated", title },
             );
           }
+          // A message can both change an existing task and add new ones.
+          if (result.tasks.length) {
+            await addTasks(result.tasks.map((x) => ({ title: x.title, deadline: x.deadline, durationMin: x.durationMin, fixedStartTime: x.fixedStart, pacing: defaultPacing })));
+          }
           await post("assistant", result.reply, "text", "sent");
           return;
         }
