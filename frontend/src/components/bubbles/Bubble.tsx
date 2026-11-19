@@ -142,12 +142,20 @@ export function Bubble({
             title={task.title}
             diameter={place.d}
             subtitle={
-              place.d >= 100
-                ? parts ? `${parts.done}/${parts.total} ${t("parts")}` : task.deadline ? formatDeadline(task.deadline, now, t, lang) : undefined
-                : undefined
+              // The deadline is always the subtitle, steps or not; the step count is a small pill (below).
+              place.d >= 84 && task.deadline ? formatDeadline(task.deadline, now, t, lang) : undefined
             }
           />
         </Orb>
+        {parts && place.d >= 84 && (
+          <span
+            title={progressLabel(task, now, t, lang) ?? undefined}
+            className="orb-text glass pointer-events-none absolute left-1/2 -translate-x-1/2 rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums leading-tight"
+            style={{ top: place.d * 0.17 }}
+          >
+            {parts.done}/{parts.total}
+          </span>
+        )}
         {running && place.d >= 64 && (
           // a running timer: just a small live pill, no toolbars
           <span className="orb-text pointer-events-none absolute inset-x-0 bottom-[14%] text-center text-[11px] font-semibold tabular-nums text-foreground">

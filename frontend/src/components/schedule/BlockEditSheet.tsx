@@ -127,7 +127,7 @@ function Form({
             onClick={onShowTask}
             className="glass rounded-full px-4 py-3 text-sm font-medium transition hover:brightness-125 disabled:opacity-60"
           >
-            {t("Task details")}
+            {t("Edit task")}
           </button>
         )}
         <button

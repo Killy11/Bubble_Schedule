@@ -147,7 +147,7 @@ export function SchedulePanel({
                   entry={e}
                   now={now}
                   onOpen={() => (e.kind === "part" ? onOpenPart(e.task.id, e.sub.id) : onOpenTask(e.task.id))}
-                  onEditTime={e.kind === "block" ? () => onEditBlockTime(e.block.id) : undefined}
+                  onEditTime={() => onEditBlockTime(e.kind === "part" ? `part_${e.sub.id}` : e.block.id)}
                   onComplete={() => (e.kind === "part" ? onToggleSubtask(e.task, e.sub) : onComplete(e.task.id))}
                   onAdjust={(d) => onAdjust(e.task, d)}
                   onToggleTimer={() => onToggleTimer(e.task)}
@@ -190,12 +190,12 @@ function Card({
   const title = e.kind === "part" ? e.sub.title : e.block.title;
   const minutes = Math.round((e.end - e.start) / 60_000);
   const pinned = e.kind === "block" && e.block.isPinned;
-  const subtitle =
-    e.kind === "part"
-      ? `${t("Step {a}/{b}", { a: e.step, b: e.steps })} · ${e.task.title}`
-      : e.task.deadline
-        ? `${t("Due")} ${formatDeadline(e.task.deadline, now, t, lang)}`
-        : null;
+  // Every card shows the deadline; for a step, its position is a compact tag ("2/4") instead of replacing it.
+  const stepTag = e.kind === "part" ? `${e.step}/${e.steps}` : null;
+  const subtitle = [
+    e.kind === "part" ? e.task.title : null,
+    e.task.deadline ? `${t("Due")} ${formatDeadline(e.task.deadline, now, t, lang)}` : null,
+  ].filter(Boolean).join(" · ") || null;
 
   return (
     <li className={`relative hue-${hue}`}>
@@ -225,6 +225,7 @@ function Card({
                 {formatTime(new Date(e.start).toISOString())} – {formatTime(new Date(e.end).toISOString())}
               </span>
               {pinned && <Pin aria-label={t("Pinned")} className="h-3 w-3 text-foreground" />}
+              {stepTag && <span title={t("Step {a}/{b}", { a: e.kind === "part" ? e.step : 0, b: e.kind === "part" ? e.steps : 0 })} className="glass rounded-full px-1.5 py-px text-[10px] font-semibold tabular-nums text-foreground">{stepTag}</span>}
               <span className="hue-badge">{t(HUE_META[hue].label)}</span>
             </p>
             <p title={title} className="line-clamp-2 break-words text-sm font-medium">{title}</p>

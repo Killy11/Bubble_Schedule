@@ -49,7 +49,7 @@ import { oneDayBody } from "@/lib/oneDay";
 import { useRebalance } from "@/hooks/useRebalance";
 import { formatWindow, nextSubtask } from "@/lib/subtasks";
 import { Header } from "./Header";
-import type { Subtask, Task } from "@/types";
+import type { ScheduleBlock, Subtask, Task } from "@/types";
 import type { AssistantAction } from "@/types/api";
 import { PartDetailSheet } from "@/components/schedule/PartDetailSheet";
 import type { NewTaskInput } from "@/hooks/useTasks";
@@ -285,6 +285,26 @@ export function DashboardShell() {
 
   // Canvas and timeline show live tasks only; past-deadline ones wait in Overdue.
   const active = useMemo(() => tasks.filter((x) => isLiveTask(x, now)), [tasks, now]);
+  // The Edit time window works on a standalone block or on one step of a split task (id "part_<subtaskId>").
+  const partBlocks = useMemo(
+    () =>
+      active.flatMap((x) =>
+        (x.subtasks ?? [])
+          .filter((s) => !s.completed && s.scheduledStart && s.scheduledEnd)
+          .map((s): ScheduleBlock => ({
+            id: `part_${s.id}`, taskId: x.id, title: `${x.title}: ${s.title}`, start: s.scheduledStart!, end: s.scheduledEnd!,
+            status: "planned", isPinned: !!s.pinned,
+          })),
+      ),
+    [active],
+  );
+  const editTarget =
+    schedule?.blocks.find((b) => b.id === editBlockId && b.status !== "done") ?? partBlocks.find((b) => b.id === editBlockId) ?? null;
+  const editOthers = [
+    ...(schedule?.blocks ?? []).filter((b) => b.status !== "done" && !partBlocks.some((p) => p.taskId === b.taskId)),
+    ...partBlocks,
+  ].filter((b) => b.id !== editBlockId);
+
   const overdue = useMemo(
     () => tasks.filter((x) => isOverdueTask(x, now)).sort((a, b) => deadlineMs(a) - deadlineMs(b)),
     [tasks, now],
@@ -706,14 +726,20 @@ export function DashboardShell() {
         }}
       />
       <BlockEditSheet
-        block={schedule?.blocks.find((b) => b.id === editBlockId && b.status !== "done") ?? null}
-        others={(schedule?.blocks ?? []).filter((b) => b.id !== editBlockId && b.status !== "done")}
+        block={editTarget}
+        others={editOthers}
         onClose={() => setEditBlockId(null)}
-        onSave={editBlock}
+        onSave={async (id, start, end, pinned) => {
+          if (!id.startsWith("part_")) return editBlock(id, start, end, pinned);
+          // A step: write its time (and pin) onto the parent task; the timeline follows live.
+          const task = tasks.find((x) => x.subtasks?.some((s) => `part_${s.id}` === id));
+          if (!task) throw new Error(t("Couldn't save. Please try again."));
+          await saveSubtasks(task, (task.subtasks ?? []).map((s) => (`part_${s.id}` === id ? { ...s, scheduledStart: start, scheduledEnd: end, pinned } : s)));
+        }}
         onShowTask={() => {
-          const taskId = schedule?.blocks.find((b) => b.id === editBlockId)?.taskId;
+          const taskId = editTarget?.taskId;
           setEditBlockId(null);
-          if (taskId) setOpenId(taskId);
+          if (taskId) { setFormEditId(taskId); setFormOpen(true); } // title, duration, deadline
         }}
       />
       <TaskDetailSheet
