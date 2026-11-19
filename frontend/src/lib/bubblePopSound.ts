@@ -3,6 +3,7 @@
  * without one, a "Yay!" cheer with a chime is synthesized with the Web Audio API. Browser autoplay rules are respected: every
  * failure is swallowed, so a blocked or missing sound never throws.
  */
+import { audioContext } from "@/lib/audioEngine";
 const FILE_TYPES = ["mp3", "m4a", "wav", "ogg"];
 const VOLUME = 1.0;
 const COOLDOWN_MS = 1200; // bulk or rapid completions make ONE cheer, and the cheer never overlaps itself
@@ -10,7 +11,6 @@ const COOLDOWN_MS = 1200; // bulk or rapid completions make ONE cheer, and the c
 let lastPlayed = 0;
 let custom: HTMLAudioElement | null = null;
 let probe: Promise<void> | null = null;
-let ctx: AudioContext | null = null;
 
 /** Look for a custom file once and preload it (cheap HEAD requests; a missing file is just a 404). */
 export function preloadBubblePop(): Promise<void> {
@@ -42,11 +42,9 @@ export function preloadBubblePop(): Promise<void> {
  */
 function synthPop() {
   try {
-    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AC) return;
-    ctx ??= new AC();
-    void ctx.resume().catch(() => {});
-    const c = ctx;
+    const c = audioContext(); // the shared, gesture-unlocked context
+    if (!c) return;
+    void c.resume().catch(() => {});
     const t0 = c.currentTime + 0.01;
 
     // Master: gain then a limiter-style compressor.
@@ -153,7 +151,6 @@ export function stopBubblePop(): void {
   try {
     custom?.pause();
     if (custom) custom.currentTime = 0;
-    void ctx?.suspend().catch(() => {}); // the next pop resumes it
   } catch {
     /* nothing playing */
   }
@@ -182,11 +179,9 @@ export function playBubblePop(): void {
 export function playTimerChime(): void {
   if (typeof window === "undefined") return;
   try {
-    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AC) return;
-    ctx ??= new AC();
-    void ctx.resume().catch(() => {});
-    const c = ctx;
+    const c = audioContext(); // the shared, gesture-unlocked context
+    if (!c) return;
+    void c.resume().catch(() => {});
     const t0 = c.currentTime + 0.02;
     const master = c.createGain();
     master.gain.value = 0.8;
