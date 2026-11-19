@@ -85,7 +85,7 @@ function Form({
 }) {
   const { t, lang } = useLang();
   const [title, setTitle] = useState(editTask?.title ?? "");
-  const micRef = useRef<{ abort: () => void } | null>(null);
+  const micRef = useRef<{ abort: () => void; finish: () => Promise<string | null> } | null>(null);
   const submitting = useRef(false);
   const [deadline, setDeadline] = useState(() => (editTask?.deadline ? toLocalInput(editTask.deadline) : defaultDeadline()));
   const [noDeadline, setNoDeadline] = useState(!!editTask && !editTask.deadline);

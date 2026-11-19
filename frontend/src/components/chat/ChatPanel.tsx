@@ -94,7 +94,7 @@ export function ChatPanel({
   const [fileError, setFileError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [listening, setListening] = useState(false); // dictating: keep the newest words in view
-  const micRef = useRef<{ abort: () => void } | null>(null);
+  const micRef = useRef<{ abort: () => void; finish: () => Promise<string | null> } | null>(null);
   const submitLock = useRef(false);
   const [sent, setSent] = useState(0); // bumps on submit, which also stops dictation
   const endRef = useRef<HTMLDivElement>(null);
@@ -135,11 +135,14 @@ export function ChatPanel({
     setFiles(next);
   }
 
-  function submit() {
+  async function submit() {
     if ((!text.trim() && files.length === 0) || pending || submitLock.current) return;
     submitLock.current = true; // Enter + click / key repeat in the same tick can't send twice
-    micRef.current?.abort(); // synchronous: no late microphone result can refill the box
-    const message = text;
+    let message = text;
+    // Dictating: let the recognizer hand over its last unfinalized words first, so none are lost.
+    const heard = await micRef.current?.finish();
+    if (heard) message = heard.slice(0, 1000);
+    micRef.current?.abort(); // no late microphone result can refill the box
     onAsk(message, files);
     setText("");
     setFiles([]);

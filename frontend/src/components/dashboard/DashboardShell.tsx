@@ -1,5 +1,7 @@
 "use client";
 
+import { doc, updateDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Calendar, MessageCircle, Plus, Sparkles } from "lucide-react";
@@ -141,6 +143,13 @@ export function DashboardShell() {
   }, []);
 
   // The language saved in the account is adopted on a device that has no choice of its own yet.
+  // Keep the stored time zone equal to the device's real one, so the server-side planner reads times like the chat does.
+  const deviceZone = typeof Intl !== "undefined" ? Intl.DateTimeFormat().resolvedOptions().timeZone : "";
+  const storedZone = profile?.timezone;
+  useEffect(() => {
+    if (!uid || !storedZone || !deviceZone || storedZone === deviceZone) return;
+    void updateDoc(doc(db, "users", uid), { timezone: deviceZone }).catch(() => {});
+  }, [uid, storedZone, deviceZone]);
   const savedLang = profile?.settings?.language;
   useEffect(() => {
     if (savedLang && readLocal("bs:lang") === null) setLang(savedLang);
@@ -515,7 +524,11 @@ export function DashboardShell() {
         if (a.subtaskId && (a.type === "complete" || a.type === "delete")) {
           // One step only: the parent task stays.
           if (part && a.type === "complete" && !part.completed) await toggleSubtaskFlow(task, part);
-          else if (part && a.type === "delete") await saveSubtasks(task, (task.subtasks ?? []).filter((x) => x.id !== part.id));
+          else if (part && a.type === "delete") {
+            // The total follows the remaining steps, so the task's time and its steps never disagree.
+            const rest = (task.subtasks ?? []).filter((x) => x.id !== part.id);
+            await saveSubtasks(task, rest, rest.length ? rest.reduce((n, x) => n + x.durationMinutes, 0) : undefined);
+          }
         } else if (a.type === "delete") {
           await removeTask(task);
         } else if (a.type === "complete") {
@@ -747,7 +760,21 @@ export function DashboardShell() {
         others={editOthers}
         onClose={() => setEditBlockId(null)}
         onSave={async (id, start, end, pinned) => {
-          if (!id.startsWith("part_")) return editBlock(id, start, end, pinned);
+          if (!id.startsWith("part_")) {
+            await editBlock(id, start, end, pinned);
+            // A fixed-time task keeps its slot on the task itself, so the re-plan can't revert the edit
+            // (unpinning releases the slot).
+            const task = tasks.find((x) => x.id === schedule?.blocks.find((b) => b.id === id)?.taskId);
+            if (task?.isFixedTime) {
+              const mins = Math.max(5, Math.round((Date.parse(end) - Date.parse(start)) / 60_000));
+              await updateTask(task, {
+                title: task.title, durationMin: mins, pacing: pacingOf(task),
+                deadline: task.deadline && Date.parse(task.deadline) >= Date.parse(end) ? task.deadline : end,
+                fixedStartTime: pinned ? start : null,
+              });
+            }
+            return;
+          }
           // A step: write its time (and pin) onto the parent task; the timeline follows live.
           const task = tasks.find((x) => x.subtasks?.some((s) => `part_${s.id}` === id));
           if (!task) throw new Error(t("Couldn't save. Please try again."));

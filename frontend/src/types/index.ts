@@ -28,6 +28,8 @@ export interface User {
 export interface LastAiAction {
   type: "added" | "moved" | "updated" | "completed" | "deleted";
   title: string;
+  /** The change was about one step of a split task: `title` is the step's title. */
+  step?: boolean;
   /** Number of tasks when several were added at once. */
   count?: number;
   start?: ISODateTime;

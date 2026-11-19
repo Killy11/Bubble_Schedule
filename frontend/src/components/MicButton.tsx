@@ -26,18 +26,18 @@ export function MicButton({
   /** Called when dictation starts or ends. */
   onListeningChange?: (listening: boolean) => void;
   /** `abort()` ends dictation synchronously and discards late microphone results: call it first thing on submit. */
-  controlRef?: Ref<{ abort: () => void }>;
+  controlRef?: Ref<{ abort: () => void; finish: () => Promise<string | null> }>;
 }) {
   const { toast } = useToast();
   const { t } = useLang();
   const [savedLang, setLang] = useSpeechLang();
   const lang = fixedLang ?? savedLang;
-  const { supported, listening, start, stop, abort } = useSpeechInput({
+  const { supported, listening, start, stop, abort, finish } = useSpeechInput({
     lang,
     onTranscript: onChange,
     onError: (message) => toast({ title: t("Voice input"), body: t(message) }),
   });
-  useImperativeHandle(controlRef, () => ({ abort }), [abort]);
+  useImperativeHandle(controlRef, () => ({ abort, finish }), [abort, finish]);
   useEffect(() => {
     onListeningChange?.(listening);
     // eslint-disable-next-line react-hooks/exhaustive-deps

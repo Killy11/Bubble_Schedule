@@ -7,6 +7,7 @@ import {
   ASSISTANT_JSON_SCHEMA,
   ASSISTANT_SYSTEM_PROMPT,
   findSimilarTask,
+  type Clock,
   localNow,
   mockAssistant,
   normalizeActions,
@@ -148,13 +149,16 @@ export async function POST(request: Request) {
     console.warn("assistant: memory update failed", e);
   }
 
-  let tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz, now.getTime()) : [];
+  // "today" said outright keeps a past time as asked (and warns); no date at all rolls it to tomorrow.
+  const clock: Clock = { nowMs: now.getTime(), explicitToday: /(сьогодні|today|tonight)/i.test(message) };
+  let tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz, clock) : [];
   // Real, validated changes win over the label: a "move X to 17–19" is executed even if the model called it "schedule".
   const titleById = new Map(existing.map((t) => [t.id, t.title]));
   const partIds = new Map(existing.map((t) => [t.id, new Set((t.subtasks ?? []).filter((s) => !s.completed).map((s) => s.id))]));
-  const actions = normalizeActions(raw.actions ?? [], new Set(existing.map((t) => t.id)), tz, partIds, now.getTime()).map((a) => ({
+  const actions = normalizeActions(raw.actions ?? [], new Set(existing.map((t) => t.id)), tz, partIds, clock).map((a) => ({
     ...a,
     taskTitle: titleById.get(a.taskId),
+    subtaskTitle: a.subtaskId ? existing.find((t) => t.id === a.taskId)?.subtasks?.find((s) => s.id === a.subtaskId)?.title : undefined,
   }));
   // A "new" task that is really an existing one (fuzzy title match) becomes an update of it: no stale duplicates.
   const merged = new Set<string>();
@@ -164,7 +168,7 @@ export async function POST(request: Request) {
     if (!hit || actions.some((a) => a.taskId === hit.id)) { kept.push(nt); continue; }
     merged.add(hit.id);
     actions.push({
-      type: "update", taskId: hit.id, taskTitle: hit.title,
+      type: "update", taskId: hit.id, taskTitle: hit.title, subtaskTitle: undefined,
       deadline: nt.deadline, durationMin: nt.durationMin, fixedStart: nt.fixedStart,
     });
   }
@@ -183,7 +187,12 @@ export async function POST(request: Request) {
       ? cyr
         ? "Не вдалося застосувати зміну: уточніть, будь ласка, яку задачу та на який час (наприклад, «Звіт з 17:00 до 19:00»)."
         : "I couldn't apply that change. Tell me which task and the exact time, for example “Report from 17:00 to 19:00”."
-      : String(raw.reply ?? "").slice(0, 1200) || "Done.",
+      : (String(raw.reply ?? "").slice(0, 1200) || "Done.") +
+        (clock.pastToday
+          ? cyr
+            ? " ⚠️ Цей час сьогодні вже минув, тож задача одразу стане простроченою. Скажіть, якщо мали на увазі завтра."
+            : " ⚠️ That time has already passed today, so the task will be overdue right away. Tell me if you meant tomorrow."
+          : ""),
     tasks,
     actions,
     ...(mock ? { mock: true } : {}),

@@ -88,6 +88,20 @@ export function scaleSubtasks(
   if (open.length === 0) return [...subtasks];
   const doneMin = subtasks.filter((s) => s.completed).reduce((n, s) => n + s.durationMinutes, 0);
   const target = Math.max(5 * open.length, Math.round(totalMin - doneMin));
+  // Shrinking: when the parts would become fragments (< 40 min), merge them into ~50-minute blocks.
+  // Unpinned parts from the end go first; the remaining time is spread over the parts that stay.
+  if ((totalMin - doneMin) / open.length < 40 && open.length > 1) {
+    const keep = Math.max(1, Math.round((totalMin - doneMin) / 50));
+    const drop = new Set<string>();
+    for (const s of [...open].reverse()) {
+      if (open.length - drop.size <= keep) break;
+      if (!s.pinned) drop.add(s.id);
+    }
+    if (drop.size) {
+      const rest = subtasks.filter((s) => !drop.has(s.id));
+      return scaleSubtasks(rest, totalMin, null, title);
+    }
+  }
   // Over the split threshold (3 h for Balanced): grow the number of parts, never shrink it, keep finished parts.
   const want = splitAtMin && totalMin > splitAtMin ? Math.min(MAX_SUBTASKS - (subtasks.length - open.length), Math.ceil(target / PART_TARGET_MIN)) : 0;
   if (want > open.length) {

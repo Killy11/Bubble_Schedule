@@ -156,6 +156,7 @@ export const UK: Record<string, string> = {
   Added: "Додано",
   Moved: "Перенесено",
   Retry: "Повторити",
+  step: "крок",
   Updated: "Змінено",
   Deleted: "Видалено",
   Removed: "Видалено",

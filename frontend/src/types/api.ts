@@ -81,6 +81,7 @@ export interface AssistantAction {
   subtaskId?: string;
   /** Filled by the server, for the one-line "latest AI change" note. */
   taskTitle?: string;
+  subtaskTitle?: string;
 }
 
 export interface AssistantResponse {

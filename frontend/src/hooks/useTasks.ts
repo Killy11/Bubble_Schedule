@@ -382,10 +382,11 @@ export function useTasks(
 
   /** Replace the whole parts list (add / edit / remove a part). */
   const saveSubtasks = useCallback(
-    async (task: Task, subtasks: Subtask[]) => {
+    async (task: Task, subtasks: Subtask[], durationMin?: number) => {
       if (!uid) return;
       await updateDoc(doc(db, "users", uid, "tasks", task.id), {
         subtasks: toFirestoreData(subtasks),
+        ...(durationMin ? { durationMin } : {}),
         subtasksAttempted: true,
         updatedAt: new Date(),
       });

@@ -64,7 +64,7 @@ export function SchedulePanel({
     const label = { added: "Added", moved: "Moved", updated: "Updated", completed: "Completed", deleted: "Deleted" }[a.type];
     const what = a.type === "added" && (a.count ?? 1) > 1 ? `${a.title} +${(a.count ?? 1) - 1}` : a.title;
     const when = a.start && a.end ? ` → ${hhmm(a.start)}–${hhmm(a.end)}` : a.start ? ` → ${hhmm(a.start)}` : "";
-    return `${t(label)}: ${what}${when}`;
+    return `${a.step && (a.type === "deleted" || a.type === "completed") ? `${t(label)} ${t("step")}` : t(label)}: ${what}${when}`;
   };
   const byId = new Map(tasks.map((x) => [x.id, x]));
 

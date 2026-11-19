@@ -85,6 +85,9 @@ export function useSpeechInput(opts: {
   const recRef = useRef<RecognitionLike | null>(null);
   /** Set by abort(): every late onresult / onend of that recording is discarded, so no stale text reaches the input. */
   const discardRef = useRef(false);
+  /** The newest full transcript (interim words included), and the waiter of finish(). */
+  const lastTextRef = useRef<string | null>(null);
+  const finishRef = useRef<(() => void) | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clearSilence = () => {
     if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
@@ -108,6 +111,7 @@ export function useSpeechInput(opts: {
       if (!Ctor) return cb.current.onError("Voice input isn't supported in this browser. Try Chrome, Edge or Safari.");
       const rec = new Ctor();
       discardRef.current = false;
+      lastTextRef.current = null;
       rec.lang = opts.lang;
       rec.interimResults = true;
       rec.continuous = true; // short pauses between words and sentences don't end the recording
@@ -122,7 +126,8 @@ export function useSpeechInput(opts: {
         armSilence();
         let text = "";
         for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
-        cb.current.onTranscript(prefix + text.trim());
+        lastTextRef.current = prefix + text.trim();
+        cb.current.onTranscript(lastTextRef.current);
       };
       rec.onerror = (e) => {
         if (e.error === "aborted" || discardRef.current) return;
@@ -132,6 +137,7 @@ export function useSpeechInput(opts: {
         clearSilence();
         if (recRef.current === rec) recRef.current = null; // a newer recording owns the ref now
         if (!discardRef.current || recRef.current === null) setListening(false);
+        finishRef.current?.(); // finish() was waiting for the last results
       };
       try {
         rec.start();
@@ -149,6 +155,28 @@ export function useSpeechInput(opts: {
     clearSilence();
     recRef.current?.stop();
   }, []);
+  /**
+   * Stop listening but keep what was heard: waits for the recognizer's last (still unfinalized) words, then resolves
+   * with the full transcript, or null when nothing was being recorded. Used by Send while dictating.
+   */
+  const finish = useCallback(
+    () =>
+      new Promise<string | null>((resolve) => {
+        const rec = recRef.current;
+        if (!rec) return resolve(null);
+        clearSilence();
+        const done = () => {
+          clearTimeout(timer);
+          finishRef.current = null;
+          resolve(lastTextRef.current);
+        };
+        const timer = setTimeout(done, 1500); // never hang the send on a silent recognizer
+        finishRef.current = done;
+        try { rec.stop(); } catch { done(); }
+      }),
+    [],
+  );
+
   /** Drop the recording AND everything it still has buffered: used when the text is submitted. Synchronous. */
   const abort = useCallback(() => {
     discardRef.current = true;
@@ -162,5 +190,5 @@ export function useSpeechInput(opts: {
     }
     setListening(false);
   }, []);
-  return { supported, listening, start, stop, abort };
+  return { supported, listening, start, stop, abort, finish };
 }

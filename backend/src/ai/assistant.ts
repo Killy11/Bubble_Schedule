@@ -110,7 +110,7 @@ export interface RawAssistantResult {
 }
 
 /** A requested window → exact start, end and length in whole minutes (5–480). Null when it isn't a usable window. */
-function fixedSlot(start: string | null | undefined, end: string | null | undefined, durationMin: number | null | undefined, tz: string, nowMs = 0) {
+function fixedSlot(start: string | null | undefined, end: string | null | undefined, durationMin: number | null | undefined, tz: string, clock?: Clock) {
   const s = start ? localNaiveToUtc(start, tz) : null;
   if (!s || Number.isNaN(s.getTime())) return null;
   let e = end ? localNaiveToUtc(end, tz) : null;
@@ -120,13 +120,20 @@ function fixedSlot(start: string | null | undefined, end: string | null | undefi
   }
   const mins = Math.max(5, Math.min(480, Math.round((e.getTime() - s.getTime()) / 60_000)));
   // A clock time that already passed today ("10:00" at 14:30) means tomorrow, never a slot in the past.
-  const shift = nowMs && s.getTime() < nowMs - 60_000 && nowMs - s.getTime() < 86_400_000 ? 86_400_000 : 0;
-  return { startIso: new Date(s.getTime() + shift).toISOString(), endIso: new Date(s.getTime() + shift + mins * 60_000).toISOString(), durationMin: mins };
+  const from = notInPast(s, clock);
+  return { startIso: from.toISOString(), endIso: new Date(from.getTime() + mins * 60_000).toISOString(), durationMin: mins };
 }
 
-/** A clock time that already passed today (no date given) is read as the same time tomorrow. */
-const notInPast = (d: Date, nowMs: number) =>
-  nowMs && d.getTime() < nowMs - 60_000 && nowMs - d.getTime() < 86_400_000 ? new Date(d.getTime() + 86_400_000) : d;
+/**
+ * The request's clock. A time that already passed today is read as tomorrow ONLY when the user gave no date
+ * ("at 10:00"). When they said "today" explicitly it is kept as asked and `pastToday` is raised so the reply warns.
+ */
+export interface Clock { nowMs: number; explicitToday: boolean; pastToday?: boolean }
+const notInPast = (d: Date, c?: Clock) => {
+  if (!c?.nowMs || d.getTime() >= c.nowMs - 60_000 || c.nowMs - d.getTime() >= 86_400_000) return d;
+  if (c.explicitToday) { c.pastToday = true; return d; }
+  return new Date(d.getTime() + 86_400_000);
+};
 
 /** Validate the model's actions: known task ids only, sane values, no empty updates. */
 export function normalizeActions(
@@ -136,7 +143,7 @@ export function normalizeActions(
   /** taskId → ids of its open parts; a task that has parts can only be re-timed through one of them. */
   parts: ReadonlyMap<string, ReadonlySet<string>> = new Map(),
   /** The request's "now": an unpinned time earlier than this is moved to the same time tomorrow. */
-  nowMs = 0,
+  clock?: Clock,
 ): AssistantAction[] {
   const out: AssistantAction[] = [];
   for (const a of raw.slice(0, MAX_TASKS)) {
@@ -157,7 +164,7 @@ export function normalizeActions(
     }
     if (a.type !== "update") continue;
     const parsed = a.deadline ? localNaiveToUtc(a.deadline, tz) : null;
-    const deadline = parsed && !Number.isNaN(parsed.getTime()) ? notInPast(parsed, nowMs).toISOString() : undefined;
+    const deadline = parsed && !Number.isNaN(parsed.getTime()) ? notInPast(parsed, clock).toISOString() : undefined;
     const title = a.title ? String(a.title).replace(/\s+/g, " ").trim().slice(0, MAX_TITLE) : undefined;
     const durationMin =
       Number.isFinite(a.durationMin) && a.durationMin! > 0 ? Math.max(5, Math.min(480, Math.round(a.durationMin!))) : undefined;
@@ -166,13 +173,13 @@ export function normalizeActions(
     if (a.subtaskId) {
       // One part: only its own time window changes. Title, deadline and the other parts are never touched.
       if (!taskParts?.has(a.subtaskId)) continue;
-      const s = fixedSlot(a.fixedStart, a.fixedEnd, a.durationMin, tz, nowMs);
+      const s = fixedSlot(a.fixedStart, a.fixedEnd, a.durationMin, tz, clock);
       if (!s) continue;
       out.push({ type: "update", taskId: a.taskId, subtaskId: a.subtaskId, fixedStart: s.startIso, durationMin: s.durationMin });
       continue;
     }
     // A task with parts has no single slot of its own (that would collapse its parts into one block).
-    const slot = taskParts?.size ? null : fixedSlot(a.fixedStart, a.fixedEnd, a.durationMin, tz, nowMs);
+    const slot = taskParts?.size ? null : fixedSlot(a.fixedStart, a.fixedEnd, a.durationMin, tz, clock);
     const clearFixed = a.clearFixed === true && !slot;
     if (!deadline && !title && !durationMin && !removeDeadline && !slot && !clearFixed) continue;
     out.push({
@@ -196,26 +203,29 @@ function stems(title: string): Set<string> {
   );
 }
 
-/** The existing task a new title really refers to, if any (all words of the shorter title appear in the other). */
+/**
+ * The existing task a new title really refers to, if any: the two titles must be (nearly) the same set of words
+ * (>= 75% overlap), so a short generic title ("Домашка") never swallows a specific one ("Домашка з економіки").
+ */
 export function findSimilarTask<T extends { id: string; title: string }>(title: string, existing: readonly T[]): T | undefined {
   const a = stems(title);
   if (a.size === 0) return undefined;
   return existing.find((t) => {
     const b = stems(t.title);
     if (b.size === 0) return false;
-    const [small, big] = a.size <= b.size ? [a, b] : [b, a];
-    return [...small].every((w) => big.has(w));
+    const shared = [...a].filter((w) => b.has(w)).length;
+    return shared / (a.size + b.size - shared) >= 0.75;
   });
 }
 
-export function normalizeTasks(raw: RawAssistantTask[], tz: string, nowMs = 0): AssistantTask[] {
+export function normalizeTasks(raw: RawAssistantTask[], tz: string, clock?: Clock): AssistantTask[] {
   const out: AssistantTask[] = [];
   for (const t of raw.slice(0, MAX_TASKS)) {
     const title = String(t.title ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_TITLE);
     if (!title) continue;
     const parsed = t.deadline ? localNaiveToUtc(t.deadline, tz) : null;
-    const deadline = parsed && !Number.isNaN(parsed.getTime()) ? notInPast(parsed, nowMs) : null;
-    const slot = fixedSlot(t.fixedStart, t.fixedEnd, t.durationMin, tz, nowMs);
+    const deadline = parsed && !Number.isNaN(parsed.getTime()) ? notInPast(parsed, clock) : null;
+    const slot = fixedSlot(t.fixedStart, t.fixedEnd, t.durationMin, tz, clock);
     out.push({
       title,
       deadline: slot?.endIso ?? deadline?.toISOString(), // none stated → no deadline (never invented)
