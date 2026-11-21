@@ -160,6 +160,11 @@ export async function POST(request: Request) {
     const only = raw.tasks.length === 1;
     for (const t of raw.tasks) if (!t.fixedStart && (only || !t.deadline)) t.deadline = stated;
   }
+  // Same for a deadline change on ONE existing task ("перероби дедлайн для кіт на 22.05" = today 22:05).
+  if (stated && raw.intent === "modify_tasks") {
+    const ups = (raw.actions ?? []).filter((x) => x.type === "update" && !x.subtaskId && !x.fixedStart && !x.removeDeadline);
+    if (ups.length === 1) ups[0].deadline = stated;
+  }
   let tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz, clock) : [];
   // Real, validated changes win over the label: a "move X to 17–19" is executed even if the model called it "schedule".
   const titleById = new Map(existing.map((t) => [t.id, t.title]));

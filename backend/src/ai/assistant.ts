@@ -1,5 +1,5 @@
 import type { AssistantAction, AssistantTask } from "@/types/api";
-import { dateKeyInTz, localNaiveToUtc, toLocalNaive } from "@/lib/time";
+import { addDays, dateKeyInTz, localNaiveToUtc, minutesOfDay, toLocalNaive } from "@/lib/time";
 
 export const MAX_TITLE = 100;
 const MAX_DURATION_MIN = 9999 * 60; // technical ceiling only
@@ -16,6 +16,7 @@ MATCHING. Match tasks in existingTasks by meaning, not exact text: ignore inflec
 SYNONYMS AND REFERENCES. existingTasks is the live list for THIS turn: trust it over anything said earlier in recentChat. Match by meaning and synonyms ("тренування"/"workout" = "Сходити в зал"), and resolve "це", "його", "it", "that one" to the task last mentioned in recentChat. If two tasks fit equally well, ask which one (intent "answer") instead of guessing.
 ORDER REFERENCES. Each task in existingTasks has "n" (its position in the list, the order the app shows) and each part has "n" (step number). "перший підпункт першого завдання" / "the first step of the first task" = the task with n 1 and its part with n 1; "зробила 1 крок" with no task named = the first task that has parts. Resolve them to the real ids and return the "complete" action. 
 PART ACTIONS. "I did part 1 of economics" ("зробила 1 частину економу") = a "complete" action with the task's taskId AND the part's subtaskId (parts[].n is the step number); "remove step 2" = a "delete" action with taskId and subtaskId. Never complete or delete the whole task for that. Do not complete or delete a task or part that is not in existingTasks.
+CLOCK TIMES WITH A DOT. Speech-to-text writes spoken clock times with a dot: "на 22.05", "о 14.30", "до 9.15" mean 22:05, 14:30, 09:15, NEVER a calendar date (22 May). A dotted pair HH.MM (HH 00–23, MM 00–59) with no month word is always a clock time: deadline = today at HH:MM, or tomorrow if that time has already passed. It is a date only with a month word ("22 травня") or a full year ("22.05.2027").
 TIMES. NOW is in the user's real time zone. A time with no date ("at 10:00") that has already passed today means TOMORROW at that time (never a slot in the past); "in 20 minutes" = NOW + 20 minutes.
 CALENDAR. The "calendar" list in the context maps the next 14 dates to their weekdays and gives today/tomorrow. Always read a weekday ("Friday", "в п'ятницю") from that list; never compute weekdays yourself. A bare weekday means the nearest upcoming such date (today counts only if it is that weekday and the time is still ahead).
 PARTS OF A TASK. A task in existingTasks may have "parts" (steps 1/4, 2/4…), each with its own id, title, durationMin and start/end. When the user moves a PART ("the first part", "step 2", "першу частину") return an "update" action with the task's "taskId" AND that part's "subtaskId", plus "fixedStart"/"fixedEnd" for its new window ("in 20 minutes" = NOW + 20 minutes; the length stays the part's durationMin). Such an action changes ONLY that part: leave "title", "deadline", "durationMin" null and "removeDeadline" false, and never touch the other parts. For a task that has parts, never put a fixedStart on the task itself without a subtaskId. NEVER change, shorten or move a task's deadline unless the user explicitly asks to change the deadline: set "deadline" only for that.
@@ -127,36 +128,51 @@ const monthOf = (word: string): number | null => {
  */
 export function parseExplicitDeadline(message: string, nowMs: number, tz: string): string | null {
   const found = new Set<string>();
-  let hm: [number, number] | null = null;
   const day = (d: number, mo: number, y?: number) => {
     if (!(d >= 1 && d <= 31 && mo >= 1 && mo <= 12)) return;
     found.add(`${d}.${mo}.${y ?? ""}`);
   };
   for (const m of message.matchAll(/(\d{1,2})(?:-?го)?\s+(\p{L}{3,})/gu)) { const mo = monthOf(m[2]); if (mo) day(+m[1], mo); }
-  for (const m of message.matchAll(/(\p{L}{3,})\.?\s+(\d{1,2})(?!\d|:)/gu)) { const mo = monthOf(m[1]); if (mo) day(+m[2], mo); }
-  for (const m of message.matchAll(/(?<![\d:])(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?(?![\d:])/g)) {
-    const y = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : undefined;
-    day(+m[1], +m[2], y);
+  for (const m of message.matchAll(/(\p{L}{3,})\.?\s+(\d{1,2})(?!\d|[:.]\d)/gu)) { const mo = monthOf(m[1]); if (mo) day(+m[2], mo); }
+  // Only a full dd.mm.yyyy is a numeric date. A bare "22.05" is a clock time (speech-to-text writes 22:05 that way).
+  for (const m of message.matchAll(/(?<![\d:.])(\d{1,2})\.(\d{1,2})\.(\d{4}|\d{2})(?![\d])/g)) {
+    day(+m[1], +m[2], m[3].length === 2 ? 2000 + +m[3] : +m[3]);
   }
-  if (found.size !== 1) return null;
-  const t = /(?<!\d)(\d{1,2}):(\d{2})(?!\d)(?:\s*(am|pm))?/i.exec(message) ?? /\b(?:о|об|at|by|до)\s+(\d{1,2})(?:\s*(am|pm|год))?\b(?!\.\d)/i.exec(message);
-  if (t) {
-    let h = +t[1];
-    const mer = (t[3] ?? t[2] ?? "").toLowerCase();
+  if (found.size > 1) return null;
+
+  // Clock time: "22:05", "10pm", "о 22", or "на/о 22.05" (HH 00–23, MM 00–59, no month word).
+  let hm: [number, number] | null = null;
+  const clock =
+    /(?<![\d.:])(\d{1,2}):(\d{2})(?!\d)(?:\s*(am|pm))?/i.exec(message) ??
+    /(?<![\p{L}\d])(?:на|о|об|у|в|до|at|by|for|around)\s+(\d{1,2})[.](\d{2})(?![\d.])/iu.exec(message) ??
+    /(?<![\p{L}\d])(?:о|об|at|by|до)\s+(\d{1,2})(?:\s*(am|pm))?(?![\d:.]|\s*(?:\p{L}{3,}))/iu.exec(message);
+  if (clock) {
+    let h = +clock[1];
+    const second = clock[2] ?? "";
+    const mer = (/^(am|pm)$/i.test(second) ? second : (clock[3] ?? "")).toLowerCase();
     if (mer === "pm" && h < 12) h += 12;
     if (mer === "am" && h === 12) h = 0;
-    const mi = t[2] && /^\d{2}$/.test(t[2]) ? +t[2] : 0;
+    const mi = /^\d{2}$/.test(second) ? +second : 0;
     if (h <= 23 && mi <= 59) hm = [h, mi];
   }
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const nowLocal = toLocalNaive(new Date(nowMs), tz);
+  const today = nowLocal.slice(0, 10);
+
+  if (found.size === 0) {
+    // Time only: today at HH:MM, or tomorrow when it has already passed.
+    if (!hm) return null;
+    const passed = hm[0] * 60 + hm[1] <= minutesOfDay(nowLocal);
+    return `${passed ? addDays(today, 1) : today}T${p2(hm[0])}:${p2(hm[1])}`;
+  }
   const [d, mo, yRaw] = [...found][0].split(".");
-  const today = dateKeyInTz(new Date(nowMs), tz);
   let year = yRaw ? +yRaw : +today.slice(0, 4);
-  const key = (y: number) => `${y}-${String(+mo).padStart(2, "0")}-${String(+d).padStart(2, "0")}`;
+  const key = (y: number) => `${y}-${p2(+mo)}-${p2(+d)}`;
   const probe = new Date(`${key(year)}T00:00:00Z`);
   if (Number.isNaN(probe.getTime()) || probe.getUTCDate() !== +d) return null; // "31 листопада"
   if (!yRaw && key(year) < today) year += 1;
   const [h, mi] = hm ?? [18, 0];
-  return `${key(year)}T${String(h).padStart(2, "0")}:${String(mi).padStart(2, "0")}`;
+  return `${key(year)}T${p2(h)}:${p2(mi)}`;
 }
 
 const ORDINALS: Array<[RegExp, number]> = [

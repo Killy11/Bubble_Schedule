@@ -10,7 +10,7 @@
  *  2. If nothing fits at MIN, truncate at MIN: fill lines with whole words only (never cram another word
  *     onto a line that is full), end with "…", and shorten a single word with "…" only if that word alone
  *     is wider than its line.
- *  3. If a subtitle (deadline) is shown but forces truncation, the subtitle is dropped so the title wins.
+ *  3. A subtitle (deadline) is always kept: its font shrinks first, then the title is truncated (whole words).
  */
 export interface FitLine {
   text: string;
@@ -34,6 +34,8 @@ export interface FitOptions {
   diameter: number;
   measure: Measure;
   subtitle?: string;
+  /** Shorter form of the subtitle ("22.11 22:00"), used when the full one cannot fit a small orb. */
+  subtitleCompact?: string;
   minFont?: number;
   maxFont?: number;
   /** safe circle as a fraction of the radius; the rest is margin for the rim and glow */
@@ -57,8 +59,8 @@ interface Geometry {
 }
 
 /** Positions and widths available for `lines` title lines (+ optional subtitle) centred on the circle. */
-function geometry(lines: number, lh: number, rs: number, sub: boolean, minLimit: number): Geometry {
-  const subH = sub ? SUB_FONT * LINE_HEIGHT : 0;
+function geometry(lines: number, lh: number, rs: number, sub: boolean, minLimit: number, subFont = SUB_FONT): Geometry {
+  const subH = sub ? subFont * LINE_HEIGHT : 0;
   const height = lines * lh + (sub ? SUB_GAP + subH : 0);
   const start = -height / 2;
   const limits: number[] = [];
@@ -134,23 +136,23 @@ function wrapTruncated(words: string[], fs: number, limits: number[], measure: M
   return lines;
 }
 
-function attempt(o: Required<Pick<FitOptions, "text" | "diameter" | "measure">> & { words: string[]; rs: number; min: number; max: number }, withSub: boolean, sub?: string): FitResult {
+function attempt(o: Required<Pick<FitOptions, "text" | "diameter" | "measure">> & { words: string[]; rs: number; min: number; max: number }, withSub: boolean, sub?: string, subFont = SUB_FONT): FitResult {
   const { words, rs, min, max, measure } = o;
   const subFits = (g: Geometry) =>
-    !g.sub || measure(sub ?? "", SUB_FONT, 500) <= g.sub.limit;
+    !g.sub || measure(sub ?? "", subFont, 500) <= g.sub.limit;
 
   // 1. Largest font where everything fits as whole words.
   for (let fs = max; fs >= min - 1e-6; fs -= 0.5) {
     const lh = fs * LINE_HEIGHT;
     for (let lines = 1; ; lines++) {
-      const g = geometry(lines, lh, rs, withSub, fs * 1.6);
+      const g = geometry(lines, lh, rs, withSub, fs * 1.6, subFont);
       if (!g.ok || !subFits(g)) break; // more lines only make the block taller
       const wrapped = wrapAll(words, fs, g.limits, measure);
       if (wrapped) {
         return {
           fontSize: fs, lineHeight: lh, safeRadius: rs, truncated: false,
           lines: wrapped.map((text, i) => ({ text, top: g.tops[i] })),
-          sub: g.sub && sub ? { text: sub, fontSize: SUB_FONT, lineHeight: SUB_FONT * LINE_HEIGHT, top: g.sub.top } : undefined,
+          sub: g.sub && sub ? { text: sub, fontSize: subFont, lineHeight: subFont * LINE_HEIGHT, top: g.sub.top } : undefined,
         };
       }
     }
@@ -164,7 +166,7 @@ function attempt(o: Required<Pick<FitOptions, "text" | "diameter" | "measure">> 
   let bestScore: number[] | null = null;
   let best: { g: Geometry; lines: string[] } | null = null;
   for (let n = 1; ; n++) {
-    const g = geometry(n, lh, rs, withSub, n === 1 ? 0 : fs * 1.6);
+    const g = geometry(n, lh, rs, withSub, n === 1 ? 0 : fs * 1.6, subFont);
     if (!g.ok || (n > 1 && !subFits(g))) break;
     const lines = wrapTruncated(words, fs, g.limits, measure);
     const shown = lines.join(" ").replace(ELLIPSIS, "").trim().split(" ").filter(Boolean);
@@ -184,7 +186,7 @@ function attempt(o: Required<Pick<FitOptions, "text" | "diameter" | "measure">> 
     fontSize: fs, lineHeight: lh, safeRadius: rs, truncated: true,
     lines: best.lines.map((text, i) => ({ text, top: best.g.tops[i] })),
     sub: best.g.sub && sub && subFits(best.g)
-      ? { text: sub, fontSize: SUB_FONT, lineHeight: SUB_FONT * LINE_HEIGHT, top: best.g.sub.top }
+      ? { text: sub, fontSize: subFont, lineHeight: subFont * LINE_HEIGHT, top: best.g.sub.top }
       : undefined,
   };
 }
@@ -199,8 +201,19 @@ export function fitBubbleText(opts: FitOptions): FitResult {
   if (!words.length) return { fontSize: min, lineHeight: min * LINE_HEIGHT, lines: [], truncated: false, safeRadius: rs };
 
   if (subtitle) {
-    const withSub = attempt(base, true, subtitle);
-    if (!withSub.truncated && withSub.sub) return withSub;
+    // The deadline is always shown: first at the normal size without cutting the title, then smaller, and only then
+    // with a (whole-word) truncated title. It is dropped only when the orb is too small to hold any text line plus it.
+    const forms = opts.subtitleCompact && opts.subtitleCompact !== subtitle ? [subtitle, opts.subtitleCompact] : [subtitle];
+    for (const form of forms) {
+      for (const f of [SUB_FONT, 9.5, 8.5]) {
+        const withSub = attempt(base, true, form, f);
+        if (!withSub.truncated && withSub.sub) return withSub;
+      }
+    }
+    for (const form of forms) {
+      const last = attempt(base, true, form, 8.5);
+      if (last.sub) return last;
+    }
   }
   return attempt(base, false); // title only: the title always wins over the subtitle
 }

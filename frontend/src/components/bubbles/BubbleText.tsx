@@ -13,15 +13,17 @@ export function BubbleText({
   title,
   diameter,
   subtitle,
+  subtitleCompact,
 }: {
   title: string;
   diameter: number;
   subtitle?: string;
+  subtitleCompact?: string;
 }) {
   const { measure } = useTextMeasure();
   const fit = useMemo(
-    () => fitBubbleText({ text: title, diameter, measure, subtitle }),
-    [title, diameter, subtitle, measure],
+    () => fitBubbleText({ text: title, diameter, measure, subtitle, subtitleCompact }),
+    [title, diameter, subtitle, subtitleCompact, measure],
   );
   const u = (px: number) => `${(px / diameter) * 100}cqw`; // px at the final size → % of the orb's current width
 

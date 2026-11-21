@@ -14,6 +14,14 @@ import { useLang } from "@/context/LanguageProvider";
 import type { Task } from "@/types";
 import type { BubblePlacement } from "@/lib/bubbles/layout";
 
+/** Shortest readable deadline for a small orb: "22:05" today, otherwise "22.11 22:00". */
+function compactDeadline(iso: string, now: number): string {
+  const d = new Date(iso);
+  const p = (n: number) => String(n).padStart(2, "0");
+  const time = `${p(d.getHours())}:${p(d.getMinutes())}`;
+  return new Date(now).toDateString() === d.toDateString() ? time : `${p(d.getDate())}.${p(d.getMonth() + 1)} ${time}`;
+}
+
 const SPRING = { type: "spring", stiffness: 70, damping: 22, mass: 1 } as const; // heavily damped: neighbours ease aside
 /** Pop length; the dashboard waits this long before it writes the completion. */
 export const POP_MS = 450;
@@ -143,8 +151,9 @@ export function Bubble({
             diameter={place.d}
             subtitle={
               // The deadline is always the subtitle, steps or not; the step count is a small pill (below).
-              place.d >= 84 && task.deadline ? formatDeadline(task.deadline, now, t, lang) : undefined
+              place.d >= 56 && task.deadline ? formatDeadline(task.deadline, now, t, lang) : undefined
             }
+            subtitleCompact={place.d >= 56 && task.deadline ? compactDeadline(task.deadline, now) : undefined}
           />
         </Orb>
         {parts && place.d >= 84 && (
