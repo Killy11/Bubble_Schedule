@@ -19,8 +19,10 @@ PART ACTIONS. "I did part 1 of economics" ("зробила 1 частину ек
 CLOCK TIMES WITH A DOT. Speech-to-text writes spoken clock times with a dot: "на 22.05", "о 14.30", "до 9.15" mean 22:05, 14:30, 09:15, NEVER a calendar date (22 May). A dotted pair HH.MM (HH 00–23, MM 00–59) with no month word is always a clock time: deadline = today at HH:MM, or tomorrow if that time has already passed. It is a date only with a month word ("22 травня") or a full year ("22.05.2027").
 TIMES. NOW is in the user's real time zone. A time with no date ("at 10:00") that has already passed today means TOMORROW at that time (never a slot in the past); "in 20 minutes" = NOW + 20 minutes.
 CALENDAR. The "calendar" list in the context maps the next 14 dates to their weekdays and gives today/tomorrow. Always read a weekday ("Friday", "в п'ятницю") from that list; never compute weekdays yourself. A bare weekday means the nearest upcoming such date (today counts only if it is that weekday and the time is still ahead).
-PARTS OF A TASK. A task in existingTasks may have "parts" (steps 1/4, 2/4…), each with its own id, title, durationMin and start/end. When the user moves a PART ("the first part", "step 2", "першу частину") return an "update" action with the task's "taskId" AND that part's "subtaskId", plus "fixedStart"/"fixedEnd" for its new window ("in 20 minutes" = NOW + 20 minutes; the length stays the part's durationMin). Such an action changes ONLY that part: leave "title", "deadline", "durationMin" null and "removeDeadline" false, and never touch the other parts. For a task that has parts, never put a fixedStart on the task itself without a subtaskId. NEVER change, shorten or move a task's deadline unless the user explicitly asks to change the deadline: set "deadline" only for that.
-FIXED TIME SLOTS. When the user asks for a task at a specific time or window ("at 17:00", "from 17 to 19", "put it 17:00–19:00", "move X to 6pm"), that is a fixed slot, not a deadline: use intent "modify_tasks" with an "update" action that sets "fixedStart" (LOCAL "YYYY-MM-DDTHH:mm") and "fixedEnd" (LOCAL; for a single time use fixedStart + the task's durationMin, or 60 minutes if unknown). Also set "deadline" to the same value as fixedEnd. Never answer "it is already scheduled" by computing deadline minus duration: the only proof that a task has a fixed slot is existingTasks[].fixedStart. If the task has no fixedStart, the request still needs the action. To release a slot ("let the AI move it again") set "clearFixed" true. For a NEW task with a requested time, create it with "fixedStart" and "fixedEnd" in "tasks". Never tell the user to refresh the page or re-plan manually: the app re-plans by itself right after your action, and other tasks move around the fixed slot. Only say a change was made when you returned the action for it.
+PARTS OF A TASK. A task in existingTasks may have "parts" (steps 1/4, 2/4…), each with its own id, title, durationMin and start/end. When the user moves a PART ("the first part", "step 2", "першу частину") return an "update" action with the task's "taskId" AND that part's "subtaskId", plus "fixedStart"/"fixedEnd" for its new window ("in 20 minutes" = NOW + 20 minutes; the length stays the part's durationMin). Such an action changes ONLY that part: leave "title", "deadline", "durationMin" null and "removeDeadline" false, and never touch the other parts. For a task that has parts, never put a fixedStart on the task itself without a subtaskId, except for a WORK SESSION (below). NEVER change, shorten or move a task's deadline unless the user explicitly asks to change the deadline: set "deadline" only for that.
+WORK SESSIONS. "хочу зараз пропрацювати ОАД 4 години", "work on X for 4 hours starting in 5 minutes", "хочу зараз робити ОАД через 5 хвилин години 4" = a work session on an EXISTING task: an "update" action with "fixedStart" = NOW + the stated delay (NOW when none), "fixedEnd" = fixedStart + the hours, and "durationMin" = the hours in minutes. It is NOT a deadline change: leave "deadline" null and "removeDeadline" false, so the task keeps its deadline (a session that ends today never replaces a deadline of Nov 25). This also holds for a task that has parts: the app keeps their order and lays them out from that start. Only words like "дедлайн", "deadline", "до якого числа", "due" change the deadline.
+DEFERRING. "решту на завтра", "все інше перестав на завтра", "move everything else to tomorrow" = ONE action of type "defer_others" whose taskId is the task being worked on now (the app defers every other unpinned task itself). "Перенеси X на завтра" for one named task without a new deadline = a "defer" action with that taskId. Deferring never changes any deadline and never creates new tasks.
+FIXED TIME SLOTS. When the user asks for a task at a specific time or window ("at 17:00", "from 17 to 19", "put it 17:00–19:00", "move X to 6pm"), that is a fixed slot, not a deadline: use intent "modify_tasks" with an "update" action that sets "fixedStart" (LOCAL "YYYY-MM-DDTHH:mm") and "fixedEnd" (LOCAL; for a single time use fixedStart + the task's durationMin, or 60 minutes if unknown). Set "deadline" to the same value as fixedEnd ONLY when the task has no deadline in existingTasks; a task that already has a deadline keeps it (leave "deadline" null). Never answer "it is already scheduled" by computing deadline minus duration: the only proof that a task has a fixed slot is existingTasks[].fixedStart. If the task has no fixedStart, the request still needs the action. To release a slot ("let the AI move it again") set "clearFixed" true. For a NEW task with a requested time, create it with "fixedStart" and "fixedEnd" in "tasks". Never tell the user to refresh the page or re-plan manually: the app re-plans by itself right after your action, and other tasks move around the fixed slot. Only say a change was made when you returned the action for it.
 - "answer": a question or chat that needs neither. Answer briefly using the context given.
 
 Task fields:
@@ -49,7 +51,7 @@ export const ASSISTANT_JSON_SCHEMA = {
         additionalProperties: false,
         required: ["type", "taskId", "title", "deadline", "removeDeadline", "durationMin", "fixedStart", "fixedEnd", "clearFixed", "subtaskId", "parts"],
         properties: {
-          type: { type: "string", enum: ["update", "complete", "delete", "split"] },
+          type: { type: "string", enum: ["update", "complete", "delete", "split", "defer", "defer_others"] },
           taskId: { type: "string" },
           title: { type: ["string", "null"] },
           deadline: { type: ["string", "null"] },
@@ -89,7 +91,7 @@ export interface RawAssistantTask {
   fixedEnd?: string | null; // local naive
 }
 export interface RawAssistantAction {
-  type: "update" | "complete" | "delete" | "split";
+  type: "update" | "complete" | "delete" | "split" | "defer" | "defer_others";
   taskId: string;
   title: string | null;
   deadline: string | null; // local naive
@@ -255,10 +257,18 @@ export function normalizeActions(
   parts: ReadonlyMap<string, ReadonlySet<string>> = new Map(),
   /** The request's "now": an unpinned time earlier than this is moved to the same time tomorrow. */
   clock?: Clock,
+  /** taskId → its current deadline (ISO). A work session never replaces an existing deadline. */
+  deadlines: ReadonlyMap<string, string | undefined> = new Map(),
+  /** The start of the day to defer to ("tomorrow" in the user's zone), as ISO. */
+  deferTo?: string,
 ): AssistantAction[] {
   const out: AssistantAction[] = [];
   for (const a of raw.slice(0, MAX_TASKS)) {
     if (!validIds.has(a.taskId)) continue;
+    if (a.type === "defer" || a.type === "defer_others") {
+      if (deferTo) out.push({ type: a.type === "defer" ? "update" : "defer_others", taskId: a.taskId, deferUntil: deferTo });
+      continue;
+    }
     if (a.type === "split") {
       const n = Math.round(Number(a.parts));
       if (Number.isFinite(n) && n >= 2 && n <= 12) out.push({ type: "split", taskId: a.taskId, parts: n });
@@ -275,7 +285,7 @@ export function normalizeActions(
     }
     if (a.type !== "update") continue;
     const parsed = a.deadline ? localNaiveToUtc(a.deadline, tz) : null;
-    const deadline = parsed && !Number.isNaN(parsed.getTime()) ? notInPast(parsed, clock).toISOString() : undefined;
+    let deadline = parsed && !Number.isNaN(parsed.getTime()) ? notInPast(parsed, clock).toISOString() : undefined;
     const title = a.title ? String(a.title).replace(/\s+/g, " ").trim().slice(0, MAX_TITLE) : undefined;
     const durationMin =
       Number.isFinite(a.durationMin) && a.durationMin! > 0 ? Math.max(1, Math.min(MAX_DURATION_MIN, Math.round(a.durationMin!))) : undefined;
@@ -289,13 +299,17 @@ export function normalizeActions(
       out.push({ type: "update", taskId: a.taskId, subtaskId: a.subtaskId, fixedStart: s.startIso, durationMin: s.durationMin });
       continue;
     }
-    // A task with parts has no single slot of its own (that would collapse its parts into one block).
-    const slot = taskParts?.size ? null : fixedSlot(a.fixedStart, a.fixedEnd, a.durationMin, tz, clock);
+    // A work session ("працювати 4 години, починаючи за 5 хв") is a slot + a length. It NEVER replaces the task's deadline:
+    // the model's copy of the session end ("deadline = fixedEnd") is dropped when the task already has one.
+    // A task with parts keeps its parts: the app lays them out back to back from this start (see applyActions).
+    const slot = fixedSlot(a.fixedStart, a.fixedEnd, a.durationMin, tz, clock);
+    const existingDeadline = deadlines.get(a.taskId);
+    if (slot && deadline && existingDeadline && Math.abs(Date.parse(deadline) - Date.parse(slot.endIso)) <= 60_000) deadline = undefined;
     const clearFixed = a.clearFixed === true && !slot;
     if (!deadline && !title && !durationMin && !removeDeadline && !slot && !clearFixed) continue;
     out.push({
       type: "update", taskId: a.taskId, title,
-      deadline: deadline ?? slot?.endIso,
+      deadline: deadline ?? (existingDeadline ? undefined : slot?.endIso),
       durationMin: slot?.durationMin ?? durationMin,
       removeDeadline: removeDeadline || undefined,
       fixedStart: slot?.startIso,

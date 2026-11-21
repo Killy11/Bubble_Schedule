@@ -52,9 +52,7 @@ export function formatWindow(s: Subtask, now: number, t: Tr = same, locale?: str
 
 /** The next part to work on: the earliest unfinished one (scheduled ones first, by time). */
 export function nextSubtask(subtasks: readonly Subtask[]): Subtask | undefined {
-  return subtasks
-    .filter((s) => !s.completed)
-    .sort((a, b) => (a.scheduledStart ?? "9").localeCompare(b.scheduledStart ?? "9"))[0];
+  return subtasks.find((s) => !s.completed); // the next step in logical order
 }
 
 export function subtaskProgress(t: Task): { done: number; total: number; next?: Subtask } | null {
@@ -109,7 +107,11 @@ export function scaleSubtasks(
       id: newSubtaskId(), title: `${title} · ${subtasks.length + i + 1}`.trim(), durationMinutes: 5, completed: false,
     }));
     const per = Math.max(5, Math.floor(target / want / 5) * 5);
-    const grown = [...subtasks, ...added];
+    // New steps go BEFORE the last open one, so the closing step (final self-test) stays last and the order stays logical.
+    const lastOpen = subtasks.map((s) => !s.completed).lastIndexOf(true);
+    const grown = lastOpen > 0 && open.length >= 2
+      ? [...subtasks.slice(0, lastOpen), ...added, ...subtasks.slice(lastOpen)]
+      : [...subtasks, ...added];
     open = grown.filter((s) => !s.completed);
     let used = 0;
     const next = new Map<string, number>();

@@ -61,10 +61,7 @@ export function SubtaskList({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const sorted = subs
-    .map((s, i) => ({ s, i }))
-    .sort((a, b) => (a.s.scheduledStart ?? "9").localeCompare(b.s.scheduledStart ?? "9") || a.i - b.i)
-    .map((x) => x.s);
+  const sorted = subs; // logical order, as created
 
   async function save(next: Subtask[]) {
     setError(null);

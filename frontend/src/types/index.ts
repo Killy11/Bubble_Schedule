@@ -108,6 +108,8 @@ export interface Task {
    */
   isFixedTime?: boolean;
   fixedStartTime?: ISODateTime;
+  /** "Everything else tomorrow": the planner places this task no earlier than this moment. The deadline is untouched. */
+  deferUntil?: ISODateTime;
   loggedMinutes: number; // whole minutes already spent (defaults to 0); shrinks the bubble
   /** Seconds of the open timer session while it is paused. The running part is `now − startedAt`. Cleared by "Stop & confirm". */
   accumulatedSeconds?: number;

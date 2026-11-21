@@ -31,7 +31,7 @@ export function PartDetailSheet({
   const hue = task ? bubbleHue(task, now) : "green";
   const progress = task ? subtaskProgress(task) : null;
   const siblings = task
-    ? [...(task.subtasks ?? [])].sort((a, b) => (a.scheduledStart ?? "9").localeCompare(b.scheduledStart ?? "9"))
+    ? [...(task.subtasks ?? [])]
     : [];
 
   return (

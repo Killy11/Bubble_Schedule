@@ -75,14 +75,15 @@ export function planAll(o: {
     const dueMs = t.deadline ? Date.parse(t.deadline) : o.nowMs + NO_DEADLINE_PLAN_DAYS * 86_400_000;
     if (dueMs <= o.nowMs + 30 * 60_000) return; // about to expire: nothing useful to plan
     const pacing: Pacing = pacingOf(t);
-    const base = { taskId: t.id, deadlineMs: dueMs, pacing, orderIdx, tier: urgencyTier(toMillis(t.deadline), o.nowMs) };
+    const deferMs = t.deferUntil ? Date.parse(t.deferUntil) : 0;
+    const base = {
+      taskId: t.id, deadlineMs: dueMs, pacing, orderIdx, tier: urgencyTier(toMillis(t.deadline), o.nowMs),
+      ...(deferMs > o.nowMs ? { notBeforeMs: deferMs } : {}),
+    };
 
     if (t.subtasks?.length) {
-      const parts = t.subtasks
-        .filter((s) => !s.completed && !(s.pinned && hasSpan(s)))
-        .map((s, i) => ({ s, i }))
-        .sort((a, b) => (a.s.scheduledStart ?? "9").localeCompare(b.s.scheduledStart ?? "9") || a.i - b.i)
-        .map((x) => x.s);
+      // The steps keep their logical order (theory → practice → self-test), never the order of old time slots.
+      const parts = t.subtasks.filter((s) => !s.completed && !(s.pinned && hasSpan(s)));
       parts.forEach((s, i) =>
         units.push({ ...base, key: `${t.id}:${s.id}`, subId: s.id, durationMin: s.durationMinutes, seq: i, count: parts.length }),
       );

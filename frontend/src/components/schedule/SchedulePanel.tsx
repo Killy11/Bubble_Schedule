@@ -76,7 +76,7 @@ export function SchedulePanel({
     entries.push({ kind: "block", key: b.id, start: Date.parse(b.start), end: Date.parse(b.end), block: b, task });
   }
   for (const task of tasks) {
-    const subs = [...(task.subtasks ?? [])].sort((a, c) => (a.scheduledStart ?? "9").localeCompare(c.scheduledStart ?? "9"));
+    const subs = task.subtasks ?? []; // logical order: step numbers never follow the time slots
     subs.forEach((sub, i) => {
       if (sub.completed || !sub.scheduledStart || !sub.scheduledEnd) return;
       entries.push({

@@ -28,6 +28,8 @@ export interface PlanUnit {
   /** Order among the parts of one task, and how many parts it has. */
   seq: number;
   count: number;
+  /** Never place this unit before this moment (deferred to tomorrow). */
+  notBeforeMs?: number;
 }
 
 const ceil5 = (ms: number) => Math.ceil(ms / (5 * MIN)) * 5 * MIN;
@@ -276,6 +278,7 @@ function planCore(o: PlanInput): Map<string, Interval> {
         for (const u of pending) {
           if (done.has(u.key)) continue;
           if ((capped || u.tier >= 2) && (earliestDay.get(u.key) ?? 0) > d) continue;
+          if (u.notBeforeMs && days[d].dayEnd <= u.notBeforeMs) continue; // deferred: not on this day
           const usable = u.tier === 0 ? redWindows : windows;
           if (u.pacing === "locked") {
             const chain = lockedByTask.get(u.taskId)!;
@@ -283,7 +286,7 @@ function planCore(o: PlanInput): Map<string, Interval> {
             const need = chain.reduce((sum, c) => sum + c.durationMin, 0) + (chain.length - 1) * LOCKED_GAP_MIN;
             const cl = Math.min(...chain.map(limitOf));
             for (const w of usable) {
-              let at = ceil5(Math.max(w.start, cursor));
+              let at = ceil5(Math.max(w.start, cursor, chain[0].notBeforeMs ?? 0));
               if (at + need * MIN > Math.min(w.end, cl)) continue;
               for (const c of chain) {
                 const slot = { start: at, end: at + c.durationMin * MIN };
@@ -306,7 +309,7 @@ function planCore(o: PlanInput): Map<string, Interval> {
           if (capped && u.tier !== 0 && load[d] + u.durationMin > DAY_CAP_MIN[u.pacing]) continue; // a Red deadline beats the cap
           const lim = limitOf(u);
           for (const w of usable) {
-            const start = ceil5(Math.max(w.start, cursor));
+            const start = ceil5(Math.max(w.start, cursor, u.notBeforeMs ?? 0));
             const end = start + u.durationMin * MIN;
             if (end > Math.min(w.end, lim)) continue;
             out.set(u.key, { start, end });

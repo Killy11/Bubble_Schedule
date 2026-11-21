@@ -19,9 +19,9 @@ import {
 import { FileError, readFile, type ReadFile } from "@backend/server/files";
 import { takeHourlySlot } from "@backend/server/rateLimit";
 import { mergeMemory, sameMemory } from "@backend/server/memory";
-import { addDays, weekdayOf, dateKeyInTz, toLocalNaive } from "@/lib/time";
+import { addDays, weekdayOf, dateKeyInTz, localNaiveToUtc, toLocalNaive } from "@/lib/time";
 import type { ChatMessage, Task, User } from "@/types";
-import type { AssistantRequest, AssistantResponse } from "@/types/api";
+import type { AssistantAction, AssistantRequest, AssistantResponse } from "@/types/api";
 
 const MAX_MESSAGE = 1000;
 /** Sliding window: only the last 16 messages go to the model (plus the memory and the task list). */
@@ -169,7 +169,16 @@ export async function POST(request: Request) {
   // Real, validated changes win over the label: a "move X to 17–19" is executed even if the model called it "schedule".
   const titleById = new Map(existing.map((t) => [t.id, t.title]));
   const partIds = new Map(existing.map((t) => [t.id, new Set((t.subtasks ?? []).filter((s) => !s.completed).map((s) => s.id))]));
-  const actions = normalizeActions(raw.actions ?? [], new Set(existing.map((t) => t.id)), tz, partIds, clock).map((a) => ({
+  const deadlineById = new Map(existing.map((t) => [t.id, t.deadline]));
+  const deferTo = localNaiveToUtc(`${addDays(dateKeyInTz(now, tz), 1)}T00:00`, tz)?.toISOString();
+  const normalized = normalizeActions(raw.actions ?? [], new Set(existing.map((t) => t.id)), tz, partIds, clock, deadlineById, deferTo);
+  // "Everything else tomorrow": every other active task without a hand-fixed slot is planned from tomorrow on.
+  // Only its start moves: deadlines stay as they are, so nothing turns overdue.
+  const deferred = new Set(normalized.filter((a) => a.type === "defer_others").map((a) => a.taskId));
+  const expanded: AssistantAction[] = normalized.flatMap((a): AssistantAction[] =>
+    a.type !== "defer_others" ? [a]
+    : existing.filter((t) => t.id !== a.taskId && !t.isFixedTime && !deferred.has(t.id)).map((t) => ({ type: "update" as const, taskId: t.id, deferUntil: a.deferUntil })));
+  const actions = expanded.map((a) => ({
     ...a,
     taskTitle: titleById.get(a.taskId),
     subtaskTitle: a.subtaskId ? existing.find((t) => t.id === a.taskId)?.subtasks?.find((s) => s.id === a.subtaskId)?.title : undefined,

@@ -26,6 +26,7 @@ const DATE_KEYS = new Set([
   "lastSeenAt",
   "deadline",
   "fixedStartTime",
+  "deferUntil",
   "completedAt",
   "startedAt",
   "scheduledStart",

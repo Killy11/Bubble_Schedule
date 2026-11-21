@@ -367,6 +367,18 @@ export function useTasks(
     [uid],
   );
 
+  /** "The rest tomorrow": plan this task no earlier than `iso` (null clears it). The deadline is never touched. */
+  const deferTask = useCallback(
+    async (task: Task, iso: string | null) => {
+      if (!uid) return;
+      await updateDoc(doc(db, "users", uid, "tasks", task.id), {
+        deferUntil: iso ? new Date(iso) : deleteField(),
+        updatedAt: new Date(),
+      });
+    },
+    [uid],
+  );
+
   const setRecurrence = useCallback(
     async (task: Task, recurrence: Recurrence | null) => {
       if (!uid) return;
@@ -670,6 +682,7 @@ export function useTasks(
     startTimer,
     stopTimer,
     setRecurrence,
+    deferTask,
     saveSubtasks,
     toggleSubtask,
     updateTask,

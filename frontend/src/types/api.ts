@@ -65,8 +65,10 @@ export interface AssistantTask {
 
 /** A change to an existing task, applied on the client through the shared task state. */
 export interface AssistantAction {
-  type: "update" | "complete" | "delete" | "split";
+  type: "update" | "complete" | "delete" | "split" | "defer_others";
   taskId: string;
+  /** Plan this task no earlier than this moment ("the rest tomorrow"). Never changes the deadline. */
+  deferUntil?: ISODateTime;
   /** split: how many parts. */
   parts?: number;
   title?: string;

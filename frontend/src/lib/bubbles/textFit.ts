@@ -204,16 +204,25 @@ export function fitBubbleText(opts: FitOptions): FitResult {
     // The deadline is always shown: first at the normal size without cutting the title, then smaller, and only then
     // with a (whole-word) truncated title. It is dropped only when the orb is too small to hold any text line plus it.
     const forms = opts.subtitleCompact && opts.subtitleCompact !== subtitle ? [subtitle, opts.subtitleCompact] : [subtitle];
-    for (const form of forms) {
-      for (const f of [SUB_FONT, 9.5, 8.5]) {
-        const withSub = attempt(base, true, form, f);
-        if (!withSub.truncated && withSub.sub) return withSub;
+    // The title wraps over 2–3 lines whole-word first: if that needs a smaller font, the font goes down (to 8.5 px)
+    // before any word is cut with "…". The deadline stays underneath.
+    for (const mf of [min, 9.5, 8.5]) {
+      const b2 = { ...base, min: Math.min(mf, min) };
+      for (const form of forms) {
+        for (const f of [SUB_FONT, 9.5, 8.5]) {
+          const withSub = attempt(b2, true, form, f);
+          if (!withSub.truncated && withSub.sub) return withSub;
+        }
       }
     }
     for (const form of forms) {
       const last = attempt(base, true, form, 8.5);
       if (last.sub) return last;
     }
+  }
+  for (const mf of [9.5, 8.5]) {
+    const r = attempt({ ...base, min: Math.min(mf, min) }, false);
+    if (!r.truncated) return r; // a smaller font before cutting a word
   }
   return attempt(base, false); // title only: the title always wins over the subtitle
 }

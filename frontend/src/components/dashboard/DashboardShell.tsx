@@ -50,7 +50,7 @@ import { ProfileSheet } from "@/components/profile/ProfileSheet";
 import { useDecompose } from "@/hooks/useDecompose";
 import { oneDayBody } from "@/lib/oneDay";
 import { useRebalance } from "@/hooks/useRebalance";
-import { formatWindow, nextSubtask } from "@/lib/subtasks";
+import { DECOMPOSE_AT_MIN, formatWindow, nextSubtask, scaleSubtasks } from "@/lib/subtasks";
 import { Header } from "./Header";
 import type { ScheduleBlock, Subtask, Task } from "@/types";
 import type { AssistantAction } from "@/types/api";
@@ -191,7 +191,7 @@ export function DashboardShell() {
   );
 
   const {
-    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, confirmTimer, adjustSpent, setRecurrence, saveSubtasks,
+    tasks, loading: tasksLoading, error, addTask, addTasks, adjustRemaining, deleteTask, deleteMany, restoreDeleted, restoreTask, undoComplete, complete, confirmTimer, adjustSpent, setRecurrence, deferTask, saveSubtasks,
     startTimer, stopTimer, updateTask, toggleSubtask, reschedule,
   } = useTasks(uid, timezone, now, handleOverdue, handleOneDay);
 
@@ -435,7 +435,7 @@ export function DashboardShell() {
   async function syncStepsToLogged(task: Task, logged: number, leaveLast = false) {
     const subs = task.subtasks;
     if (!subs?.length || logged <= 0) return;
-    const order = [...subs].sort((a, b) => (a.scheduledStart ?? "9").localeCompare(b.scheduledStart ?? "9"));
+    const order = [...subs]; // logical order
     let cum = 0;
     const covered = new Set<string>();
     for (const s of order) {
@@ -585,6 +585,11 @@ export function DashboardShell() {
         const task = tasks.find((x) => x.id === a.taskId && x.status === "active");
         if (!task) continue;
         const part = a.subtaskId ? task.subtasks?.find((x) => x.id === a.subtaskId) : undefined;
+        if (a.deferUntil) {
+          // "Everything else tomorrow": only the earliest start moves, the deadline stays.
+          await deferTask(task, a.deferUntil);
+          if (!a.deadline && !a.durationMin && !a.fixedStart && !a.title && !a.removeDeadline) continue;
+        }
         if (a.subtaskId && (a.type === "complete" || a.type === "delete")) {
           // One step only: the parent task stays.
           if (part && a.type === "complete" && !part.completed) await toggleSubtaskFlow(task, part);
@@ -616,10 +621,27 @@ export function DashboardShell() {
           if (isOverdueTask(task, Date.now()) && (deadline === null || Date.parse(deadline) > Date.now())) {
             await reschedule(task, deadline); // also re-activates its parts and alerts
           } else {
+            // A work session on a task with parts keeps its parts (the task itself is not pinned as one block).
+            const session = !!a.fixedStart && !!task.subtasks?.length;
             await updateTask(task, {
               title, deadline, durationMin: a.durationMin ?? task.durationMin ?? null, pacing: pacingOf(task),
-              fixedStartTime: a.fixedStart ?? (a.clearFixed ? null : undefined),
+              fixedStartTime: session ? undefined : (a.fixedStart ?? (a.clearFixed ? null : undefined)),
             });
+            if (session && a.fixedStart) {
+              // Parts are rescaled to the session length IN THEIR EXISTING ORDER (theory → practice → self-test), then laid
+              // back to back from the requested start and pinned there; everything else is planned around them.
+              const scaled = a.durationMin
+                ? scaleSubtasks(task.subtasks!, a.durationMin, DECOMPOSE_AT_MIN[pacingOf(task)], task.title)
+                : task.subtasks!;
+              let at = Date.parse(a.fixedStart);
+              const laid = scaled.map((s) => {
+                if (s.completed) return s;
+                const start = new Date(at).toISOString();
+                at += s.durationMinutes * 60_000;
+                return { ...s, scheduledStart: start, scheduledEnd: new Date(at).toISOString(), pinned: true };
+              });
+              await saveSubtasks(task, laid);
+            }
           }
           if (a.durationMin && isOverdueTask(task, Date.now())) {
             await updateTask(task, { title, deadline, durationMin: a.durationMin, pacing: pacingOf(task) });
