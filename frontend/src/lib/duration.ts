@@ -1,5 +1,6 @@
-export const MIN_DURATION = 5;
-export const MAX_DURATION = 480;
+export const MIN_DURATION = 1;
+/** Technical ceiling only (9 999 h): in practice there is no cap on how long a task may be. */
+export const MAX_DURATION = 9999 * 60;
 
 /**
  * Hours + minutes fields → total minutes. Either may be blank (2 h → 120, 45 min → 45); both blank

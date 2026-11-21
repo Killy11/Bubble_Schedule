@@ -200,7 +200,7 @@ export function useTasks(
       // Minutes already logged, plus whole minutes of an open timer session (rounded down).
       const tracked = (task.loggedMinutes ?? 0) + sessionMinutes(task, nowDate.getTime());
       const picked = opts.actualMin ?? (tracked > 0 ? tracked : undefined);
-      const actual = picked && Number.isFinite(picked) ? Math.max(1, Math.min(1440, Math.round(picked))) : undefined;
+      const actual = picked && Number.isFinite(picked) ? Math.max(1, Math.min(MAX_TOTAL_MIN, Math.round(picked))) : undefined;
 
       await updateDoc(doc(db, "users", uid, "tasks", task.id), {
         status: "completed",
@@ -321,7 +321,7 @@ export function useTasks(
     async (task: Task, minutes: number) => {
       if (!uid) return;
       const m = Math.round(minutes);
-      if (!Number.isFinite(m) || m < 1 || m > 1440) throw new Error("Enter 1–1440 minutes");
+      if (!Number.isFinite(m) || m < 1 || m > MAX_TOTAL_MIN) throw new Error("Enter at least 1 minute");
       await updateDoc(doc(db, "users", uid, "tasks", task.id), { loggedMinutes: increment(m), updatedAt: new Date() });
     },
     [uid],

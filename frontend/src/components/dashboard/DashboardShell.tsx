@@ -17,7 +17,7 @@ import { SupportPrompt } from "@/components/SupportPrompt";
 import { playBubblePop, playTimerChime, preloadBubblePop, stopBubblePop } from "@/lib/bubblePopSound";
 import { useLocalReminders } from "@/hooks/useLocalReminders";
 import { useSecondTick } from "@/hooks/useSecondTick";
-import { formatClock, sessionSeconds } from "@/lib/remaining";
+import { formatClock, sessionMinutes, sessionSeconds, spentMinutes, totalMinutes } from "@/lib/remaining";
 import { useTaskMusic } from "@/hooks/useTaskMusic";
 import { startTaskMusic, stopTaskMusic } from "@/lib/taskMusic";
 import { useTimerCompletion } from "@/hooks/useTimerCompletion";
@@ -28,6 +28,7 @@ import { deadlineMs, isLiveTask, isOverdueTask } from "@/lib/deadline";
 import { pacingOf } from "@/lib/pacing";
 import { useHistory } from "@/hooks/useHistory";
 import { useChat } from "@/hooks/useChat";
+import { estimateDefaultMinutes } from "@/lib/defaultDuration";
 import { useNow } from "@/hooks/useNow";
 import { useSchedule } from "@/hooks/useSchedule";
 import { useTasks } from "@/hooks/useTasks";
@@ -219,6 +220,7 @@ export function DashboardShell() {
   // A running timer reached 00:00: chime, a system notification (tagged by task, so never twice), and an in-app prompt.
   useTimerCompletion(tasks, (task) => {
     playTimerChime();
+    void syncStepsToLogged(task, spentMinutes(task) + sessionMinutes(task, Date.now()), true).catch(() => {});
     void showLocalNotification(t("⏰ Time's up"), t("Timer for “{title}” has finished", { title: task.title }), `timer_${task.id}`);
     toast({
       title: t("⏰ Time's up"),
@@ -239,7 +241,7 @@ export function DashboardShell() {
 
   // Any create / edit / delete re-plans everything by earliest deadline.
   const lastUnplaced = useRef("");
-  useRebalance(tasks, !!uid && !tasksLoading, (unplaced) => {
+  const rebalanceNow = useRebalance(tasks, !!uid && !tasksLoading, (unplaced) => {
     const key = unplaced.map((t) => t.id).sort().join(",");
     if (!key || key === lastUnplaced.current) {
       lastUnplaced.current = key;
@@ -266,7 +268,9 @@ export function DashboardShell() {
         inputs.map((input) => {
           const s = input.durationMin ? null : suggestDuration(input.title, history);
           const withPacing = { ...input, pacing: input.pacing ?? defaultPacing };
-          return s ? { ...withPacing, historyEstimate: { durationMin: s.minutes, reasoning: describeSuggestion(s) } } : withPacing;
+          if (s) return { ...withPacing, historyEstimate: { durationMin: s.minutes, reasoning: describeSuggestion(s) } };
+          // No stated length and no history: a smart default (60–120 min) instead of an empty duration.
+          return input.durationMin ? withPacing : { ...withPacing, durationMin: estimateDefaultMinutes(input.title) };
         }),
       ),
     [addTasks, history, defaultPacing],
@@ -421,6 +425,65 @@ export function DashboardShell() {
     await removeTaskBlocks(taskIds).catch(() => {});
   }
 
+  /**
+   * Time logged on a task (timer saved, minutes logged, countdown reached) finishes the steps it covers: steps are
+   * taken in schedule order and a step is done once the logged minutes reach the sum of its and all earlier steps.
+   * The counter (1/3) follows, the step leaves the Schedule and the plan is rebuilt. When the last step is covered
+   * the whole task is completed, unless `leaveLast` (the caller's own flow completes it).
+   */
+  const stepWrites = useRef(new Set<string>());
+  async function syncStepsToLogged(task: Task, logged: number, leaveLast = false) {
+    const subs = task.subtasks;
+    if (!subs?.length || logged <= 0) return;
+    const order = [...subs].sort((a, b) => (a.scheduledStart ?? "9").localeCompare(b.scheduledStart ?? "9"));
+    let cum = 0;
+    const covered = new Set<string>();
+    for (const s of order) {
+      cum += s.durationMinutes;
+      if (logged >= cum) covered.add(s.id);
+      else break;
+    }
+    const fresh = order.filter((s) => covered.has(s.id) && !s.completed);
+    if (fresh.length === 0) return;
+    const allDone = subs.every((s) => s.completed || covered.has(s.id));
+    if (allDone && !leaveLast) {
+      setOpenId(null);
+      setOpenPart(null);
+      await completeTask({ ...task, loggedMinutes: Math.max(logged, task.loggedMinutes ?? 0) });
+      return;
+    }
+    const keepOpen = allDone ? order[order.length - 1].id : null; // the caller completes the whole task
+    const done = new Set(fresh.map((s) => s.id));
+    if (keepOpen) done.delete(keepOpen);
+    if (done.size === 0) return;
+    const key = `${task.id}:${[...done].sort().join(",")}`; // the same write is never repeated while the snapshot catches up
+    if (stepWrites.current.has(key)) return;
+    stepWrites.current.add(key);
+    setTimeout(() => stepWrites.current.delete(key), 15000);
+    await saveSubtasks(task, subs.map((s) => (done.has(s.id) ? { ...s, completed: true } : s)));
+    const next = nextSubtask(subs.map((s) => (done.has(s.id) ? { ...s, completed: true } : s)));
+    toast({ title: t("Step done"), body: next ? `${t("Next")}: ${next.title}` : undefined });
+    void rebalanceNow();
+  }
+
+  // A running timer crossing the end of a step finishes that step (checked every few seconds, only while one runs).
+  const stepWatch = useRef({ tasks, sync: syncStepsToLogged });
+  useEffect(() => {
+    stepWatch.current = { tasks, sync: syncStepsToLogged };
+  });
+  const anyStepTimer = tasks.some((x) => x.status === "active" && !!x.startedAt && !!x.subtasks?.length);
+  useEffect(() => {
+    if (!anyStepTimer) return;
+    const id = setInterval(() => {
+      const nowMs = Date.now();
+      for (const x of stepWatch.current.tasks) {
+        if (x.status !== "active" || !x.startedAt || !x.subtasks?.length) continue;
+        void stepWatch.current.sync(x, spentMinutes(x) + sessionMinutes(x, nowMs), true).catch(() => {});
+      }
+    }, 5000);
+    return () => clearInterval(id);
+  }, [anyStepTimer]);
+
   /** Check / uncheck a part. Checking the last one finishes the whole task, with the full pop. */
   async function toggleSubtaskFlow(task: Task, sub: Subtask) {
     const checked = !sub.completed;
@@ -432,6 +495,7 @@ export function DashboardShell() {
         await completeTask({ ...task, loggedMinutes: (task.loggedMinutes ?? 0) + sub.durationMinutes });
       } else {
         await toggleSubtask(task, sub.id, checked);
+        void rebalanceNow(); // the finished step leaves the Schedule and the rest is re-planned
       }
     } catch (e) {
       console.warn("toggle part failed:", e);
@@ -766,7 +830,7 @@ export function DashboardShell() {
             // (unpinning releases the slot).
             const task = tasks.find((x) => x.id === schedule?.blocks.find((b) => b.id === id)?.taskId);
             if (task?.isFixedTime) {
-              const mins = Math.max(5, Math.round((Date.parse(end) - Date.parse(start)) / 60_000));
+              const mins = Math.max(1, Math.round((Date.parse(end) - Date.parse(start)) / 60_000));
               await updateTask(task, {
                 title: task.title, durationMin: mins, pacing: pacingOf(task),
                 deadline: task.deadline && Date.parse(task.deadline) >= Date.parse(end) ? task.deadline : end,
@@ -792,8 +856,17 @@ export function DashboardShell() {
         onClose={() => setOpenId(null)}
         onComplete={completeTask}
         onDelete={removeTask}
-        onConfirmTimer={confirmTimer}
-        onAdjustSpent={(task, d) => adjustSpent(task, d)}
+        onConfirmTimer={async (task) => {
+          const n = await confirmTimer(task);
+          const logged = spentMinutes(task) + n;
+          // The sheet completes the task itself once the planned time is used up.
+          if (n > 0) await syncStepsToLogged(task, logged, logged >= totalMinutes(task)).catch(() => {});
+          return n;
+        }}
+        onAdjustSpent={async (task, d) => {
+          await adjustSpent(task, d);
+          if (d > 0) await syncStepsToLogged(task, spentMinutes(task) + d, spentMinutes(task) + d >= totalMinutes(task)).catch(() => {});
+        }}
         onSetRecurrence={setRecurrence}
         splitting={!!openTask && splitting.has(openTask.id)}
         onToggleSubtask={(task, sub, checked) => (checked === !sub.completed ? toggleSubtaskFlow(task, sub) : Promise.resolve())}

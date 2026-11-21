@@ -325,7 +325,7 @@ export async function POST(request: Request) {
     if (!t || !placeIds.has(t.id)) continue;
     if (t.durationMin !== undefined) continue;
     const aiEstimate: NonNullable<Task["aiEstimate"]> = {
-      durationMin: Math.max(5, Math.min(480, Math.round(e.durationMin))),
+      durationMin: Math.max(1, Math.min(9999 * 60, Math.round(e.durationMin))),
       reasoning: e.reasoning,
       estimatedAt: nowIso,
     };

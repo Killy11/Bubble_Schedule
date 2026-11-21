@@ -9,7 +9,7 @@ import { useNotifications } from "@/context/NotificationProvider";
 import { useMusicMuted } from "@/hooks/useTaskMusic";
 import { setMusicMuted } from "@/lib/taskMusic";
 import { useSecondTick } from "@/hooks/useSecondTick";
-import { formatClock, progressOf, remainingMinutes, remainingSeconds, sessionSeconds, spentMinutes, STEP_MIN, totalMinutes } from "@/lib/remaining";
+import { MAX_TOTAL_MIN, formatClock, progressOf, remainingMinutes, remainingSeconds, sessionSeconds, spentMinutes, STEP_MIN, totalMinutes } from "@/lib/remaining";
 import { Sheet } from "@/components/Sheet";
 import { DeadlineField } from "@/components/DeadlineField";
 import { DurationFields, snap5 } from "@/components/DurationFields";
@@ -231,7 +231,7 @@ function ProgressTimer({
     setNote(text);
     setTimeout(() => setNote((n) => (n === text ? null : n)), 3000);
   };
-  const toMin = (v: string) => Math.min(1440, Math.max(1, Math.floor(Number(v)) || 1));
+  const toMin = (v: string) => Math.min(MAX_TOTAL_MIN, Math.max(1, Math.floor(Number(v)) || 1));
   const stepBtn = "flex h-10 shrink-0 items-center justify-center gap-1 rounded-full border border-line px-3 text-sm transition hover:bg-foreground/10 disabled:opacity-50";
 
   return (
@@ -302,11 +302,11 @@ function ProgressTimer({
             <button type="button" disabled={pending} onClick={() => setMinutes(String(Math.max(1, toMin(minutes) - STEP_MIN)))} aria-label={t("{n}m", { n: `−${STEP_MIN}` })} className={stepBtn}>
               <Minus className="h-3.5 w-3.5" />{STEP_MIN}
             </button>
-            <input type="number" inputMode="numeric" step={1} min={1} max={1440} value={minutes}
+            <input type="number" inputMode="numeric" step={1} min={1} value={minutes}
               onChange={(e) => setMinutes(e.target.value)} onFocus={(e) => e.target.select()}
               onBlur={() => setMinutes(String(toMin(minutes)))}
               className="glass h-10 w-20 rounded-xl text-center text-base tabular-nums text-foreground outline-none focus:border-[rgb(var(--glow-a))]" />
-            <button type="button" disabled={pending} onClick={() => setMinutes(String(Math.min(1440, toMin(minutes) + STEP_MIN)))} aria-label={t("{n}m", { n: `+${STEP_MIN}` })} className={stepBtn}>
+            <button type="button" disabled={pending} onClick={() => setMinutes(String(Math.min(MAX_TOTAL_MIN, toMin(minutes) + STEP_MIN)))} aria-label={t("{n}m", { n: `+${STEP_MIN}` })} className={stepBtn}>
               <Plus className="h-3.5 w-3.5" />{STEP_MIN}
             </button>
           </div>
@@ -350,7 +350,7 @@ function EditForm({
   const [title, setTitle] = useState(task.title);
   const [deadline, setDeadline] = useState(task.deadline ? toLocalInput(task.deadline) : "");
   const [noDeadline, setNoDeadline] = useState(!task.deadline);
-  // Durations are picked from dropdowns in 5-minute steps (nothing typed, so the browser never rejects a value).
+  // Durations are typed as free hours + exact minutes (no cap, no step).
   const split = (min: number) => ({ h: String(Math.floor(snap5(min) / 60)), m: String(snap5(min) % 60) });
   const [tot, setTot] = useState(() => split(totalMinutes(task)));
   const [lft, setLft] = useState(() => split(remainingMinutes(task)));
@@ -368,7 +368,7 @@ function EditForm({
     if (!noDeadline && Number.isNaN(when.getTime())) return setError(t("Pick a deadline."));
     if (!noDeadline && when.getTime() <= now) return setError(t("Pick a time in the future."));
     // Untouched fields keep the exact stored minutes; changed ones use the dropdown values.
-    const totalMin = totalTouched ? Math.min(1440, Math.max(5, minsOf(tot))) : (task.durationMin ?? totalMinutes(task));
+    const totalMin = totalTouched ? Math.min(MAX_TOTAL_MIN, Math.max(1, minsOf(tot))) : (task.durationMin ?? totalMinutes(task));
     const leftMin = Math.min(totalMin, Math.max(0, minsOf(lft)));
     onBusy(true);
     setError(null);

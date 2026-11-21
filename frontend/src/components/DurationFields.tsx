@@ -3,19 +3,21 @@
 import { useLang } from "@/context/LanguageProvider";
 
 const box =
-  "glass w-full appearance-none rounded-2xl px-4 py-2.5 text-sm text-foreground outline-none transition focus:border-[rgb(var(--glow-a))]";
+  "glass w-full rounded-2xl px-4 py-2.5 text-sm text-foreground outline-none transition focus:border-[rgb(var(--glow-a))]";
 
-const HOURS = Array.from({ length: 13 }, (_, i) => i); // 0–12 h
-const MINUTES = Array.from({ length: 12 }, (_, i) => i * 5); // 0, 5, … 55 min
+/** Kept for callers that round: durations are exact whole minutes now, so this only rounds fractions. */
+export const snap5 = (min: number): number => Math.round(min);
 
-/** Round to the nearest 5 minutes (what the dropdowns can show). */
-export const snap5 = (min: number): number => Math.round(min / 5) * 5;
+/** Digits only, no leading zeros ("007" → "7"); "" stays "". */
+const digits = (v: string): string => {
+  const d = v.replace(/\D+/g, "").slice(0, 6);
+  return d === "" ? "" : String(Number(d));
+};
 
 /**
- * Duration as two dropdowns: hours (0–12) and minutes in 5-minute steps. Because nothing is typed, the browser can
- * never reject a value ("the two nearest valid values are…"). A duration of 0 h 0 min is raised to 15 min, so a
- * task can't end up with no time; `allowZero` (for "minutes left") lifts that. `allowBlank` adds a "—" option that
- * means "let the AI guess" (both blank).
+ * Duration as two free numeric inputs: any number of hours (0+, no upper cap) and any exact number of minutes
+ * (2, 7, 45, even 90: durationMin = hours * 60 + minutes). `allowBlank` leaves both empty = "let the AI guess";
+ * `allowZero` (for "minutes left") lets the total be 0, otherwise callers enforce a 1-minute minimum.
  */
 export function DurationFields({
   hours,
@@ -24,7 +26,6 @@ export function DurationFields({
   onMinutes,
   hint = true,
   allowBlank = true,
-  allowZero = false,
 }: {
   hours: string;
   minutes: string;
@@ -35,42 +36,28 @@ export function DurationFields({
   allowZero?: boolean;
 }) {
   const { t } = useLang();
-  const bothBlank = hours === "" && minutes === "";
-  // A blank half next to a filled half just means 0.
-  const h = hours === "" ? (bothBlank && allowBlank ? "" : "0") : hours;
-  const m = minutes === "" ? (bothBlank && allowBlank ? "" : "0") : minutes;
   return (
     <div role="group" aria-label={t("Duration")}>
       <div className="flex gap-3">
-        <label className="min-w-0 flex-1">
-          <span className="sr-only">{t("Hours")}</span>
-          <select
-            value={h}
-            onChange={(e) => {
-              const v = e.target.value;
-              onHours(v);
-              if (!allowZero && v === "0" && m === "0") onMinutes("15");
-            }}
+        <label className="flex min-w-0 flex-1 items-center gap-2">
+          <input
+            type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off"
+            aria-label={t("Hours")} placeholder={allowBlank ? "—" : "0"} value={hours}
+            onChange={(e) => onHours(digits(e.target.value))}
+            onFocus={(e) => e.target.select()}
             className={box}
-          >
-            {allowBlank && <option value="">—</option>}
-            {HOURS.map((n) => <option key={n} value={String(n)}>{t("{n} h", { n })}</option>)}
-          </select>
+          />
+          <span className="text-xs text-muted">{t("h")}</span>
         </label>
-        <label className="min-w-0 flex-1">
-          <span className="sr-only">{t("Minutes")}</span>
-          <select
-            value={m}
-            onChange={(e) => {
-              const v = e.target.value;
-              onMinutes(v);
-              if (!allowZero && v === "0" && h === "0") onMinutes("15");
-            }}
+        <label className="flex min-w-0 flex-1 items-center gap-2">
+          <input
+            type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off"
+            aria-label={t("Minutes")} placeholder={allowBlank ? "—" : "0"} value={minutes}
+            onChange={(e) => onMinutes(digits(e.target.value))}
+            onFocus={(e) => e.target.select()}
             className={box}
-          >
-            {allowBlank && <option value="">—</option>}
-            {MINUTES.map((n) => <option key={n} value={String(n)}>{t("{n} min", { n })}</option>)}
-          </select>
+          />
+          <span className="text-xs text-muted">{t("min")}</span>
         </label>
       </div>
       {hint && <p className="mt-1 text-[11px] text-muted">{t("Blank = AI guesses")}</p>}

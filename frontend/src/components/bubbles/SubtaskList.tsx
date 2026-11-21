@@ -258,7 +258,7 @@ function EditRow({
     e.preventDefault();
     const min = totalMinutes(hours, minutes) ?? 0;
     if (!title.trim()) return setError(t("Give your bubble a title."));
-    if (!Number.isFinite(min) || min < 5 || min > 480) return setError(t("Duration: 5–480 min"));
+    if (!Number.isFinite(min) || min < 1) return setError(t("Duration: at least 1 min"));
     let scheduled: Pick<Subtask, "scheduledStart" | "scheduledEnd"> = {};
     if (start) {
       const at = new Date(start).getTime();

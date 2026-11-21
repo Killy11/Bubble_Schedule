@@ -60,7 +60,7 @@ export function planAll(o: {
   const isFixed = (t: Task) => !!t.isFixedTime && !!t.fixedStartTime && !Number.isNaN(Date.parse(t.fixedStartTime));
   const fixedWindow = (t: Task) => {
     const start = Date.parse(t.fixedStartTime!);
-    return { start, end: start + Math.max(5, effectiveDuration(t) ?? o.settings.defaultTaskMinutes) * 60_000 };
+    return { start, end: start + Math.max(1, effectiveDuration(t) ?? o.settings.defaultTaskMinutes) * 60_000 };
   };
   for (const t of order) {
     if (!isFixed(t)) continue;

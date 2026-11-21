@@ -3,8 +3,8 @@ import type { Task } from "@/types";
 
 export const DEFAULT_TASK_MIN = 30;
 export const STEP_MIN = 15;
-export const MIN_REMAINING_MIN = 5;
-export const MAX_TOTAL_MIN = 24 * 60;
+export const MIN_REMAINING_MIN = 1;
+export const MAX_TOTAL_MIN = 9999 * 60;
 
 /**
  * Time model (whole minutes are the stored truth; seconds exist only while a timer session is open):

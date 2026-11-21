@@ -99,6 +99,7 @@ export const UK: Record<string, string> = {
   Stop: "Зупинити",
   "Minutes spent": "Витрачено хвилин",
   "Enter 1–1440 minutes": "Введіть 1–1440 хвилин",
+  "Enter at least 1 minute": "Введіть щонайменше 1 хвилину",
   "Couldn't update the timer": "Не вдалося оновити таймер",
   "How long did it take? (min)": "Скільки це зайняло? (хв)",
   "{n} tracked": "{n} відстежено",
@@ -134,6 +135,7 @@ export const UK: Record<string, string> = {
   "Pick a start time.": "Оберіть час початку.",
   "Must end before the deadline.": "Має закінчитися до дедлайну.",
   "Duration: 5–480 min": "Тривалість: 5–480 хв",
+  "Duration: at least 1 min": "Тривалість: щонайменше 1 хв",
   "Mark complete": "Позначити виконаною",
   "Mark as not done": "Зняти позначку",
   missed: "пропущено",
@@ -559,6 +561,8 @@ export const UK: Record<string, string> = {
   "If you forget something, tap “?” at any moment to go through the tutorial again.": "Якщо щось забудеться — натисніть «?» у будь-який момент, щоб пройти туторіал знову.",
 
   "{n} h": "{n} год",
+  "h": "год",
+  "Step done": "Крок виконано",
   "{n} min": "{n} хв",
   "Total duration": "Загальна тривалість",
 

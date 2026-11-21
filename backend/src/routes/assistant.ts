@@ -12,6 +12,8 @@ import {
   mockAssistant,
   normalizeActions,
   normalizeTasks,
+  parseExplicitDeadline,
+  resolveStepCheckoff,
   type RawAssistantResult,
 } from "@backend/ai/assistant";
 import { FileError, readFile, type ReadFile } from "@backend/server/files";
@@ -102,7 +104,8 @@ export async function POST(request: Request) {
         const key = addDays(today, i);
         return `${DAYS[weekdayOf(key)].slice(0, 3)} ${key}${i === 0 ? " (today)" : i === 1 ? " (tomorrow)" : ""}`;
       }),
-      existingTasks: existing.slice(0, 40).map((t) => ({
+      existingTasks: existing.slice(0, 40).map((t, i) => ({
+        n: i + 1, // position in the list: "the first task" = n 1
         id: t.id,
         title: t.title,
         deadline: t.deadline ? toLocalNaive(t.deadline, tz) : null,
@@ -151,6 +154,12 @@ export async function POST(request: Request) {
 
   // "today" said outright keeps a past time as asked (and warns); no date at all rolls it to tomorrow.
   const clock: Clock = { nowMs: now.getTime(), explicitToday: /(сьогодні|today|tonight)/i.test(message) };
+  // The date the user spelled out ("22 листопада 22:00") is saved as the deadline even if the model left it out or got it wrong.
+  const stated = parseExplicitDeadline(message, now.getTime(), tz);
+  if (stated && raw.intent === "create_tasks" && (raw.tasks?.length ?? 0) > 0) {
+    const only = raw.tasks.length === 1;
+    for (const t of raw.tasks) if (!t.fixedStart && (only || !t.deadline)) t.deadline = stated;
+  }
   let tasks = raw.intent === "create_tasks" ? normalizeTasks(raw.tasks ?? [], tz, clock) : [];
   // Real, validated changes win over the label: a "move X to 17–19" is executed even if the model called it "schedule".
   const titleById = new Map(existing.map((t) => [t.id, t.title]));
@@ -173,6 +182,18 @@ export async function POST(request: Request) {
     });
   }
   tasks = kept;
+  // "перший підпункт першого завдання": a clear step check-off is resolved by position when the model didn't return it.
+  let checkedOff = false;
+  if (!actions.some((a) => a.type === "complete" && a.subtaskId)) {
+    const hit = tasks.length === 0 ? resolveStepCheckoff(message, existing.slice(0, 40)) : null;
+    if (hit) {
+      const ex = existing.find((t) => t.id === hit.taskId);
+      // Replace the model's whole-task / unrelated actions on that task: only this step is finished.
+      for (let i = actions.length - 1; i >= 0; i--) if (actions[i].taskId === hit.taskId) actions.splice(i, 1);
+      actions.push({ type: "complete", taskId: hit.taskId, subtaskId: hit.subtaskId, taskTitle: ex?.title, subtaskTitle: ex?.subtasks?.find((s) => s.id === hit.subtaskId)?.title });
+      checkedOff = true;
+    }
+  }
   if (actions.length > 0) raw.intent = "modify_tasks";
   // The model claimed a change but nothing valid came back: never let the reply say it was done.
   const failedChange =
@@ -187,7 +208,9 @@ export async function POST(request: Request) {
       ? cyr
         ? "Не вдалося застосувати зміну: уточніть, будь ласка, яку задачу та на який час (наприклад, «Звіт з 17:00 до 19:00»)."
         : "I couldn't apply that change. Tell me which task and the exact time, for example “Report from 17:00 to 19:00”."
-      : (String(raw.reply ?? "").slice(0, 1200) || "Done.") +
+      : (checkedOff && !/(відмі|позначи|готов|done|marked|checked|completed|зроблен)/i.test(String(raw.reply ?? ""))
+          ? (actions.find((a) => a.subtaskId)?.subtaskTitle ? `${cyr ? "Готово! Відмічено крок" : "Done! Checked off step"}: «${actions.find((a) => a.subtaskId)?.subtaskTitle}».` : cyr ? "Готово! Крок відмічено." : "Done! Step checked off.")
+          : String(raw.reply ?? "").slice(0, 1200) || "Done.") +
         (clock.pastToday
           ? cyr
             ? " ⚠️ Цей час сьогодні вже минув, тож задача одразу стане простроченою. Скажіть, якщо мали на увазі завтра."

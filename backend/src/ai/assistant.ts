@@ -2,6 +2,7 @@ import type { AssistantAction, AssistantTask } from "@/types/api";
 import { dateKeyInTz, localNaiveToUtc, toLocalNaive } from "@/lib/time";
 
 export const MAX_TITLE = 100;
+const MAX_DURATION_MIN = 9999 * 60; // technical ceiling only
 const MAX_TASKS = 25; // one bulk request may create up to 25 tasks
 
 export const ASSISTANT_SYSTEM_PROMPT = `You are the AI assistant inside BubbleSchedule, an app that shows tasks as bubbles.
@@ -13,6 +14,7 @@ A request about ONE named task and a time ("move the gym to 17–19", "пере�
 SPLITTING. "Split / break X into N parts" ("розбий домашку з економіки на 3 частини", "розподіли по розкладу") on an EXISTING task is a "split" action with that task's "taskId" and "parts" N (2–12): the app then makes N steps (1/N…N/N) inside that same task and spreads them over the free time before its deadline, starting now. Never create new tasks for the parts ("частина 3" etc.), never put a clock time on them, and do not change the deadline. Only if the user also names a clock time for a step is it a fixed slot (see PARTS).
 MATCHING. Match tasks in existingTasks by meaning, not exact text: ignore inflection, case and a suffix like "(частина 3)" ("домашку з економіки" = "Домашка з економіки"). A request to change a deadline or a duration of something that already exists is an "update" action on that task, never a new task. "Total duration 3 hours" = durationMin 180 on that task (its parts are rescaled by the app); a new deadline is a LOCAL "YYYY-MM-DDTHH:mm" read from the calendar.
 SYNONYMS AND REFERENCES. existingTasks is the live list for THIS turn: trust it over anything said earlier in recentChat. Match by meaning and synonyms ("тренування"/"workout" = "Сходити в зал"), and resolve "це", "його", "it", "that one" to the task last mentioned in recentChat. If two tasks fit equally well, ask which one (intent "answer") instead of guessing.
+ORDER REFERENCES. Each task in existingTasks has "n" (its position in the list, the order the app shows) and each part has "n" (step number). "перший підпункт першого завдання" / "the first step of the first task" = the task with n 1 and its part with n 1; "зробила 1 крок" with no task named = the first task that has parts. Resolve them to the real ids and return the "complete" action. 
 PART ACTIONS. "I did part 1 of economics" ("зробила 1 частину економу") = a "complete" action with the task's taskId AND the part's subtaskId (parts[].n is the step number); "remove step 2" = a "delete" action with taskId and subtaskId. Never complete or delete the whole task for that. Do not complete or delete a task or part that is not in existingTasks.
 TIMES. NOW is in the user's real time zone. A time with no date ("at 10:00") that has already passed today means TOMORROW at that time (never a slot in the past); "in 20 minutes" = NOW + 20 minutes.
 CALENDAR. The "calendar" list in the context maps the next 14 dates to their weekdays and gives today/tomorrow. Always read a weekday ("Friday", "в п'ятницю") from that list; never compute weekdays yourself. A bare weekday means the nearest upcoming such date (today counts only if it is that weekday and the time is still ahead).
@@ -109,7 +111,100 @@ export interface RawAssistantResult {
   memoryAdditions?: string[];
 }
 
-/** A requested window → exact start, end and length in whole minutes (5–480). Null when it isn't a usable window. */
+const MONTH_STEMS: Array<[string, number]> = [
+  ["січ", 1], ["лют", 2], ["бер", 3], ["квіт", 4], ["трав", 5], ["черв", 6], ["лип", 7], ["серп", 8], ["вер", 9], ["жовт", 10], ["лист", 11], ["груд", 12],
+  ["jan", 1], ["feb", 2], ["mar", 3], ["apr", 4], ["may", 5], ["jun", 6], ["jul", 7], ["aug", 8], ["sep", 9], ["oct", 10], ["nov", 11], ["dec", 12],
+];
+const monthOf = (word: string): number | null => {
+  const w = word.toLowerCase();
+  return MONTH_STEMS.find(([stem]) => w.startsWith(stem))?.[1] ?? null;
+};
+
+/**
+ * An explicit calendar date in the message ("22 листопада 22:00", "Nov 22 at 10pm", "22.11 о 22:00") as a LOCAL
+ * "YYYY-MM-DDTHH:mm", or null. A safety net under the model: the deadline the user spelled out is always saved.
+ * Without a time it is 18:00; a date that already passed this year means next year. Returns null on 2+ different dates.
+ */
+export function parseExplicitDeadline(message: string, nowMs: number, tz: string): string | null {
+  const found = new Set<string>();
+  let hm: [number, number] | null = null;
+  const day = (d: number, mo: number, y?: number) => {
+    if (!(d >= 1 && d <= 31 && mo >= 1 && mo <= 12)) return;
+    found.add(`${d}.${mo}.${y ?? ""}`);
+  };
+  for (const m of message.matchAll(/(\d{1,2})(?:-?го)?\s+(\p{L}{3,})/gu)) { const mo = monthOf(m[2]); if (mo) day(+m[1], mo); }
+  for (const m of message.matchAll(/(\p{L}{3,})\.?\s+(\d{1,2})(?!\d|:)/gu)) { const mo = monthOf(m[1]); if (mo) day(+m[2], mo); }
+  for (const m of message.matchAll(/(?<![\d:])(\d{1,2})\.(\d{1,2})(?:\.(\d{2,4}))?(?![\d:])/g)) {
+    const y = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : undefined;
+    day(+m[1], +m[2], y);
+  }
+  if (found.size !== 1) return null;
+  const t = /(?<!\d)(\d{1,2}):(\d{2})(?!\d)(?:\s*(am|pm))?/i.exec(message) ?? /\b(?:о|об|at|by|до)\s+(\d{1,2})(?:\s*(am|pm|год))?\b(?!\.\d)/i.exec(message);
+  if (t) {
+    let h = +t[1];
+    const mer = (t[3] ?? t[2] ?? "").toLowerCase();
+    if (mer === "pm" && h < 12) h += 12;
+    if (mer === "am" && h === 12) h = 0;
+    const mi = t[2] && /^\d{2}$/.test(t[2]) ? +t[2] : 0;
+    if (h <= 23 && mi <= 59) hm = [h, mi];
+  }
+  const [d, mo, yRaw] = [...found][0].split(".");
+  const today = dateKeyInTz(new Date(nowMs), tz);
+  let year = yRaw ? +yRaw : +today.slice(0, 4);
+  const key = (y: number) => `${y}-${String(+mo).padStart(2, "0")}-${String(+d).padStart(2, "0")}`;
+  const probe = new Date(`${key(year)}T00:00:00Z`);
+  if (Number.isNaN(probe.getTime()) || probe.getUTCDate() !== +d) return null; // "31 листопада"
+  if (!yRaw && key(year) < today) year += 1;
+  const [h, mi] = hm ?? [18, 0];
+  return `${key(year)}T${String(h).padStart(2, "0")}:${String(mi).padStart(2, "0")}`;
+}
+
+const ORDINALS: Array<[RegExp, number]> = [
+  [/^(перш|first|1st|one|один)/i, 1], [/^(друг|second|2nd|two|два)/i, 2], [/^(трет|third|3rd|three|три)/i, 3], [/^(четверт|fourth|4th|four)/i, 4],
+  [/^(п['’ʼ]ят|fifth|5th|five)/i, 5], [/^(шост|sixth|6th|six)/i, 6], [/^(сьом|seventh|7th|seven)/i, 7], [/^(восьм|eighth|8th|eight)/i, 8],
+  [/^(дев['’ʼ]ят|ninth|9th|nine)/i, 9], [/^(десят|tenth|10th|ten)/i, 10], [/^(остан|last)/i, -1],
+];
+const ordinalOf = (w: string): number | null => {
+  if (/^\d{1,2}(-?(й|го|ий|е|st|nd|rd|th))?$/i.test(w)) return parseInt(w, 10);
+  return ORDINALS.find(([re]) => re.test(w))?.[1] ?? null;
+};
+const STEP_WORD = "(?:підпункт\\p{L}*|підзавдан\\p{L}*|крок\\p{L}*|кроки|част\\p{L}*|step\\p{L}*|part\\p{L}*|subtask\\p{L}*)";
+const TASK_WORD = "(?:завдан\\p{L}*|задач\\p{L}*|бульбашк\\p{L}*|task\\p{L}*|bubble\\p{L}*)";
+const DONE_VERB = /(зробил|зробив|зроби(?!\p{L})|виконал|виконав|завершил|завершив|закінчил|закінчив|готов|відміт|поклад|done|finish|complet|did\b|check(?:ed)?\s*off|tick|mark)/iu;
+
+/**
+ * "перший підпункт першого завдання" / "зробила 1 крок" / "I did step 2 of the first task" → the exact task and step
+ * of the live list, by position ("n" in existingTasks, the order the app shows). A deterministic safety net under
+ * the model: a clear check-off request is never answered with words alone. Null when it isn't one or can't be resolved.
+ */
+export function resolveStepCheckoff(
+  message: string,
+  tasks: ReadonlyArray<{ id: string; subtasks?: ReadonlyArray<{ id: string; completed: boolean }> }>,
+): { taskId: string; subtaskId: string } | null {
+  if (!DONE_VERB.test(message)) return null;
+  const words = message.toLowerCase().split(/[^\p{L}\p{N}'’ʼ-]+/u).filter(Boolean);
+  let stepN: number | null = null;
+  let taskN: number | null = null;
+  const isStep = (w?: string) => !!w && new RegExp(`^${STEP_WORD}$`, "iu").test(w);
+  const isTask = (w?: string) => !!w && new RegExp(`^${TASK_WORD}$`, "iu").test(w);
+  words.forEach((w, i) => {
+    const n = ordinalOf(w);
+    if (n === null) return;
+    const next = words[i + 1], prev = words[i - 1];
+    if (isStep(next) || isStep(prev) && stepN === null && !isTask(next)) stepN ??= n;
+    else if (isTask(next) || isTask(prev)) taskN ??= n;
+  });
+  if (stepN === null) return null;
+  const withSteps = tasks.filter((t) => t.subtasks?.length);
+  const task = taskN === null ? withSteps[0] : taskN === -1 ? tasks[tasks.length - 1] : tasks[taskN - 1];
+  if (!task?.subtasks?.length) return null;
+  const subs = task.subtasks;
+  const sub = stepN === -1 ? [...subs].reverse().find((s) => !s.completed) : subs[stepN - 1];
+  if (!sub || sub.completed) return null;
+  return { taskId: task.id, subtaskId: sub.id };
+}
+
+/** A requested window → exact start, end and length in whole minutes (whole minutes, at least 1). Null when it isn't a usable window. */
 function fixedSlot(start: string | null | undefined, end: string | null | undefined, durationMin: number | null | undefined, tz: string, clock?: Clock) {
   const s = start ? localNaiveToUtc(start, tz) : null;
   if (!s || Number.isNaN(s.getTime())) return null;
@@ -118,7 +213,7 @@ function fixedSlot(start: string | null | undefined, end: string | null | undefi
     const mins = Number.isFinite(durationMin) && durationMin! > 0 ? durationMin! : 60;
     e = new Date(s.getTime() + mins * 60_000);
   }
-  const mins = Math.max(5, Math.min(480, Math.round((e.getTime() - s.getTime()) / 60_000)));
+  const mins = Math.max(1, Math.round((e.getTime() - s.getTime()) / 60_000));
   // A clock time that already passed today ("10:00" at 14:30) means tomorrow, never a slot in the past.
   const from = notInPast(s, clock);
   return { startIso: from.toISOString(), endIso: new Date(from.getTime() + mins * 60_000).toISOString(), durationMin: mins };
@@ -167,7 +262,7 @@ export function normalizeActions(
     const deadline = parsed && !Number.isNaN(parsed.getTime()) ? notInPast(parsed, clock).toISOString() : undefined;
     const title = a.title ? String(a.title).replace(/\s+/g, " ").trim().slice(0, MAX_TITLE) : undefined;
     const durationMin =
-      Number.isFinite(a.durationMin) && a.durationMin! > 0 ? Math.max(5, Math.min(480, Math.round(a.durationMin!))) : undefined;
+      Number.isFinite(a.durationMin) && a.durationMin! > 0 ? Math.max(1, Math.min(MAX_DURATION_MIN, Math.round(a.durationMin!))) : undefined;
     const removeDeadline = a.removeDeadline === true && !deadline;
     const taskParts = parts.get(a.taskId);
     if (a.subtaskId) {
@@ -232,7 +327,7 @@ export function normalizeTasks(raw: RawAssistantTask[], tz: string, clock?: Cloc
       durationMin:
         slot?.durationMin ??
         (Number.isFinite(t.durationMin) && t.durationMin! > 0
-          ? Math.max(5, Math.min(480, Math.round(t.durationMin!)))
+          ? Math.max(1, Math.min(MAX_DURATION_MIN, Math.round(t.durationMin!)))
           : undefined),
       fixedStart: slot?.startIso,
     });
@@ -267,6 +362,7 @@ export function mockAssistant(message: string, now: Date, tz: string): RawAssist
     if (t) { hh = Number(t[1]) % 12 + (t[3].toLowerCase() === "pm" ? 12 : 0); mm = Number(t[2] ?? 0); }
     deadline = `${d}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
   }
+  deadline = parseExplicitDeadline(m, now.getTime(), tz) ?? deadline;
   const title = m.replace(/^(remind me to|i need to|i have to|please|add|todo:?)\s+/i, "").slice(0, MAX_TITLE);
   return {
     intent: "create_tasks",

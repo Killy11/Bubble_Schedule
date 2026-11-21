@@ -92,4 +92,10 @@ export function useRebalance(
     },
     [],
   );
+
+  /** Re-plan right now (no debounce): used after a step is finished, which the signature alone doesn't watch. */
+  return useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    return run();
+  }, [run]);
 }
